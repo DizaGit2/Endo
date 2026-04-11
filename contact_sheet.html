@@ -21,6 +21,8 @@ body{background:var(--bg);color:var(--ink);}
 .header{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--bd);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;}
 .header h1{font-size:18px;font-weight:500;letter-spacing:-0.3px;}
 .header .subtitle{font-size:12px;color:var(--mut);margin-left:12px;font-weight:400;}
+.home-btn{font-size:13px;color:var(--mut);text-decoration:none;border:1px solid var(--bd);border-radius:8px;padding:6px 12px;transition:all .15s;white-space:nowrap;}
+.home-btn:hover{color:var(--ac);border-color:var(--ac);}
 .toggle-btn{width:36px;height:36px;border-radius:50%;border:1px solid var(--bd);background:transparent;color:var(--ink);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:border-color .2s;}
 .toggle-btn:hover{border-color:var(--ac);}
 main{padding:24px;max-width:1600px;margin:0 auto;}
@@ -53,7 +55,8 @@ main{padding:24px;max-width:1600px;margin:0 auto;}
 </head>
 <body data-theme="light">
 <div class="header">
-  <div style="display:flex;align-items:baseline;">
+  <div style="display:flex;align-items:center;gap:16px;">
+    <a class="home-btn" href="index.html">&#8592; Home</a>
     <h1>Lumen contact sheet</h1>
     <span class="subtitle">38 screens</span>
   </div>

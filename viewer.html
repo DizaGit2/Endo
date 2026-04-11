@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Lumen — Screen viewer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#F1EFE8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;}
+body[data-theme="dark"]{background:#1A1220;}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:inherit;position:sticky;top:0;z-index:10;}
+.nav-left{display:flex;align-items:center;gap:10px;}
+.nav a{font-size:13px;color:#8A6F5E;text-decoration:none;border:1px solid rgba(59,42,32,.12);border-radius:8px;padding:6px 10px;white-space:nowrap;}
+.nav a:hover{color:#C25A36;border-color:#C25A36;}
+.nav .title{font-size:13px;font-weight:500;color:#3B2A20;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.nav-right{display:flex;align-items:center;gap:6px;}
+.nav .arrow{width:32px;height:32px;border-radius:50%;border:1px solid rgba(59,42,32,.12);background:transparent;color:#3B2A20;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;}
+.nav .arrow:hover{border-color:#C25A36;color:#C25A36;}
+.nav .arrow:disabled{opacity:.3;cursor:default;}
+body[data-theme="dark"] .nav a{color:#A99BB8;border-color:rgba(242,228,212,.12);}
+body[data-theme="dark"] .nav a:hover{color:#E8A87C;border-color:#E8A87C;}
+body[data-theme="dark"] .nav .title{color:#F2E4D4;}
+body[data-theme="dark"] .nav .arrow{color:#F2E4D4;border-color:rgba(242,228,212,.12);}
+body[data-theme="dark"] .nav .arrow:hover{color:#E8A87C;border-color:#E8A87C;}
+.viewer{flex:1;display:flex;align-items:center;justify-content:center;padding:8px;overflow:hidden;}
+.viewer iframe{border:none;transform-origin:top center;display:block;}
+</style>
+</head>
+<body data-theme="light">
+<div class="nav">
+  <div class="nav-left">
+    <a href="screens.html">&#8592; All</a>
+    <span class="title" id="title"></span>
+  </div>
+  <div class="nav-right">
+    <button class="arrow" id="prev" onclick="go(-1)">&#8249;</button>
+    <button class="arrow" id="next" onclick="go(1)">&#8250;</button>
+  </div>
+</div>
+<div class="viewer" id="viewer"></div>
+<script>
+var SCREENS = [
+  {file:'screen_01_welcome.html',num:'1',title:'Welcome'},
+  {file:'screen_02_account.html',num:'2',title:'Account'},
+  {file:'screen_03_cycle_setup.html',num:'3',title:'Cycle setup'},
+  {file:'screen_04_baseline.html',num:'4',title:'Baseline health'},
+  {file:'screen_05_goals.html',num:'5',title:'Goals'},
+  {file:'screen_06_hormones.html',num:'6',title:'Hormone preferences'},
+  {file:'screen_07_notifications.html',num:'7',title:'Notifications'},
+  {file:'screen_08_dashboard.html',num:'8',title:'Dashboard'},
+  {file:'screen_09_quick_checkin.html',num:'9',title:'Quick check-in'},
+  {file:'screen_10_cycle_calendar.html',num:'10',title:'Cycle calendar'},
+  {file:'screen_11_day_detail.html',num:'11',title:'Day detail'},
+  {file:'screen_12_symptom_form.html',num:'12',title:'Symptom form'},
+  {file:'screen_13_body_map.html',num:'13',title:'Body map'},
+  {file:'screen_14_phase_correction.html',num:'14',title:'Phase correction'},
+  {file:'screen_15_hormone_chart.html',num:'15',title:'Hormone chart'},
+  {file:'screen_15_hormone_chart_landscape.html',num:'15L',title:'Hormone chart (landscape)'},
+  {file:'screen_16_hormone_detail.html',num:'16',title:'Hormone detail'},
+  {file:'screen_17_studies_library.html',num:'17',title:'Studies library'},
+  {file:'screen_18_upload_study.html',num:'18',title:'Upload study'},
+  {file:'screen_19_ocr_confirm.html',num:'19',title:'OCR confirmation'},
+  {file:'screen_20_missing_data.html',num:'20',title:'Missing data prompt'},
+  {file:'screen_21_confidence_explainer.html',num:'21',title:'Confidence explainer'},
+  {file:'screen_22_body_calendar.html',num:'22',title:'Body metrics calendar'},
+  {file:'screen_23_body_entry.html',num:'23',title:'Body metrics entry'},
+  {file:'screen_24_activity_calendar.html',num:'24',title:'Activity calendar'},
+  {file:'screen_25_activity_entry.html',num:'25',title:'Activity entry'},
+  {file:'screen_26_medication_log.html',num:'26',title:'Medication log'},
+  {file:'screen_27_add_medication.html',num:'27',title:'Add medication'},
+  {file:'screen_28_insights_hub.html',num:'28',title:'Insights hub'},
+  {file:'screen_29_doctor_report.html',num:'29',title:'Doctor report'},
+  {file:'screen_30_share_preview.html',num:'30',title:'Share/export preview'},
+  {file:'screen_31_profile.html',num:'31',title:'Profile'},
+  {file:'screen_32_cycle_settings.html',num:'32',title:'Cycle settings'},
+  {file:'screen_33_hormone_prefs.html',num:'33',title:'Hormone preferences'},
+  {file:'screen_34_notifications.html',num:'34',title:'Notifications'},
+  {file:'screen_35_data_export.html',num:'35',title:'Data export'},
+  {file:'screen_36_privacy.html',num:'36',title:'Privacy'},
+  {file:'screen_37_help_about.html',num:'37',title:'Help & about'}
+];
+
+var currentIdx = 0;
+
+function getIdxFromHash() {
+  var h = location.hash.replace('#','');
+  if (!h) return 0;
+  for (var i = 0; i < SCREENS.length; i++) {
+    if (SCREENS[i].file === h || SCREENS[i].num === h) return i;
+  }
+  return 0;
+}
+
+function loadScreen(idx) {
+  currentIdx = idx;
+  var s = SCREENS[idx];
+  document.getElementById('title').textContent = s.num + ' \u2014 ' + s.title;
+  document.title = 'Lumen \u2014 ' + s.num + ' ' + s.title;
+  document.getElementById('prev').disabled = idx === 0;
+  document.getElementById('next').disabled = idx === SCREENS.length - 1;
+  location.hash = s.file;
+
+  var isLandscape = s.file.includes('landscape');
+  var nativeW = isLandscape ? 540 : 300;
+  var nativeH = isLandscape ? 380 : 640;
+
+  var viewer = document.getElementById('viewer');
+  var viewerW = viewer.clientWidth - 16;
+  var viewerH = viewer.clientHeight - 16;
+
+  // Scale to fit available space while maintaining aspect ratio
+  var scaleW = viewerW / (nativeW + 48); // +48 for padding in the screen's outer div
+  var scaleH = viewerH / (nativeH + 48);
+  var scale = Math.min(scaleW, scaleH, 2); // cap at 2x to avoid over-scaling on desktop
+
+  var iframe = document.createElement('iframe');
+  iframe.style.width = (nativeW + 48) + 'px';
+  iframe.style.height = (nativeH + 80) + 'px';
+  iframe.style.transform = 'scale(' + scale + ')';
+  iframe.src = 'Screens/' + s.file;
+
+  viewer.innerHTML = '';
+  viewer.appendChild(iframe);
+}
+
+function go(delta) {
+  var next = currentIdx + delta;
+  if (next >= 0 && next < SCREENS.length) loadScreen(next);
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'ArrowLeft') go(-1);
+  if (e.key === 'ArrowRight') go(1);
+});
+
+// Touch swipe support
+var touchStartX = 0;
+document.addEventListener('touchstart', function(e) { touchStartX = e.touches[0].clientX; });
+document.addEventListener('touchend', function(e) {
+  var dx = e.changedTouches[0].clientX - touchStartX;
+  if (Math.abs(dx) > 60) go(dx < 0 ? 1 : -1);
+});
+
+window.addEventListener('hashchange', function() { loadScreen(getIdxFromHash()); });
+window.addEventListener('resize', function() { loadScreen(currentIdx); });
+loadScreen(getIdxFromHash());
+</script>
+</body>
+</html>
