@@ -8,8 +8,8 @@
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{height:100%;overflow:hidden;}
 body{background:#F1EFE8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;}
-body[data-theme="dark"]{background:#1A1220;}
-.nav{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:inherit;flex-shrink:0;}
+body.dark{background:#1A1220;}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;flex-shrink:0;}
 .nav-left{display:flex;align-items:center;gap:8px;min-width:0;}
 .nav a{font-size:12px;color:#8A6F5E;text-decoration:none;border:1px solid rgba(59,42,32,.12);border-radius:8px;padding:5px 10px;white-space:nowrap;flex-shrink:0;}
 .nav a:hover{color:#C25A36;border-color:#C25A36;}
@@ -18,17 +18,16 @@ body[data-theme="dark"]{background:#1A1220;}
 .nav .arrow{width:32px;height:32px;border-radius:50%;border:1px solid rgba(59,42,32,.12);background:transparent;color:#3B2A20;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;}
 .nav .arrow:hover{border-color:#C25A36;color:#C25A36;}
 .nav .arrow:disabled{opacity:.3;cursor:default;}
-body[data-theme="dark"] .nav a{color:#A99BB8;border-color:rgba(242,228,212,.12);}
-body[data-theme="dark"] .nav a:hover{color:#E8A87C;border-color:#E8A87C;}
-body[data-theme="dark"] .nav .title{color:#F2E4D4;}
-body[data-theme="dark"] .nav .arrow{color:#F2E4D4;border-color:rgba(242,228,212,.12);}
-body[data-theme="dark"] .nav .arrow:hover{color:#E8A87C;border-color:#E8A87C;}
-.viewer{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
-.iframe-wrap{overflow:hidden;flex-shrink:0;}
-.iframe-wrap iframe{border:none;display:block;transform-origin:top left;}
+body.dark .nav a{color:#A99BB8;border-color:rgba(242,228,212,.12);}
+body.dark .nav a:hover{color:#E8A87C;border-color:#E8A87C;}
+body.dark .nav .title{color:#F2E4D4;}
+body.dark .nav .arrow{color:#F2E4D4;border-color:rgba(242,228,212,.12);}
+body.dark .nav .arrow:hover{color:#E8A87C;border-color:#E8A87C;}
+.viewer{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.screen-wrap{transform-origin:top left;overflow:hidden;position:absolute;}
 </style>
 </head>
-<body data-theme="light">
+<body>
 <div class="nav">
   <div class="nav-left">
     <a href="screens.html">&#8592; All</a>
@@ -83,6 +82,7 @@ var SCREENS = [
 ];
 
 var currentIdx = 0;
+var cache = {};
 
 function getIdxFromHash() {
   var h = location.hash.replace('#','');
@@ -91,6 +91,38 @@ function getIdxFromHash() {
     if (SCREENS[i].file === h || SCREENS[i].num === h) return i;
   }
   return 0;
+}
+
+function renderScreen(html) {
+  var viewer = document.getElementById('viewer');
+  var availW = viewer.clientWidth;
+  var availH = viewer.clientHeight;
+  var s = SCREENS[currentIdx];
+  var isLandscape = s.file.includes('landscape');
+
+  // Native dimensions of the screen's outer container
+  var nativeW = isLandscape ? 592 : 348;
+  var nativeH = isLandscape ? 430 : 720;
+
+  var scale = Math.min(availW / nativeW, availH / nativeH);
+
+  var wrap = document.createElement('div');
+  wrap.className = 'screen-wrap';
+  wrap.style.width = nativeW + 'px';
+  wrap.style.height = nativeH + 'px';
+  wrap.style.transform = 'scale(' + scale + ')';
+  // Center the scaled element
+  var offsetX = (availW - nativeW * scale) / 2;
+  var offsetY = (availH - nativeH * scale) / 2;
+  wrap.style.left = offsetX + 'px';
+  wrap.style.top = offsetY + 'px';
+
+  // Strip existing onclick toggle handlers so they don't interfere
+  var cleaned = html.replace(/onclick="[^"]*"/g, '');
+  wrap.innerHTML = cleaned;
+
+  viewer.innerHTML = '';
+  viewer.appendChild(wrap);
 }
 
 function loadScreen(idx) {
@@ -102,37 +134,20 @@ function loadScreen(idx) {
   document.getElementById('next').disabled = idx === SCREENS.length - 1;
   location.hash = s.file;
 
-  var isLandscape = s.file.includes('landscape');
-  // The screen's outer div has ~1.5rem padding each side + 300px frame = ~348px
-  // The phone frame inside is 300px wide, ~600-640px tall
-  var nativeW = isLandscape ? 592 : 348;
-  var nativeH = isLandscape ? 430 : 720;
+  if (cache[s.file]) {
+    renderScreen(cache[s.file]);
+    return;
+  }
 
-  var viewer = document.getElementById('viewer');
-  var availW = viewer.clientWidth;
-  var availH = viewer.clientHeight;
-
-  // Scale to fill available space
-  var scale = Math.min(availW / nativeW, availH / nativeH);
-
-  var scaledW = Math.floor(nativeW * scale);
-  var scaledH = Math.floor(nativeH * scale);
-
-  // Build wrapper + iframe
-  var wrap = document.createElement('div');
-  wrap.className = 'iframe-wrap';
-  wrap.style.width = scaledW + 'px';
-  wrap.style.height = scaledH + 'px';
-
-  var iframe = document.createElement('iframe');
-  iframe.style.width = nativeW + 'px';
-  iframe.style.height = nativeH + 'px';
-  iframe.style.transform = 'scale(' + scale + ')';
-  iframe.src = 'Screens/' + s.file;
-
-  wrap.appendChild(iframe);
-  viewer.innerHTML = '';
-  viewer.appendChild(wrap);
+  fetch('Screens/' + s.file)
+    .then(function(r) { return r.text(); })
+    .then(function(html) {
+      cache[s.file] = html;
+      // Only render if we're still on the same screen
+      if (SCREENS[currentIdx].file === s.file) {
+        renderScreen(html);
+      }
+    });
 }
 
 function go(delta) {
@@ -157,7 +172,9 @@ window.addEventListener('hashchange', function() { loadScreen(getIdxFromHash());
 var resizeTimer;
 window.addEventListener('resize', function() {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(function() { loadScreen(currentIdx); }, 100);
+  resizeTimer = setTimeout(function() {
+    if (cache[SCREENS[currentIdx].file]) renderScreen(cache[SCREENS[currentIdx].file]);
+  }, 100);
 });
 loadScreen(getIdxFromHash());
 </script>
