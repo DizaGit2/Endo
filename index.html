@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lumen — Design system</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#F1EFE8;color:#3B2A20;min-height:100vh;display:flex;align-items:center;justify-content:center;}
+.wrap{max-width:480px;padding:48px 32px;text-align:center;}
+.icon{width:72px;height:72px;border-radius:50%;background:#F3D9CC;display:flex;align-items:center;justify-content:center;margin:0 auto 28px;}
+.icon svg{width:40px;height:40px;}
+h1{font-size:28px;font-weight:500;letter-spacing:-.3px;margin-bottom:8px;}
+p{font-size:14px;color:#8A6F5E;line-height:1.6;margin-bottom:32px;}
+.links{display:flex;flex-direction:column;gap:12px;}
+a{display:block;background:#C25A36;color:#FFFCF7;text-decoration:none;border-radius:14px;padding:14px 20px;font-size:15px;font-weight:500;transition:opacity .15s;}
+a:hover{opacity:.85;}
+a.secondary{background:transparent;color:#3B2A20;border:1px solid rgba(59,42,32,.12);}
+a.secondary:hover{border-color:#C25A36;color:#C25A36;}
+.meta{margin-top:32px;font-size:11px;color:#8A6F5E;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="icon">
+    <svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="16" stroke="#C25A36" stroke-width="2"/><path d="M24 8 a16 16 0 0 0 0 32 a12 12 0 0 1 0 -32z" fill="#C25A36"/></svg>
+  </div>
+  <h1>Lumen</h1>
+  <p>Cycle tracking and endometriosis management. 38 high-fidelity screens with light and dark mode support.</p>
+  <div class="links">
+    <a href="contact_sheet.html">Contact sheet</a>
+    <a href="flow_diagram.html">Screen flow diagram</a>
+    <a class="secondary" href="Screens/screen_01_welcome.html">Browse individual screens</a>
+  </div>
+  <div class="meta">38 screens across 7 sections</div>
+</div>
+</body>
+</html>

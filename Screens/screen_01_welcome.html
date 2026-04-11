@@ -1,0 +1,30 @@
+<div id="s1-wrap" data-theme="light" style="background:var(--s1-bg);border-radius:var(--border-radius-lg);padding:1.5rem;display:flex;justify-content:center;transition:background .3s;">
+<style>
+#s1-wrap[data-theme="light"]{--s1-bg:#F1EFE8;--s1-frame:#FFFCF7;--s1-ink:#3B2A20;--s1-muted:#8A6F5E;--s1-accent:#C25A36;--s1-accent-soft:#F3D9CC;--s1-sage:#7B8F6B;--s1-border:rgba(59,42,32,.12);}
+#s1-wrap[data-theme="dark"]{--s1-bg:#1A1220;--s1-frame:#241830;--s1-ink:#F2E4D4;--s1-muted:#A99BB8;--s1-accent:#E8A87C;--s1-accent-soft:#3A2438;--s1-sage:#9BAE85;--s1-border:rgba(242,228,212,.12);}
+.s1-frame{width:300px;background:var(--s1-frame);border-radius:36px;border:1px solid var(--s1-border);padding:48px 28px 32px;display:flex;flex-direction:column;align-items:center;text-align:center;min-height:560px;position:relative;}
+.s1-toggle{position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:50%;border:1px solid var(--s1-border);background:transparent;color:var(--s1-ink);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;}
+.s1-moon{width:88px;height:88px;border-radius:50%;background:var(--s1-accent-soft);display:flex;align-items:center;justify-content:center;margin:24px 0 28px;}
+.s1-moon svg{width:48px;height:48px;}
+.s1-title{font-size:24px;font-weight:500;color:var(--s1-ink);margin:0 0 12px;line-height:1.25;letter-spacing:-.3px;}
+.s1-sub{font-size:14px;color:var(--s1-muted);margin:0 0 auto;line-height:1.6;padding:0 4px;}
+.s1-tag{font-size:11px;color:var(--s1-sage);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px;font-weight:500;}
+.s1-btn{width:100%;background:var(--s1-accent);color:#FFFCF7;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:500;cursor:pointer;margin-top:24px;}
+.s1-link{font-size:13px;color:var(--s1-muted);margin-top:14px;background:none;border:none;cursor:pointer;}
+.s1-dots{display:flex;gap:6px;margin-top:18px;}
+.s1-dot{width:6px;height:6px;border-radius:50%;background:var(--s1-border);}
+.s1-dot.on{background:var(--s1-accent);width:18px;border-radius:3px;}
+</style>
+<div class="s1-frame">
+<button class="s1-toggle" onclick="var w=document.getElementById('s1-wrap');w.dataset.theme=w.dataset.theme==='light'?'dark':'light';this.textContent=w.dataset.theme==='light'?'☾':'☀';">☾</button>
+<div class="s1-tag">Lumen · 1 of 7</div>
+<div class="s1-moon">
+<svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="16" stroke="var(--s1-accent)" stroke-width="2"/><path d="M24 8 a16 16 0 0 0 0 32 a12 12 0 0 1 0 -32z" fill="var(--s1-accent)"/></svg>
+</div>
+<h1 class="s1-title">Your cycle, understood</h1>
+<p class="s1-sub">Track symptoms, hormones, and patterns across every phase. Built for endometriosis. Honest about your body.</p>
+<button class="s1-btn">Begin</button>
+<button class="s1-link">I already have an account</button>
+<div class="s1-dots"><span class="s1-dot on"></span><span class="s1-dot"></span><span class="s1-dot"></span><span class="s1-dot"></span><span class="s1-dot"></span><span class="s1-dot"></span><span class="s1-dot"></span></div>
+</div>
+</div>

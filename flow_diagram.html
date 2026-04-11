@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lumen — Screen flow</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;transition:background .3s,color .3s;}
+body[data-theme="light"]{
+  --bg:#F1EFE8;--surface:#FFFCF7;--ink:#3B2A20;--mut:#8A6F5E;
+  --ac:#C25A36;--acs:#F3D9CC;--sg:#7B8F6B;--sgs:#E4EADD;
+  --bd:rgba(59,42,32,.12);--in:#FAF6EF;
+  --group-bg:#FFFCF7;--arrow:#C25A36;
+  --home-clr:#C25A36;--cycle-clr:#D4537E;--hormones-clr:#7B8F6B;--body-clr:#B8963E;--more-clr:#8A6F5E;--onboard-clr:#A0917E;
+}
+body[data-theme="dark"]{
+  --bg:#1A1220;--surface:#241830;--ink:#F2E4D4;--mut:#A99BB8;
+  --ac:#E8A87C;--acs:#3A2438;--sg:#9BAE85;--sgs:#28321F;
+  --bd:rgba(242,228,212,.12);--in:#1F1428;
+  --group-bg:#1E1528;--arrow:#E8A87C;
+  --home-clr:#E8A87C;--cycle-clr:#E89AB8;--hormones-clr:#9BAE85;--body-clr:#D4B86A;--more-clr:#A99BB8;--onboard-clr:#8A7B9E;
+}
+body{background:var(--bg);color:var(--ink);}
+.header{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--bd);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;}
+.header h1{font-size:18px;font-weight:500;letter-spacing:-0.3px;}
+.toggle-btn{width:36px;height:36px;border-radius:50%;border:1px solid var(--bd);background:transparent;color:var(--ink);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;}
+.toggle-btn:hover{border-color:var(--ac);}
+.diagram-wrap{padding:24px;overflow-x:auto;}
+svg{display:block;margin:0 auto;}
+svg text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+
+/* Hover highlight system */
+#flow.dimmed .section,
+#flow.dimmed .flow-group,
+#flow.dimmed .hub{opacity:0.12;transition:opacity .2s;}
+#flow .section,#flow .flow-group,#flow .hub{transition:opacity .2s;}
+#flow.dimmed .highlighted{opacity:1 !important;}
+
+/* Legend */
+.legend{display:flex;gap:20px;align-items:center;justify-content:center;padding:12px 24px;font-size:11px;color:var(--mut);}
+.legend-item{display:flex;align-items:center;gap:5px;}
+.legend-swatch{width:20px;height:10px;border-radius:3px;border:2px solid;}
+.legend-line{width:20px;height:0;border-top:2px solid var(--ac);}
+.legend-dash{width:20px;height:0;border-top:2px dashed var(--mut);}
+</style>
+</head>
+<body data-theme="light">
+<div class="header">
+  <h1>Lumen screen flow</h1>
+  <button class="toggle-btn" id="theme-toggle" onclick="toggleTheme()">&#9790;</button>
+</div>
+<div class="diagram-wrap">
+<svg id="flow" viewBox="0 0 1360 920" width="1360" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <marker id="arrow" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,0 L10,4 L0,8 z" fill="var(--arrow)"/>
+  </marker>
+  <marker id="arrow-mut" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,0 L10,4 L0,8 z" fill="var(--mut)"/>
+  </marker>
+</defs>
+
+<!-- ===================== ONBOARDING (left chain) ===================== -->
+<g class="section" data-section="onboarding">
+  <rect x="20" y="310" width="370" height="200" rx="14" fill="var(--group-bg)" stroke="var(--onboard-clr)" stroke-width="2"/>
+  <text x="36" y="336" fill="var(--ink)" font-size="13" font-weight="500">Onboarding</text>
+  <!-- Chain of numbered circles -->
+  <g fill="var(--group-bg)" stroke="var(--onboard-clr)" stroke-width="1.5">
+    <circle cx="60" cy="380" r="16"/><circle cx="108" cy="380" r="16"/>
+    <circle cx="156" cy="380" r="16"/><circle cx="204" cy="380" r="16"/>
+    <circle cx="252" cy="380" r="16"/><circle cx="300" cy="380" r="16"/>
+    <circle cx="348" cy="380" r="16"/>
+  </g>
+  <g fill="var(--ink)" font-size="11" font-weight="500" text-anchor="middle">
+    <text x="60" y="384">1</text><text x="108" y="384">2</text>
+    <text x="156" y="384">3</text><text x="204" y="384">4</text>
+    <text x="252" y="384">5</text><text x="300" y="384">6</text>
+    <text x="348" y="384">7</text>
+  </g>
+  <!-- Arrows between circles -->
+  <g stroke="var(--arrow)" stroke-width="1.2" fill="none" marker-end="url(#arrow)">
+    <line x1="76" y1="380" x2="90" y2="380"/>
+    <line x1="124" y1="380" x2="138" y2="380"/>
+    <line x1="172" y1="380" x2="186" y2="380"/>
+    <line x1="220" y1="380" x2="234" y2="380"/>
+    <line x1="268" y1="380" x2="282" y2="380"/>
+    <line x1="316" y1="380" x2="330" y2="380"/>
+  </g>
+  <!-- Screen labels below -->
+  <g fill="var(--mut)" font-size="8" text-anchor="middle">
+    <text x="60" y="406">Welcome</text><text x="108" y="406">Account</text>
+    <text x="156" y="406">Cycle</text><text x="204" y="406">Baseline</text>
+    <text x="252" y="406">Goals</text><text x="300" y="406">Hormones</text>
+    <text x="348" y="406">Notifs</text>
+  </g>
+  <!-- Screens list -->
+  <g fill="var(--mut)" font-size="9">
+    <text x="36" y="440">1 Welcome</text>
+    <text x="36" y="454">2 Account</text>
+    <text x="36" y="468">3 Cycle setup</text>
+    <text x="36" y="482">4 Baseline health</text>
+    <text x="200" y="440">5 Goals</text>
+    <text x="200" y="454">6 Hormone prefs</text>
+    <text x="200" y="468">7 Notifications</text>
+  </g>
+</g>
+
+<!-- Arrow from onboarding to hub -->
+<g class="flow-group" data-flow="onboard-to-hub" data-connects="onboarding,hub">
+  <line x1="390" y1="400" x2="490" y2="400" stroke="var(--arrow)" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+  <text x="420" y="392" fill="var(--mut)" font-size="9" font-weight="400">complete setup</text>
+</g>
+
+<!-- ===================== DASHBOARD HUB (center) ===================== -->
+<g class="hub" data-section="hub">
+  <rect x="500" y="350" width="160" height="100" rx="18" fill="var(--group-bg)" stroke="var(--home-clr)" stroke-width="3"/>
+  <text x="580" y="388" fill="var(--ink)" font-size="15" font-weight="500" text-anchor="middle">8 Dashboard</text>
+  <text x="580" y="406" fill="var(--mut)" font-size="10" text-anchor="middle">central hub</text>
+  <text x="580" y="440" fill="var(--home-clr)" font-size="9" text-anchor="middle" font-weight="500">&#9750; Home tab</text>
+</g>
+
+<!-- ===================== CYCLE (upper right) ===================== -->
+<g class="section" data-section="cycle">
+  <rect x="790" y="120" width="220" height="170" rx="14" fill="var(--group-bg)" stroke="var(--cycle-clr)" stroke-width="2"/>
+  <text x="806" y="146" fill="var(--ink)" font-size="13" font-weight="500">Cycle</text>
+  <text x="862" y="146" fill="var(--mut)" font-size="10">&#9680; Cycle tab</text>
+  <g fill="var(--mut)" font-size="10">
+    <text x="806" y="170">10 Cycle calendar</text>
+    <text x="806" y="186">11 Day detail</text>
+    <text x="806" y="202">12 Symptom form</text>
+    <text x="806" y="218">13 Body map</text>
+    <text x="806" y="234">14 Phase correction</text>
+  </g>
+</g>
+
+<!-- Hub → Cycle -->
+<g class="flow-group" data-flow="hub-cycle" data-connects="hub,cycle">
+  <path d="M660,380 Q730,380 790,250" stroke="var(--arrow)" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="720" y="310" fill="var(--mut)" font-size="9">tap Cycle tab</text>
+</g>
+
+<!-- ===================== HORMONES & STUDIES (right) ===================== -->
+<g class="section" data-section="hormones">
+  <rect x="790" y="310" width="250" height="230" rx="14" fill="var(--group-bg)" stroke="var(--hormones-clr)" stroke-width="2"/>
+  <text x="806" y="336" fill="var(--ink)" font-size="13" font-weight="500">Hormones & studies</text>
+  <text x="940" y="336" fill="var(--mut)" font-size="10">&#8767; Hormones tab</text>
+  <g fill="var(--mut)" font-size="10">
+    <text x="806" y="360">15 Hormone chart</text>
+    <text x="806" y="376">15L Hormone chart (landscape)</text>
+    <text x="806" y="392">16 Hormone detail</text>
+    <text x="806" y="408">17 Studies library</text>
+    <text x="806" y="424">18 Upload study</text>
+    <text x="806" y="440">19 OCR confirmation</text>
+  </g>
+  <!-- Modal screens with dashed indicator -->
+  <rect x="802" y="448" width="220" height="16" rx="4" fill="none" stroke="var(--mut)" stroke-width="1" stroke-dasharray="3 2"/>
+  <text x="806" y="460" fill="var(--mut)" font-size="10">20 Missing data prompt</text>
+  <g fill="var(--mut)" font-size="10">
+    <text x="806" y="480">21 Confidence explainer</text>
+  </g>
+  <!-- Internal lab upload flow -->
+  <g class="flow-group" data-flow="lab-upload" data-connects="hormones">
+    <g stroke="var(--arrow)" stroke-width="1" fill="none" marker-end="url(#arrow)" opacity="0.6">
+      <line x1="890" y1="410" x2="890" y2="418"/>
+      <line x1="890" y1="426" x2="890" y2="434"/>
+      <line x1="890" y1="442" x2="890" y2="450"/>
+    </g>
+    <g fill="var(--arrow)" font-size="7" opacity="0.7">
+      <text x="896" y="416">upload lab</text>
+      <text x="896" y="432">confirm OCR</text>
+      <text x="896" y="448">review gaps</text>
+    </g>
+  </g>
+</g>
+
+<!-- Hub → Hormones -->
+<g class="flow-group" data-flow="hub-hormones" data-connects="hub,hormones">
+  <line x1="660" y1="400" x2="788" y2="400" stroke="var(--arrow)" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="700" y="394" fill="var(--mut)" font-size="9">tap Hormones tab</text>
+</g>
+
+<!-- ===================== HOME & LOGGING (above hub) ===================== -->
+<g class="section" data-section="home">
+  <rect x="440" y="30" width="280" height="190" rx="14" fill="var(--group-bg)" stroke="var(--home-clr)" stroke-width="2"/>
+  <text x="456" y="56" fill="var(--ink)" font-size="13" font-weight="500">Home & logging</text>
+  <!-- Modal screen 9 with dashed indicator -->
+  <rect x="452" y="64" width="248" height="16" rx="4" fill="none" stroke="var(--mut)" stroke-width="1" stroke-dasharray="3 2"/>
+  <text x="456" y="76" fill="var(--mut)" font-size="10">9 Quick check-in (modal)</text>
+  <g fill="var(--mut)" font-size="10">
+    <text x="456" y="96">10 Cycle calendar</text>
+    <text x="456" y="112">11 Day detail</text>
+    <text x="456" y="128">12 Symptom form</text>
+    <text x="456" y="144">13 Body map</text>
+    <text x="456" y="160">14 Phase correction</text>
+  </g>
+  <!-- Progressive disclosure sub-flow -->
+  <g class="flow-group" data-flow="progressive-disclosure" data-connects="home">
+    <g stroke="var(--arrow)" stroke-width="1" fill="none" marker-end="url(#arrow)" opacity="0.6">
+      <line x1="610" y1="78" x2="610" y2="108"/>
+      <line x1="610" y1="118" x2="610" y2="130"/>
+      <line x1="610" y1="136" x2="610" y2="148"/>
+    </g>
+    <g fill="var(--arrow)" font-size="7" opacity="0.7">
+      <text x="616" y="96">tap quick log</text>
+      <text x="616" y="126">+ add details</text>
+      <text x="616" y="144">tap body map</text>
+    </g>
+  </g>
+</g>
+
+<!-- Hub → Home (quick check-in) -->
+<g class="flow-group" data-flow="hub-home" data-connects="hub,home">
+  <path d="M580,350 Q580,280 580,222" stroke="var(--arrow)" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="586" y="290" fill="var(--mut)" font-size="9">tap quick log</text>
+</g>
+
+<!-- ===================== BODY & ACTIVITY (lower right) ===================== -->
+<g class="section" data-section="body">
+  <rect x="790" y="570" width="220" height="140" rx="14" fill="var(--group-bg)" stroke="var(--body-clr)" stroke-width="2"/>
+  <text x="806" y="596" fill="var(--ink)" font-size="13" font-weight="500">Body & activity</text>
+  <text x="910" y="596" fill="var(--mut)" font-size="10">&#10022; Body tab</text>
+  <g fill="var(--mut)" font-size="10">
+    <text x="806" y="620">22 Body metrics calendar</text>
+    <text x="806" y="636">23 Body metrics entry</text>
+    <text x="806" y="652">24 Activity calendar</text>
+    <text x="806" y="668">25 Activity entry</text>
+  </g>
+</g>
+
+<!-- Hub → Body -->
+<g class="flow-group" data-flow="hub-body" data-connects="hub,body">
+  <path d="M660,430 Q730,500 790,610" stroke="var(--arrow)" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="710" y="530" fill="var(--mut)" font-size="9">tap Body tab</text>
+</g>
+
+<!-- ===================== TREATMENT (lower left) ===================== -->
+<g class="section" data-section="treatment">
+  <rect x="100" y="570" width="200" height="100" rx="14" fill="var(--group-bg)" stroke="var(--more-clr)" stroke-width="2"/>
+  <text x="116" y="596" fill="var(--ink)" font-size="13" font-weight="500">Treatment</text>
+  <text x="196" y="596" fill="var(--mut)" font-size="10">&#183;&#183;&#183; More</text>
+  <g fill="var(--mut)" font-size="10">
+    <text x="116" y="620">26 Medication log</text>
+    <text x="116" y="636">27 Add medication</text>
+  </g>
+</g>
+
+<!-- Hub → Treatment -->
+<g class="flow-group" data-flow="hub-treatment" data-connects="hub,treatment">
+  <path d="M520,450 Q400,530 302,590" stroke="var(--arrow)" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="390" y="510" fill="var(--mut)" font-size="9">tap More > Treatment</text>
+</g>
+
+<!-- ===================== REPORTS (bottom center) ===================== -->
+<g class="section" data-section="reports">
+  <rect x="370" y="570" width="200" height="120" rx="14" fill="var(--group-bg)" stroke="var(--more-clr)" stroke-width="2"/>
+  <text x="386" y="596" fill="var(--ink)" font-size="13" font-weight="500">Reports</text>
+  <text x="446" y="596" fill="var(--mut)" font-size="10">&#183;&#183;&#183; More</text>
+  <g fill="var(--mut)" font-size="10">
+    <text x="386" y="620">28 Insights hub</text>
+    <text x="386" y="636">29 Doctor report</text>
+    <text x="386" y="652">30 Share/export preview</text>
+  </g>
+</g>
+
+<!-- Hub → Reports -->
+<g class="flow-group" data-flow="hub-reports" data-connects="hub,reports">
+  <path d="M560,450 Q520,520 480,568" stroke="var(--arrow)" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="500" y="520" fill="var(--mut)" font-size="9">tap More > Reports</text>
+</g>
+
+<!-- ===================== SETTINGS (bottom right of center) ===================== -->
+<g class="section" data-section="settings">
+  <rect x="100" y="720" width="240" height="180" rx="14" fill="var(--group-bg)" stroke="var(--more-clr)" stroke-width="2"/>
+  <text x="116" y="746" fill="var(--ink)" font-size="13" font-weight="500">Settings</text>
+  <text x="176" y="746" fill="var(--mut)" font-size="10">&#183;&#183;&#183; More</text>
+  <g fill="var(--mut)" font-size="10">
+    <text x="116" y="770">31 Profile</text>
+    <text x="116" y="786">32 Cycle settings</text>
+    <text x="116" y="802">33 Hormone preferences</text>
+    <text x="116" y="818">34 Notifications</text>
+    <text x="116" y="834">35 Data export</text>
+    <text x="116" y="850">36 Privacy</text>
+    <text x="116" y="866">37 Help & about</text>
+  </g>
+</g>
+
+<!-- Hub → Settings -->
+<g class="flow-group" data-flow="hub-settings" data-connects="hub,settings">
+  <path d="M540,450 Q360,640 342,720" stroke="var(--arrow)" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="380" y="630" fill="var(--mut)" font-size="9">tap More > Settings</text>
+</g>
+
+<!-- ===================== LEGEND ===================== -->
+<g transform="translate(1060, 600)">
+  <rect x="0" y="0" width="260" height="170" rx="10" fill="var(--group-bg)" stroke="var(--bd)" stroke-width="1"/>
+  <text x="16" y="24" fill="var(--ink)" font-size="11" font-weight="500">Legend</text>
+  <!-- Tab colors -->
+  <rect x="16" y="36" width="14" height="10" rx="2" fill="none" stroke="var(--home-clr)" stroke-width="2"/>
+  <text x="36" y="45" fill="var(--mut)" font-size="9">Home tab</text>
+  <rect x="100" y="36" width="14" height="10" rx="2" fill="none" stroke="var(--cycle-clr)" stroke-width="2"/>
+  <text x="120" y="45" fill="var(--mut)" font-size="9">Cycle tab</text>
+  <rect x="16" y="56" width="14" height="10" rx="2" fill="none" stroke="var(--hormones-clr)" stroke-width="2"/>
+  <text x="36" y="65" fill="var(--mut)" font-size="9">Hormones tab</text>
+  <rect x="100" y="56" width="14" height="10" rx="2" fill="none" stroke="var(--body-clr)" stroke-width="2"/>
+  <text x="120" y="65" fill="var(--mut)" font-size="9">Body tab</text>
+  <rect x="16" y="76" width="14" height="10" rx="2" fill="none" stroke="var(--more-clr)" stroke-width="2"/>
+  <text x="36" y="85" fill="var(--mut)" font-size="9">More tab</text>
+  <rect x="100" y="76" width="14" height="10" rx="2" fill="none" stroke="var(--onboard-clr)" stroke-width="2"/>
+  <text x="120" y="85" fill="var(--mut)" font-size="9">Onboarding</text>
+  <!-- Arrow types -->
+  <line x1="16" y1="105" x2="36" y2="105" stroke="var(--arrow)" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="44" y="109" fill="var(--mut)" font-size="9">Navigation flow</text>
+  <rect x="16" y="120" width="24" height="14" rx="4" fill="none" stroke="var(--mut)" stroke-width="1" stroke-dasharray="3 2"/>
+  <text x="44" y="131" fill="var(--mut)" font-size="9">Modal / overlay screen</text>
+  <line x1="16" y1="148" x2="36" y2="148" stroke="var(--arrow)" stroke-width="1" opacity="0.6"/>
+  <text x="44" y="152" fill="var(--mut)" font-size="9">Internal sub-flow</text>
+</g>
+
+</svg>
+</div>
+
+<script>
+function toggleTheme() {
+  var next = (document.body.dataset.theme === 'light') ? 'dark' : 'light';
+  document.body.dataset.theme = next;
+  document.getElementById('theme-toggle').textContent = next === 'light' ? '\u263E' : '\u2600';
+}
+
+// Hover highlight system
+var svg = document.getElementById('flow');
+var allInteractive = svg.querySelectorAll('.section, .flow-group, .hub');
+
+function highlight(sectionId) {
+  svg.classList.add('dimmed');
+  // Highlight hovered element
+  var el = svg.querySelector('[data-section="' + sectionId + '"]');
+  if (el) el.classList.add('highlighted');
+  // Highlight connected flows and their connected sections
+  svg.querySelectorAll('.flow-group').forEach(function(flow) {
+    var connects = (flow.dataset.connects || '').split(',');
+    if (connects.indexOf(sectionId) !== -1) {
+      flow.classList.add('highlighted');
+      connects.forEach(function(sid) {
+        var target = svg.querySelector('[data-section="' + sid + '"]');
+        if (target) target.classList.add('highlighted');
+      });
+    }
+  });
+}
+
+function unhighlight() {
+  svg.classList.remove('dimmed');
+  svg.querySelectorAll('.highlighted').forEach(function(el) {
+    el.classList.remove('highlighted');
+  });
+}
+
+allInteractive.forEach(function(el) {
+  el.style.cursor = 'pointer';
+  el.addEventListener('mouseenter', function() {
+    var section = el.dataset.section;
+    if (!section && el.dataset.connects) {
+      // For flow-group, highlight first connected section
+      section = el.dataset.connects.split(',')[0];
+    }
+    if (section) highlight(section);
+  });
+  el.addEventListener('mouseleave', unhighlight);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+<div id="s9" data-theme="light" style="background:var(--b);border-radius:12px;padding:1.5rem;display:flex;justify-content:center;">
+<style>
+#s9[data-theme="light"]{--b:#F1EFE8;--f:#FFFCF7;--ovl:rgba(59,42,32,.45);--ink:#3B2A20;--mut:#8A6F5E;--ac:#C25A36;--acs:#F3D9CC;--sg:#7B8F6B;--bd:rgba(59,42,32,.12);--in:#FAF6EF;}
+#s9[data-theme="dark"]{--b:#1A1220;--f:#241830;--ovl:rgba(0,0,0,.6);--ink:#F2E4D4;--mut:#A99BB8;--ac:#E8A87C;--acs:#3A2438;--sg:#9BAE85;--bd:rgba(242,228,212,.12);--in:#1F1428;}
+.f{width:300px;background:var(--in);border-radius:36px;border:1px solid var(--bd);min-height:600px;position:relative;overflow:hidden;display:flex;flex-direction:column;}
+.tg{position:absolute;top:14px;right:16px;width:30px;height:30px;border-radius:50%;border:1px solid var(--bd);background:var(--f);color:var(--ink);cursor:pointer;font-size:13px;z-index:3;}
+.dim{position:absolute;inset:0;background:var(--ovl);}
+.dimc{position:absolute;top:42px;left:18px;right:18px;opacity:.35;font-size:10px;color:var(--ink);}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--f);border-radius:24px 24px 0 0;padding:18px 22px 26px;}
+.hd{width:32px;height:3px;background:var(--bd);border-radius:2px;margin:0 auto 14px;}
+.tag{font-size:10px;color:var(--sg);text-transform:uppercase;letter-spacing:1px;font-weight:500;}
+.h{font-size:18px;color:var(--ink);font-weight:500;margin:4px 0 4px;}
+.sb{font-size:11px;color:var(--mut);margin:0 0 18px;}
+.lb{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin:0 0 8px;}
+.scale{display:flex;gap:4px;margin-bottom:6px;}
+.s{flex:1;height:30px;border-radius:7px;background:var(--in);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--mut);}
+.s.on{background:var(--ac);color:#FFFCF7;border-color:var(--ac);font-weight:500;}
+.lg{display:flex;justify-content:space-between;font-size:9px;color:var(--mut);margin-bottom:14px;}
+.moods{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px;}
+.m{aspect-ratio:1;background:var(--in);border:1px solid var(--bd);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:9px;color:var(--mut);}
+.m.on{background:var(--acs);border-color:var(--ac);color:var(--ac);}
+.mi{font-size:18px;margin-bottom:1px;}
+.btn{width:100%;background:var(--ac);color:#FFFCF7;border:none;border-radius:14px;padding:13px;font-size:14px;font-weight:500;cursor:pointer;}
+.more{display:block;width:100%;background:none;border:none;color:var(--mut);font-size:11px;margin-top:8px;cursor:pointer;}
+</style>
+<div class="f">
+<button class="tg" onclick="var w=document.getElementById('s9');w.dataset.theme=w.dataset.theme==='light'?'dark':'light';this.textContent=w.dataset.theme==='light'?'☾':'☀';">☾</button>
+<div class="dimc">Good morning, Maya<br><br>Luteal · Day 22</div>
+<div class="dim"></div>
+<div class="sheet">
+<div class="hd"></div>
+<div class="tag">Daily check-in</div>
+<div class="h">How's today?</div>
+<div class="sb">15 seconds. Add detail later.</div>
+<div class="lb">Pain level</div>
+<div class="scale"><div class="s">0</div><div class="s">1</div><div class="s">2</div><div class="s on">3</div><div class="s">4</div><div class="s">5</div><div class="s">6</div><div class="s">7</div><div class="s">8</div><div class="s">9</div></div>
+<div class="lg"><span>None</span><span>Worst</span></div>
+<div class="lb">Mood</div>
+<div class="moods">
+<div class="m"><span class="mi">◔</span>Low</div>
+<div class="m on"><span class="mi">◐</span>Tired</div>
+<div class="m"><span class="mi">◑</span>Steady</div>
+<div class="m"><span class="mi">●</span>Bright</div>
+</div>
+<button class="btn">Save check-in</button>
+<button class="more">+ Add details</button>
+</div>
+</div>
+</div>

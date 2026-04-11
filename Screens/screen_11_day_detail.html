@@ -1,0 +1,65 @@
+<div id="sb" data-theme="light" style="background:var(--b);border-radius:12px;padding:1.5rem;display:flex;justify-content:center;">
+<style>
+#sb[data-theme="light"]{--b:#F1EFE8;--f:#FFFCF7;--ink:#3B2A20;--mut:#8A6F5E;--ac:#C25A36;--acs:#F3D9CC;--sg:#7B8F6B;--sgs:#E4EADD;--bd:rgba(59,42,32,.12);--in:#FAF6EF;}
+#sb[data-theme="dark"]{--b:#1A1220;--f:#241830;--ink:#F2E4D4;--mut:#A99BB8;--ac:#E8A87C;--acs:#3A2438;--sg:#9BAE85;--sgs:#28321F;--bd:rgba(242,228,212,.12);--in:#1F1428;}
+.f{width:300px;background:var(--f);border-radius:36px;border:1px solid var(--bd);padding:42px 20px 12px;min-height:600px;position:relative;display:flex;flex-direction:column;}
+.tg{position:absolute;top:14px;right:16px;width:30px;height:30px;border-radius:50%;border:1px solid var(--bd);background:transparent;color:var(--ink);cursor:pointer;font-size:13px;}
+.bk{position:absolute;top:16px;left:18px;background:none;border:none;color:var(--mut);font-size:18px;cursor:pointer;}
+.dh{text-align:center;margin:18px 0 14px;}
+.dw{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:1px;}
+.dd{font-size:22px;color:var(--ink);font-weight:500;margin:2px 0;}
+.dp{display:inline-block;background:var(--acs);color:var(--ac);font-size:9px;padding:3px 9px;border-radius:8px;text-transform:uppercase;letter-spacing:.6px;font-weight:500;}
+.sec{margin-bottom:12px;}
+.sl{font-size:9px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px;display:flex;justify-content:space-between;}
+.sl span:last-child{color:var(--ac);}
+.row{background:var(--in);border:1px solid var(--bd);border-radius:11px;padding:9px 12px;display:flex;align-items:center;gap:9px;font-size:11px;color:var(--ink);}
+.row+.row{margin-top:5px;}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ac);flex-shrink:0;}
+.dot.sg{background:var(--sg);}
+.bar{flex:1;height:4px;background:var(--bd);border-radius:2px;position:relative;margin-left:6px;}
+.bar i{position:absolute;left:0;top:0;bottom:0;background:var(--ac);border-radius:2px;width:30%;}
+.tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;}
+.t{background:var(--in);border:1px solid var(--bd);border-radius:7px;padding:3px 8px;font-size:9px;color:var(--ink);}
+.note{background:var(--sgs);border-radius:11px;padding:9px 12px;font-size:10px;color:var(--ink);font-style:italic;line-height:1.5;}
+.add{width:100%;background:transparent;border:1px dashed var(--bd);border-radius:11px;padding:8px;color:var(--mut);font-size:11px;cursor:pointer;}
+.nav{margin-top:auto;display:flex;border-top:1px solid var(--bd);padding-top:8px;}
+.nb{flex:1;text-align:center;font-size:9px;color:var(--mut);padding:4px 0;}
+.nb.on{color:var(--ac);font-weight:500;}
+.ni{display:block;font-size:14px;}
+</style>
+<div class="f">
+<button class="bk">‹</button>
+<button class="tg" onclick="var w=document.getElementById('sb');w.dataset.theme=w.dataset.theme==='light'?'dark':'light';this.textContent=w.dataset.theme==='light'?'☾':'☀';">☾</button>
+<div class="dh">
+<div class="dw">Tuesday</div>
+<div class="dd">April 7</div>
+<div class="dp">Luteal · Day 20</div>
+</div>
+<div class="sec">
+<div class="sl"><span>Symptoms</span><span>Edit</span></div>
+<div class="row"><span class="dot"></span>Pelvic pain<div class="bar"><i></i></div><span style="font-size:9px;color:var(--mut);">3/10</span></div>
+<div class="row"><span class="dot"></span>Bloating<div class="bar"><i style="width:50%"></i></div><span style="font-size:9px;color:var(--mut);">5/10</span></div>
+<div class="tags"><span class="t">Lower back</span><span class="t">Cramping</span><span class="t">After lunch</span></div>
+</div>
+<div class="sec">
+<div class="sl"><span>Mood & energy</span></div>
+<div class="row"><span class="dot sg"></span>Tired · steady mood</div>
+</div>
+<div class="sec">
+<div class="sl"><span>Activity</span></div>
+<div class="row"><span class="dot sg"></span>Walk · 25 min · light</div>
+</div>
+<div class="sec">
+<div class="sl"><span>Note</span></div>
+<div class="note">Pain eased after stretching. Tea + heating pad helped.</div>
+</div>
+<button class="add">+ Add to this day</button>
+<div class="nav">
+<div class="nb"><span class="ni">⌂</span>Home</div>
+<div class="nb on"><span class="ni">◐</span>Cycle</div>
+<div class="nb"><span class="ni">∿</span>Hormones</div>
+<div class="nb"><span class="ni">✦</span>Body</div>
+<div class="nb"><span class="ni">···</span>More</div>
+</div>
+</div>
+</div>

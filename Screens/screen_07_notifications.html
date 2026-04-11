@@ -1,0 +1,45 @@
+<div id="s7" data-theme="light" style="background:var(--b);border-radius:12px;padding:1.5rem;display:flex;justify-content:center;">
+<style>
+#s7[data-theme="light"]{--b:#F1EFE8;--f:#FFFCF7;--ink:#3B2A20;--mut:#8A6F5E;--ac:#C25A36;--acs:#F3D9CC;--sg:#7B8F6B;--bd:rgba(59,42,32,.12);--in:#FAF6EF;}
+#s7[data-theme="dark"]{--b:#1A1220;--f:#241830;--ink:#F2E4D4;--mut:#A99BB8;--ac:#E8A87C;--acs:#3A2438;--sg:#9BAE85;--bd:rgba(242,228,212,.12);--in:#1F1428;}
+.f{width:300px;background:var(--f);border-radius:36px;border:1px solid var(--bd);padding:48px 24px 28px;min-height:560px;position:relative;display:flex;flex-direction:column;}
+.tg{position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:50%;border:1px solid var(--bd);background:transparent;color:var(--ink);cursor:pointer;}
+.bk{position:absolute;top:18px;left:20px;background:none;border:none;color:var(--mut);font-size:18px;cursor:pointer;}
+.tag{font-size:11px;color:var(--sg);text-transform:uppercase;letter-spacing:1.5px;font-weight:500;margin:24px 0 14px;}
+.h{font-size:21px;font-weight:500;color:var(--ink);margin:0 0 6px;letter-spacing:-.3px;}
+.sb{font-size:12px;color:var(--mut);margin:0 0 18px;line-height:1.5;}
+.bell{width:64px;height:64px;border-radius:50%;background:var(--acs);display:flex;align-items:center;justify-content:center;margin:6px auto 14px;color:var(--ac);font-size:28px;}
+.nl{display:flex;flex-direction:column;gap:8px;}
+.n{background:var(--in);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;}
+.n.on{background:var(--acs);border-color:var(--ac);}
+.nt{flex:1;}
+.ntt{font-size:12px;color:var(--ink);font-weight:500;}
+.ntd{font-size:10px;color:var(--mut);margin-top:2px;}
+.tgl{width:30px;height:18px;border-radius:9px;background:var(--bd);position:relative;flex-shrink:0;}
+.n.on .tgl{background:var(--ac);}
+.tgl::after{content:"";position:absolute;width:14px;height:14px;border-radius:50%;background:var(--f);top:2px;left:2px;}
+.n.on .tgl::after{left:14px;}
+.btn{width:100%;background:var(--ac);color:#FFFCF7;border:none;border-radius:14px;padding:13px;font-size:14px;font-weight:500;cursor:pointer;margin-top:auto;}
+.skip{background:none;border:none;color:var(--mut);font-size:12px;margin-top:8px;cursor:pointer;}
+.dt{display:flex;gap:6px;justify-content:center;margin-top:10px;}
+.d{width:6px;height:6px;border-radius:50%;background:var(--bd);}
+.d.on{background:var(--ac);width:18px;border-radius:3px;}
+</style>
+<div class="f">
+<button class="bk">‹</button>
+<button class="tg" onclick="var w=document.getElementById('s7');w.dataset.theme=w.dataset.theme==='light'?'dark':'light';this.textContent=w.dataset.theme==='light'?'☾':'☀';">☾</button>
+<div class="tag">Step 7 of 7 · Reminders</div>
+<div class="bell">◐</div>
+<h1 class="h" style="text-align:center;">Stay in tune</h1>
+<p class="sb" style="text-align:center;">Soft nudges only. Mute anytime.</p>
+<div class="nl">
+<div class="n on"><div class="nt"><div class="ntt">Daily check-in</div><div class="ntd">Log symptoms each evening</div></div><span class="tgl"></span></div>
+<div class="n on"><div class="nt"><div class="ntt">Phase shifts</div><div class="ntd">When you enter a new phase</div></div><span class="tgl"></span></div>
+<div class="n"><div class="nt"><div class="ntt">Period prediction</div><div class="ntd">Two days before your period</div></div><span class="tgl"></span></div>
+<div class="n"><div class="nt"><div class="ntt">Medication reminders</div><div class="ntd">Once you log a treatment</div></div><span class="tgl"></span></div>
+</div>
+<button class="btn">Allow & finish</button>
+<button class="skip">Not now</button>
+<div class="dt"><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d on"></span></div>
+</div>
+</div>

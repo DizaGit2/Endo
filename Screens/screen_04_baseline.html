@@ -1,0 +1,47 @@
+<div id="s4" data-theme="light" style="background:var(--b);border-radius:12px;padding:1.5rem;display:flex;justify-content:center;">
+<style>
+#s4[data-theme="light"]{--b:#F1EFE8;--f:#FFFCF7;--ink:#3B2A20;--mut:#8A6F5E;--ac:#C25A36;--acs:#F3D9CC;--sg:#7B8F6B;--bd:rgba(59,42,32,.12);--in:#FAF6EF;}
+#s4[data-theme="dark"]{--b:#1A1220;--f:#241830;--ink:#F2E4D4;--mut:#A99BB8;--ac:#E8A87C;--acs:#3A2438;--sg:#9BAE85;--bd:rgba(242,228,212,.12);--in:#1F1428;}
+.f{width:300px;background:var(--f);border-radius:36px;border:1px solid var(--bd);padding:48px 24px 28px;min-height:560px;position:relative;display:flex;flex-direction:column;}
+.tg{position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:50%;border:1px solid var(--bd);background:transparent;color:var(--ink);cursor:pointer;}
+.bk{position:absolute;top:18px;left:20px;background:none;border:none;color:var(--mut);font-size:18px;cursor:pointer;}
+.tag{font-size:11px;color:var(--sg);text-transform:uppercase;letter-spacing:1.5px;font-weight:500;margin:24px 0 14px;}
+.h{font-size:21px;font-weight:500;color:var(--ink);margin:0 0 6px;letter-spacing:-.3px;}
+.sb{font-size:12px;color:var(--mut);margin:0 0 18px;line-height:1.5;}
+.lb{font-size:11px;color:var(--mut);margin:14px 0 6px;font-weight:500;text-transform:uppercase;letter-spacing:.5px;}
+.r2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.fld{background:var(--in);border:1px solid var(--bd);border-radius:12px;padding:11px 12px;}
+.fv{font-size:18px;color:var(--ink);font-weight:500;}
+.fu{font-size:10px;color:var(--mut);margin-left:3px;}
+.dx{display:flex;flex-direction:column;gap:6px;}
+.opt{background:var(--in);border:1px solid var(--bd);border-radius:10px;padding:11px 12px;font-size:12px;color:var(--ink);cursor:pointer;display:flex;align-items:center;gap:10px;}
+.opt.on{background:var(--acs);border-color:var(--ac);color:var(--ac);}
+.dot{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--bd);flex-shrink:0;}
+.opt.on .dot{border-color:var(--ac);background:radial-gradient(circle,var(--ac) 40%,transparent 45%);}
+.btn{width:100%;background:var(--ac);color:#FFFCF7;border:none;border-radius:14px;padding:13px;font-size:14px;font-weight:500;cursor:pointer;margin-top:auto;}
+.dt{display:flex;gap:6px;justify-content:center;margin-top:12px;}
+.d{width:6px;height:6px;border-radius:50%;background:var(--bd);}
+.d.on{background:var(--ac);width:18px;border-radius:3px;}
+</style>
+<div class="f">
+<button class="bk">‹</button>
+<button class="tg" onclick="var w=document.getElementById('s4');w.dataset.theme=w.dataset.theme==='light'?'dark':'light';this.textContent=w.dataset.theme==='light'?'☾':'☀';">☾</button>
+<div class="tag">Step 4 of 7 · About you</div>
+<h1 class="h">A few baseline details</h1>
+<p class="sb">Used to personalize hormone ranges. Edit anytime.</p>
+<div class="r2">
+<div><div class="lb">Age</div><div class="fld"><span class="fv">29</span><span class="fu">yrs</span></div></div>
+<div><div class="lb">Height</div><div class="fld"><span class="fv">165</span><span class="fu">cm</span></div></div>
+</div>
+<div class="lb">Weight</div>
+<div class="fld"><span class="fv">62</span><span class="fu">kg</span></div>
+<div class="lb">Endometriosis status</div>
+<div class="dx">
+<div class="opt on"><div class="dot"></div>Diagnosed</div>
+<div class="opt"><div class="dot"></div>Suspected, undiagnosed</div>
+<div class="opt"><div class="dot"></div>Not applicable</div>
+</div>
+<button class="btn">Continue</button>
+<div class="dt"><span class="d"></span><span class="d"></span><span class="d"></span><span class="d on"></span><span class="d"></span><span class="d"></span><span class="d"></span></div>
+</div>
+</div>
