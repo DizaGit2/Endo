@@ -163,21 +163,19 @@ const THEME_CSS = \`
 function normalizeScreen(html, screenKey, isThumbnail) {
   let processed = html.trim();
 
+  // Detect Pattern B BEFORE stripping onclick (onclick contains setProperty)
+  var isPatternB = processed.includes('setProperty');
+
   // Remove all onclick handlers (theme toggles)
   processed = processed.replace(/onclick="[^"]*"/g, '');
 
-  // For Pattern B screens: detect by setProperty usage
-  const isPatternB = processed.includes('setProperty');
-
   if (isPatternB) {
     // Strip inline CSS custom property declarations from the FIRST div's style attribute only
-    // Match the first style attribute in the html
-    let firstStyleReplaced = false;
+    var firstStyleReplaced = false;
     processed = processed.replace(/style="([^"]*)"/, function(match, styleContent) {
       if (firstStyleReplaced) return match;
       firstStyleReplaced = true;
-      // Remove --varname:value; pairs
-      const cleaned = styleContent.replace(/--[\\w-]+\\s*:\\s*[^;]+;?\\s*/g, '');
+      var cleaned = styleContent.replace(/--[\\w-]+\\s*:\\s*[^;]+;?\\s*/g, '');
       return 'style="' + cleaned + '"';
     });
   }
@@ -193,8 +191,10 @@ function normalizeScreen(html, screenKey, isThumbnail) {
     }
   }
 
-  // Wrap in full HTML document with universal theme CSS
-  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + THEME_CSS + ' body{margin:0;overflow:hidden;}</style></head><body style="margin:0;overflow:hidden">' + processed + '</body></html>';
+  // Inject postMessage listener for theme changes (works cross-origin, unlike contentDocument)
+  var themeListener = '<scr' + 'ipt>window.addEventListener("message",function(e){if(e.data&&e.data.type==="theme"){var r=document.querySelector("[data-theme]");if(r){r.dataset.theme=e.data.theme;var v=e.data.vars;if(v){Object.keys(v).forEach(function(k){r.style.setProperty("--"+k,v[k])})}}});</scr' + 'ipt>';
+
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + THEME_CSS + ' body{margin:0;overflow:hidden;}</style></head><body style="margin:0;overflow:hidden">' + processed + themeListener + '</body></html>';
 }
 
 function currentTheme() {
@@ -202,28 +202,24 @@ function currentTheme() {
 }
 
 function applyThemeToIframe(iframe) {
+  var theme = currentTheme();
+  var vars = theme === 'dark' ? DARK_VARS : LIGHT_VARS;
+  // Use postMessage for reliable cross-frame communication
   try {
-    const doc = iframe.contentDocument;
-    if (!doc) return;
-    const root = doc.querySelector('[data-theme]');
-    if (root) {
-      const theme = currentTheme();
-      root.dataset.theme = theme;
-      // Also set properties directly for any remaining inline patterns
-      const vars = theme === 'dark' ? DARK_VARS : LIGHT_VARS;
-      Object.keys(vars).forEach(function(k) { root.style.setProperty('--' + k, vars[k]); });
+    if (iframe.contentWindow) {
+      iframe.contentWindow.postMessage({type:'theme', theme:theme, vars:vars}, '*');
     }
   } catch(e) {}
 }
 
 function toggleTheme() {
-  const next = currentTheme() === 'light' ? 'dark' : 'light';
+  var next = currentTheme() === 'light' ? 'dark' : 'light';
   document.body.dataset.theme = next;
   document.getElementById('theme-toggle').textContent = next === 'light' ? '\\u263E' : '\\u2600';
-  // Update all loaded iframes
+  // Update all loaded iframes via postMessage
   document.querySelectorAll('.cell-frame iframe').forEach(applyThemeToIframe);
   // Update lightbox iframe if open
-  const lbIframe = document.getElementById('lb-iframe');
+  var lbIframe = document.getElementById('lb-iframe');
   if (lbIframe && lbIframe.srcdoc) applyThemeToIframe(lbIframe);
 }
 
