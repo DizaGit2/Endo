@@ -6,15 +6,16 @@
 <title>Lumen — Screen viewer</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:#F1EFE8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;}
+html,body{height:100%;overflow:hidden;}
+body{background:#F1EFE8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;}
 body[data-theme="dark"]{background:#1A1220;}
-.nav{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:inherit;position:sticky;top:0;z-index:10;}
-.nav-left{display:flex;align-items:center;gap:10px;}
-.nav a{font-size:13px;color:#8A6F5E;text-decoration:none;border:1px solid rgba(59,42,32,.12);border-radius:8px;padding:6px 10px;white-space:nowrap;}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:inherit;flex-shrink:0;}
+.nav-left{display:flex;align-items:center;gap:8px;min-width:0;}
+.nav a{font-size:12px;color:#8A6F5E;text-decoration:none;border:1px solid rgba(59,42,32,.12);border-radius:8px;padding:5px 10px;white-space:nowrap;flex-shrink:0;}
 .nav a:hover{color:#C25A36;border-color:#C25A36;}
-.nav .title{font-size:13px;font-weight:500;color:#3B2A20;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.nav-right{display:flex;align-items:center;gap:6px;}
-.nav .arrow{width:32px;height:32px;border-radius:50%;border:1px solid rgba(59,42,32,.12);background:transparent;color:#3B2A20;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;}
+.nav .title{font-size:12px;font-weight:500;color:#3B2A20;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.nav-right{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.nav .arrow{width:32px;height:32px;border-radius:50%;border:1px solid rgba(59,42,32,.12);background:transparent;color:#3B2A20;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;}
 .nav .arrow:hover{border-color:#C25A36;color:#C25A36;}
 .nav .arrow:disabled{opacity:.3;cursor:default;}
 body[data-theme="dark"] .nav a{color:#A99BB8;border-color:rgba(242,228,212,.12);}
@@ -22,8 +23,9 @@ body[data-theme="dark"] .nav a:hover{color:#E8A87C;border-color:#E8A87C;}
 body[data-theme="dark"] .nav .title{color:#F2E4D4;}
 body[data-theme="dark"] .nav .arrow{color:#F2E4D4;border-color:rgba(242,228,212,.12);}
 body[data-theme="dark"] .nav .arrow:hover{color:#E8A87C;border-color:#E8A87C;}
-.viewer{flex:1;display:flex;align-items:center;justify-content:center;padding:8px;overflow:hidden;}
-.viewer iframe{border:none;transform-origin:top center;display:block;}
+.viewer{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
+.iframe-wrap{overflow:hidden;flex-shrink:0;}
+.iframe-wrap iframe{border:none;display:block;transform-origin:top left;}
 </style>
 </head>
 <body data-theme="light">
@@ -101,26 +103,36 @@ function loadScreen(idx) {
   location.hash = s.file;
 
   var isLandscape = s.file.includes('landscape');
-  var nativeW = isLandscape ? 540 : 300;
-  var nativeH = isLandscape ? 380 : 640;
+  // The screen's outer div has ~1.5rem padding each side + 300px frame = ~348px
+  // The phone frame inside is 300px wide, ~600-640px tall
+  var nativeW = isLandscape ? 592 : 348;
+  var nativeH = isLandscape ? 430 : 720;
 
   var viewer = document.getElementById('viewer');
-  var viewerW = viewer.clientWidth - 16;
-  var viewerH = viewer.clientHeight - 16;
+  var availW = viewer.clientWidth;
+  var availH = viewer.clientHeight;
 
-  // Scale to fit available space while maintaining aspect ratio
-  var scaleW = viewerW / (nativeW + 48); // +48 for padding in the screen's outer div
-  var scaleH = viewerH / (nativeH + 48);
-  var scale = Math.min(scaleW, scaleH, 2); // cap at 2x to avoid over-scaling on desktop
+  // Scale to fill available space
+  var scale = Math.min(availW / nativeW, availH / nativeH);
+
+  var scaledW = Math.floor(nativeW * scale);
+  var scaledH = Math.floor(nativeH * scale);
+
+  // Build wrapper + iframe
+  var wrap = document.createElement('div');
+  wrap.className = 'iframe-wrap';
+  wrap.style.width = scaledW + 'px';
+  wrap.style.height = scaledH + 'px';
 
   var iframe = document.createElement('iframe');
-  iframe.style.width = (nativeW + 48) + 'px';
-  iframe.style.height = (nativeH + 80) + 'px';
+  iframe.style.width = nativeW + 'px';
+  iframe.style.height = nativeH + 'px';
   iframe.style.transform = 'scale(' + scale + ')';
   iframe.src = 'Screens/' + s.file;
 
+  wrap.appendChild(iframe);
   viewer.innerHTML = '';
-  viewer.appendChild(iframe);
+  viewer.appendChild(wrap);
 }
 
 function go(delta) {
@@ -135,14 +147,18 @@ document.addEventListener('keydown', function(e) {
 
 // Touch swipe support
 var touchStartX = 0;
-document.addEventListener('touchstart', function(e) { touchStartX = e.touches[0].clientX; });
+document.addEventListener('touchstart', function(e) { touchStartX = e.touches[0].clientX; }, {passive:true});
 document.addEventListener('touchend', function(e) {
   var dx = e.changedTouches[0].clientX - touchStartX;
   if (Math.abs(dx) > 60) go(dx < 0 ? 1 : -1);
 });
 
 window.addEventListener('hashchange', function() { loadScreen(getIdxFromHash()); });
-window.addEventListener('resize', function() { loadScreen(currentIdx); });
+var resizeTimer;
+window.addEventListener('resize', function() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(function() { loadScreen(currentIdx); }, 100);
+});
 loadScreen(getIdxFromHash());
 </script>
 </body>
