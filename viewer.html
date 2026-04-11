@@ -117,9 +117,7 @@ function renderScreen(html) {
   wrap.style.left = offsetX + 'px';
   wrap.style.top = offsetY + 'px';
 
-  // Strip existing onclick toggle handlers so they don't interfere
-  var cleaned = html.replace(/onclick="[^"]*"/g, '');
-  wrap.innerHTML = cleaned;
+  wrap.innerHTML = html;
 
   viewer.innerHTML = '';
   viewer.appendChild(wrap);
