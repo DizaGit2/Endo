@@ -28,8 +28,9 @@ If you only remember one thing: **start session → paste kickoff → let it run
    ```powershell
    docker version --format '{{.Server.Version}}'   # must respond
    ```
+5. **Read the [gap register](specs/2026-05-31-build-strategy/gap-register.md).** It lists the product/clinical/legal definitions still missing, tagged per phase. Two things to start *now* because they have lead time: (a) **commission the clinical sourcing** (cycle-phase rules, hormone reference ranges, confidence formula, medication catalog) — needed before P6/P7b but slow to obtain; (b) **start the legal work** (consent text, age/eligibility gate, privacy policy, Terms, medical disclaimers) — needed at P1/P8/P9b. The cheap `formalize-from-screens` items can be extracted into a definitions doc immediately.
 
-You're ready when `writing-plans` has produced the plan and the environment checklist for P0a is green.
+You're ready when `writing-plans` has produced the plan, the environment checklist for P0a is green, and P0a/P0b/P1 have **no open blocker** in the gap register.
 
 ---
 
@@ -38,8 +39,10 @@ You're ready when `writing-plans` has produced the plan and the environment chec
 ### Step 1 — Start a fresh session
 Open a **new** Claude Code session in the repo. Fresh context per phase is intentional.
 
-### Step 2 — Find the next phase
+### Step 2 — Find the next phase, and clear its gaps first
 Open `docs/superpowers/plans/lumen-build.md`, read **§1 Status ledger**. The `NEXT PHASE TO RUN` pointer tells you which phase to run. Confirm its `dependsOn` phases are all `DONE`.
+
+**Then open the [gap register](specs/2026-05-31-build-strategy/gap-register.md) and resolve every BLOCKER tagged to this phase before you start.** These are product/clinical/legal definitions the session must not invent (cycle-phase rules, hormone ranges, the intensity scale, consent/age-gate, etc.). Record each resolution in `ARCHITECTURE.md §A` and the plan's §4 decision log. If a blocker for this phase is still open, do **not** start the phase — a session that guesses a clinical or legal value is worse than a session that waits.
 
 ### Step 3 — Paste the kickoff prompt
 Copy that phase's **kickoff prompt** verbatim from its subsection in the plan's §3 and paste it as your first message. It's ~6 lines; it points the session at the right plan phase, the relevant `ARCHITECTURE.md` sections, and `CLAUDE.md`, and tells it to execute via `subagent-driven-development` and stop at `NEEDS_REVIEW`. **Don't add anything** — the prompt is self-contained.
