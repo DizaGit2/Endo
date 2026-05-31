@@ -28,7 +28,7 @@ If you only remember one thing: **start session → paste kickoff → let it run
    ```powershell
    docker version --format '{{.Server.Version}}'   # must respond
    ```
-5. **Read the [gap register](specs/2026-05-31-build-strategy/gap-register.md).** It lists the product/clinical/legal definitions still missing, tagged per phase. Two things to start *now* because they have lead time: (a) **commission the clinical sourcing** (cycle-phase rules, hormone reference ranges, confidence formula, medication catalog) — needed before P6/P7b but slow to obtain; (b) **start the legal work** (consent text, age/eligibility gate, privacy policy, Terms, medical disclaimers) — needed at P1/P8/P9b. The cheap `formalize-from-screens` items can be extracted into a definitions doc immediately.
+5. **Read the [gap register](specs/2026-05-31-build-strategy/gap-register.md)** and its resolution artifacts in the same folder: **[`decision-sheet.md`](specs/2026-05-31-build-strategy/decision-sheet.md)** (approve/adjust the product defaults — do this first; it unblocks P1/P3a/P4a), **[`clinical-asks.md`](specs/2026-05-31-build-strategy/clinical-asks.md)** and **[`legal-asks.md`](specs/2026-05-31-build-strategy/legal-asks.md)** (hand these to a clinician / lawyer **now** — they have lead time and gate P6/P7b and P1/P8/P9b), and **`definitions.md`** (the enums extracted from the screens). The cheap `formalize-from-screens` values need no decision.
 
 You're ready when `writing-plans` has produced the plan, the environment checklist for P0a is green, and P0a/P0b/P1 have **no open blocker** in the gap register.
 
