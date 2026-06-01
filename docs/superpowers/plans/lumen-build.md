@@ -37,12 +37,12 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 
 ## §1 Status ledger  (the ONLY authority for "done")
 
-**NEXT PHASE TO RUN: P0a (in human review) → P1 after acceptance**
-**Plan revision:** r2   **Repo HEAD when ledger last updated:** _(stamp on first merge)_
+**NEXT PHASE TO RUN: P1**
+**Plan revision:** r3   **Repo HEAD when ledger last updated:** tag `phase-00a`
 
 | Phase | Name | Status | Branch | PR | Verified by | Notes |
 |---|---|---|---|---|---|---|
-| P0a | Compose stack + realm + health | NEEDS_REVIEW | phase/00a-infra | — | — | stack verified green |
+| P0a | Compose stack + realm + health | DONE | phase/00a-infra | tag `phase-00a` | 2026-05-31 | merged to main |
 | P0b | This living plan | DONE | design/build-strategy | 2026-05-31 | — | = this document |
 | P1 ⚠ | Auth + envelope-encryption spine | TODO | — | — | — | deep review |
 | P2 ⚠ | Crypto-shred + Hangfire | TODO | — | — | — | deep review |
