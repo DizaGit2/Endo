@@ -1,0 +1,9 @@
+# P0a local dev Caddy: internal CA TLS, HTTP->HTTPS redirect (Caddy default), HSTS,
+# reverse proxy to the api container. Production uses a separate Caddyfile with real
+# domains + Let's Encrypt (added in P11).
+
+localhost {
+	tls internal
+	header Strict-Transport-Security "max-age=31536000;"
+	reverse_proxy api:8080
+}

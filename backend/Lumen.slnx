@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Lumen.Api/Lumen.Api.csproj" />
+    <Project Path="src/Lumen.Application/Lumen.Application.csproj" />
+    <Project Path="src/Lumen.Domain/Lumen.Domain.csproj" />
+    <Project Path="src/Lumen.Infrastructure/Lumen.Infrastructure.csproj" />
+  </Folder>
+</Solution>

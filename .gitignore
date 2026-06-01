@@ -1,0 +1,11 @@
+# .NET build output
+**/bin/
+**/obj/
+*.user
+
+# Node (existing screen tooling)
+node_modules/
+
+# OS noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,41 @@
+{
+  "realm": "lumen",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 2592000,
+  "ssoSessionMaxLifespan": 2592000,
+  "roles": {
+    "realm": [
+      { "name": "lumen-admin", "description": "Lumen operator/admin role gating /admin." }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "api",
+      "name": "Lumen API (confidential)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "dev-api-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "redirectUris": []
+    },
+    {
+      "clientId": "mobile",
+      "name": "Lumen Flutter client (public, PKCE)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["com.lumen.app:/oauth2redirect"],
+      "attributes": { "pkce.code.challenge.method": "S256" }
+    }
+  ]
+}

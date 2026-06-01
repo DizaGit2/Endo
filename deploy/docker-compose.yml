@@ -1,0 +1,105 @@
+# Lumen P0a — minimal walking-skeleton infra: Caddy + Postgres + Keycloak + Vault + empty api.
+# Bring up:  docker compose -f deploy/docker-compose.yml up -d --build
+# Only Caddy (80/443) is public; keycloak/postgres/vault publish to 127.0.0.1 only.
+
+name: lumen
+
+services:
+  caddy:
+    image: caddy:2
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: src/Lumen.Api/Dockerfile
+    environment:
+      ASPNETCORE_URLS: "http://+:8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      VAULT_HOST: vault
+      VAULT_PORT: "8200"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: "jdbc:postgresql://postgres:5432/keycloak"
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  vault:
+    image: hashicorp/vault:1.18
+    command: ["server", "-dev", "-dev-root-token-id=root", "-dev-listen-address=0.0.0.0:8200"]
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+    ports:
+      - "127.0.0.1:8200:8200"
+    restart: unless-stopped
+
+  vault-init:
+    image: hashicorp/vault:1.18
+    depends_on:
+      - vault
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_TOKEN: root
+    entrypoint: ["/bin/sh", "-c", "sleep 4; vault secrets enable transit || true; vault write -f transit/keys/lumen-dev-kek || true; echo vault-init-complete"]
+    restart: "no"
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
