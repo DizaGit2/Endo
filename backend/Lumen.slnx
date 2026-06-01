@@ -5,4 +5,7 @@
     <Project Path="src/Lumen.Domain/Lumen.Domain.csproj" />
     <Project Path="src/Lumen.Infrastructure/Lumen.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Lumen.UnitTests/Lumen.UnitTests.csproj" />
+  </Folder>
 </Solution>
