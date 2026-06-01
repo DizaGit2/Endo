@@ -3,6 +3,8 @@
 > Companion to the [gap register](gap-register.md). These are the **product-owner decisions** — not clinical facts, not on-screen — that the build needs. Each has my **recommended default** so you can mostly just confirm. Mark each `✅ approved` or write your change in the **Decision** line. Resolved decisions get copied into `ARCHITECTURE.md §A` and the living plan's §4. Ordered by the phase they block.
 >
 > Legend: 🔴 blocks the phase · 🟠 strong default, low risk to accept.
+>
+> **Adopted 2026-06-01 (defaults, to unblock P1):** **D-01** password policy, **D-02** consent capture, **D-03** default locale = their recommended defaults below. Implemented as versioned/nullable so legal can tighten without a migration.
 
 ---
 

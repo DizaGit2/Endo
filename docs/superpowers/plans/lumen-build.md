@@ -410,7 +410,8 @@ subagent-driven-development; strict TDD; .NET 10. Branch phase/02-shred. Deep re
 | 2026-05-31 | .NET 10 (was .NET 8) | ARCHITECTURE §B; spec D1 |
 | 2026-05-31 | LLM provider = Anthropic (Claude) | ARCHITECTURE §A/§I; spec D4 |
 | 2026-05-31 | Lab PDF encryption = server-side | ARCHITECTURE §D/§E; spec D5 |
-| _pending_ | Product decisions D-01…D-23 | decision-sheet.md → record here on approval |
+| 2026-06-01 | D-01 password policy (min 12, Unicode, block-breached, no forced rotation), D-02 consent record (versioned, written at /onboarding/start), D-03 locale es-ES primary (device fallback) — adopted as defaults for P1 | decision-sheet.md; ARCHITECTURE §A on P1 merge |
+| _pending_ | Product decisions D-04…D-23 | decision-sheet.md → record on approval |
 | _pending_ | Clinical sign-offs C-01…C-15 | clinical-asks.md → record on receipt |
 | _pending_ | Legal items L-01…L-09 | legal-asks.md → record on receipt |
 | _pending_ | §I infra (backup provider, Vault auto-unseal, operator MFA, crash reporting) | resolve at P0a/P11/P12b |
