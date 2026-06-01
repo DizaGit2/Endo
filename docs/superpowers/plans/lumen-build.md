@@ -37,13 +37,13 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 
 ## §1 Status ledger  (the ONLY authority for "done")
 
-**NEXT PHASE TO RUN: P0a**
-**Plan revision:** r1   **Repo HEAD when ledger last updated:** _(stamp on first merge)_
+**NEXT PHASE TO RUN: P0a (in human review) → P1 after acceptance**
+**Plan revision:** r2   **Repo HEAD when ledger last updated:** _(stamp on first merge)_
 
 | Phase | Name | Status | Branch | PR | Verified by | Notes |
 |---|---|---|---|---|---|---|
-| P0a | Compose stack + realm + health | TODO | — | — | — | infra |
-| P0b | This living plan | DONE-ON-COMMIT | design/build-strategy | — | — | = this document |
+| P0a | Compose stack + realm + health | NEEDS_REVIEW | phase/00a-infra | — | — | stack verified green |
+| P0b | This living plan | DONE | design/build-strategy | 2026-05-31 | — | = this document |
 | P1 ⚠ | Auth + envelope-encryption spine | TODO | — | — | — | deep review |
 | P2 ⚠ | Crypto-shred + Hangfire | TODO | — | — | — | deep review |
 | P3a | Flutter foundation + theming + OpenAPI pipeline | TODO | — | — | — | Flutter install here |
@@ -119,7 +119,7 @@ dotnet build   # empty solution builds on .NET 10
 - [ ] `GET /health` 200 through Caddy over TLS; `/health/ready` = shallow TCP reachability of Postgres+Vault (no app logic).
 - [ ] Realm `lumen` imported (confidential `api` client, public mobile client, `lumen-admin` role, provisioning service account); OIDC discovery reachable.
 - [ ] Vault Transit `lumen-dev-kek` exists; both DBs + extensions (`pgcrypto`,`uuid-ossp`,`pg_stat_statements`) present.
-- [ ] `global.json` pins `10.0.300`; empty `Lumen.sln` (Api/Application/Domain/Infrastructure) builds.
+- [ ] `global.json` pins `10.0.300`; empty `Lumen.slnx` (Api/Application/Domain/Infrastructure) builds.
 
 **Tasks**
 - [ ] **T1 — Repo skeleton & SDK pin.** Create `global.json` (`{ "sdk": { "version": "10.0.300", "rollForward": "latestFeature" } }`); `dotnet new sln -n Lumen` under `backend/`; create the 4 projects (`Lumen.Api` web, `Lumen.Application`/`Lumen.Domain`/`Lumen.Infrastructure` classlib) + add to sln. Verify `dotnet build`. Commit `chore(infra): solution skeleton + .NET 10 pin`.
@@ -130,7 +130,28 @@ dotnet build   # empty solution builds on .NET 10
 - [ ] **T6 — Minimal API.** `Lumen.Api/Program.cs`: Serilog console; `GET /health` (200) + `GET /health/ready` (TCP-reach Postgres+Vault); Swashbuckle wired (empty). Commit `feat(api): health endpoints`.
 - [ ] **T7 — Compose.** `deploy/docker-compose.yml` (caddy, postgres, keycloak, vault, api) with healthchecks + localhost-only binds for vault/keycloak-admin. Bring up; run all Verify commands; paste output. Commit `chore(infra): docker compose stack`.
 
-**STATUS** _(empty until the phase starts)_
+**STATUS**
+- **State:** NEEDS_REVIEW  ·  **Branch:** `phase/00a-infra` (commits `5cddf2f` + port-remap)  ·  **Tasks:** T1–T7 done (7/7)
+- **Exit criteria proven (pasted):**
+  ```
+  $ docker compose -f deploy/docker-compose.yml ps
+  lumen-api-1        Up (healthy)      lumen-postgres-1   Up (healthy)
+  lumen-caddy-1      Up                lumen-keycloak-1   Up               lumen-vault-1   Up
+  $ curl -ksS https://localhost/health            -> {"status":"healthy"}
+  $ curl -ksS https://localhost/health/ready      -> {"status":"ready","dependencies":{"postgres":true,"vault":true}}
+  $ vault read transit/keys/lumen-dev-kek         -> key exists (allow_plaintext_backup ... )
+  $ psql -tc "SELECT datname ... ('lumen','keycloak')"   -> keycloak, lumen
+  $ psql -d lumen -tc "SELECT extname ..."        -> pgcrypto, uuid-ossp, pg_stat_statements
+  $ curl .../realms/lumen/.well-known/openid-configuration  -> "issuer":"http://localhost:8080/realms/lumen"
+  $ dotnet build backend/Lumen.slnx               -> Build succeeded, 0 Warning(s), 0 Error(s)
+  ```
+- **Deviations from plan (also fixed in this plan):**
+  - .NET 10 emits `Lumen.slnx` (XML solution), not `Lumen.sln`.
+  - Added `backend/NuGet.config` (pin nuget.org) — a machine-level private feed 401'd restores; also makes CI reproducible.
+  - Host Postgres port remapped 5432→55432 (host 5432 in use); in-container comms unchanged.
+  - caddy/keycloak/vault have no in-container healthcheck (images lack shell tools) — verified externally; api+postgres report compose-healthy.
+  - Keycloak realm service-account-for-provisioning roles deferred to P1 (audit V3-P0-major); realm imports with api(confidential)+mobile(PKCE)+`lumen-admin`.
+- **For reviewer:** stack is up now — re-run the Verify commands; `docker compose -f deploy/docker-compose.yml down` to stop. On acceptance, flip P0a→DONE and advance NEXT to P1.
 
 ---
 
@@ -409,4 +430,4 @@ subagent-driven-development; strict TDD; .NET 10. Branch phase/02-shred. Deep re
 | Tests | `cd backend; dotnet test --nologo` (Testcontainers needs the Docker daemon) |
 | Migrations | `dotnet ef migrations add <Name> --project backend/src/Lumen.Infrastructure --startup-project backend/src/Lumen.Api` |
 | Verify env | environment companion §4 checklist |
-| Local ports | Caddy 80/443; Postgres 5432; Keycloak 8080 (localhost); Vault 8200 (localhost); MinIO (P7a) |
+| Local ports | Caddy 80/443; Postgres host 55432→5432 (host 5432 was taken); Keycloak 8080 (localhost); Vault 8200 (localhost); MinIO (P7a) |
