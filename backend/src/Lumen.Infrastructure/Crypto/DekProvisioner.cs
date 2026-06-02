@@ -35,6 +35,12 @@ public sealed class DekProvisioner(
             });
             await db.SaveChangesAsync(ct);
         }
+        catch (DbUpdateException)
+        {
+            // A concurrent ProvisionAsync may have inserted the key first — idempotent if it now exists.
+            if (!await db.UserKeys.AsNoTracking().AnyAsync(k => k.UserId == userId, ct))
+                throw;
+        }
         finally
         {
             CryptographicOperations.ZeroMemory(dek);

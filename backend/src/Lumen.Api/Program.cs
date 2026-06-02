@@ -36,6 +36,16 @@ var connectionString = builder.Configuration.GetConnectionString("Lumen")
     ?? "Host=localhost;Port=55432;Database=lumen;Username=postgres;Password=postgres";
 builder.Services.AddDbContext<LumenDbContext>(o => o.UseNpgsql(connectionString));
 
+// Fail closed: never start outside Development with the dev sentinel secrets (prod hardening is P11).
+if (!builder.Environment.IsDevelopment() &&
+    (vaultOptions.Token is "root" or "" ||
+     keycloakOptions.AdminClientSecret is "dev-api-secret" or "" ||
+     connectionString.Contains("Password=postgres", StringComparison.Ordinal)))
+{
+    throw new InvalidOperationException(
+        "Refusing to start outside Development with dev sentinel secrets. Configure real Vault/Keycloak/DB secrets.");
+}
+
 // --- crypto ---
 builder.Services.AddSingleton<IFieldCipher, AesGcmFieldCipher>();
 builder.Services.AddSingleton<IKeyWrapper, VaultTransitKeyWrapper>();
@@ -57,9 +67,22 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             ValidateIssuer = true,
             ValidIssuer = keycloakOptions.Authority,
-            ValidateAudience = false, // TODO(P1 deep review): add a Keycloak audience mapper, then validate
+            ValidateAudience = false, // TODO(P11): add a Keycloak audience mapper (aud=lumen-api), then validate
             ValidateLifetime = true,
             NameClaimType = "sub",
+            ValidAlgorithms = ["RS256"],
+            ClockSkew = TimeSpan.FromSeconds(30),
+        };
+        // Interim token-confusion guard until the audience mapper lands: only realm clients we issue.
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = context =>
+            {
+                var azp = context.Principal?.FindFirst("azp")?.Value;
+                if (azp is not ("mobile" or "api"))
+                    context.Fail("Token authorized party (azp) is not an allowed Lumen client.");
+                return Task.CompletedTask;
+            },
         };
     });
 builder.Services.AddAuthorization();
@@ -83,11 +106,13 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
+builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+app.UseExceptionHandler(); // clean ProblemDetails on unhandled errors; no stack traces (with env=Production)
 app.UseSerilogRequestLogging();
 app.UseSwagger();
 app.UseSwaggerUI();
@@ -127,6 +152,13 @@ app.MapPost("/onboarding/start", async (
 {
     if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
         return Results.BadRequest(new { error = "email and password are required" });
+    if (!System.Net.Mail.MailAddress.TryCreate(request.Email.Trim(), out _))
+        return Results.BadRequest(new { error = "invalid email format" });
+    if (request.Password.Length is < 12 or > 128) // D-01 minimum; defense-in-depth with the realm policy
+        return Results.BadRequest(new { error = "password must be between 12 and 128 characters" });
+    if ((request.DisplayName?.Length ?? 0) > 200 || (request.Locale?.Length ?? 0) > 35 ||
+        (request.Timezone?.Length ?? 0) > 64 || (request.PolicyVersion?.Length ?? 0) > 64)
+        return Results.BadRequest(new { error = "a field exceeds its maximum length" });
 
     var userId = await keycloak.CreateUserAsync(request.Email, request.Password, ct);
     var now = clock.GetUtcNow();

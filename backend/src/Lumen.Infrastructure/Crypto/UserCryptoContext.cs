@@ -29,8 +29,9 @@ public sealed class UserCryptoContext(
         {
             if (_dek is not null) return _dek;
             var userId = currentUser.UserId;
+            // Do not embed the user id (PII / cross-system key) in the exception message — see §F.
             var userKey = await db.UserKeys.AsNoTracking().FirstOrDefaultAsync(k => k.UserId == userId, ct)
-                ?? throw new InvalidOperationException($"No DEK provisioned for user {userId}.");
+                ?? throw new InvalidOperationException("No DEK provisioned for the current user.");
             _dek = await keyWrapper.UnwrapAsync(userKey.WrappedDek, ct);
             return _dek;
         }

@@ -23,6 +23,7 @@ services:
       context: ../backend
       dockerfile: src/Lumen.Api/Dockerfile
     environment:
+      ASPNETCORE_ENVIRONMENT: "Development"   # dev stack uses dev sentinel secrets; prod (P11) sets Production + real secrets
       ASPNETCORE_URLS: "http://+:8080"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
