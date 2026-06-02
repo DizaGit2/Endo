@@ -1,0 +1,70 @@
+name: ci-backend
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "backend/**"
+      - "deploy/**"
+      - ".github/workflows/ci-backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "deploy/**"
+      - ".github/workflows/ci-backend.yml"
+
+jobs:
+  build-and-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Build (warnings as errors)
+        run: dotnet build backend/Lumen.slnx -warnaserror --nologo
+      - name: Unit tests
+        run: dotnet test backend/tests/Lumen.UnitTests --no-build --nologo
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Start infra (Postgres + Vault + Keycloak)
+        run: docker compose -f deploy/docker-compose.yml up -d postgres vault vault-init keycloak
+
+      - name: Wait for Keycloak realm import
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:8080/realms/lumen/.well-known/openid-configuration >/dev/null 2>&1; then
+              echo "keycloak realm up"; break; fi
+            sleep 2
+          done
+
+      - name: Wait for Vault Transit key
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose -f deploy/docker-compose.yml exec -T vault \
+                 sh -lc 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault read transit/keys/lumen-dev-kek' >/dev/null 2>&1; then
+              echo "vault transit key present"; break; fi
+            sleep 2
+          done
+
+      - name: Apply EF migrations
+        run: |
+          dotnet tool install --global dotnet-ef --version "10.0.*"
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          dotnet ef database update \
+            --project backend/src/Lumen.Infrastructure \
+            --startup-project backend/src/Lumen.Infrastructure
+
+      - name: Integration tests (against the compose stack)
+        run: dotnet test backend/tests/Lumen.IntegrationTests --nologo
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose -f deploy/docker-compose.yml logs --tail 100
