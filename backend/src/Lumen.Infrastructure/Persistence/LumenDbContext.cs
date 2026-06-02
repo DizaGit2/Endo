@@ -1,5 +1,6 @@
 using Lumen.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Lumen.Infrastructure.Persistence;
 
@@ -9,6 +10,11 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
     public DbSet<UserKey> UserKeys => Set<UserKey>();
     public DbSet<UserProfileEnc> UserProfiles => Set<UserProfileEnc>();
     public DbSet<ConsentRecord> ConsentRecords => Set<ConsentRecord>();
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        // The soft-delete query filter on User intentionally coexists with required dependents.
+        => optionsBuilder.ConfigureWarnings(w =>
+            w.Ignore(CoreEventId.PossibleIncorrectRequiredNavigationWithQueryFilterInteractionWarning));
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -20,6 +26,7 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
             e.HasIndex(x => x.EmailHash).IsUnique();
             e.Property(x => x.Locale).IsRequired().HasMaxLength(35);    // BCP-47
             e.Property(x => x.Timezone).IsRequired().HasMaxLength(64);  // IANA tz id
+            e.HasQueryFilter(x => x.DeletedAt == null);                 // soft-deleted users excluded from reads (D-13)
         });
 
         b.Entity<UserKey>(e =>
@@ -45,7 +52,8 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
             e.HasIndex(x => x.UserId);
             e.Property(x => x.PolicyVersion).IsRequired().HasMaxLength(64);
             e.Property(x => x.Locale).HasMaxLength(35);
-            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            // Consent proof must survive erasure (crypto-shred, not a row delete) — do NOT cascade.
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

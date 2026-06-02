@@ -53,4 +53,16 @@ public class PiiRedactionEnricherTests
 
         sink.Events.Single().RenderMessage().ShouldContain("ok");
     }
+
+    [Fact]
+    public void Redacts_pii_nested_in_destructured_object()
+    {
+        var (logger, sink) = BuildLogger();
+        logger.Information("req {@Payload}", new { Email = "nested@example.com", UserId = Guid.NewGuid() });
+
+        var rendered = sink.Events.Single().RenderMessage();
+        rendered.ShouldContain("[redacted-email]");
+        rendered.ShouldNotContain("nested@example.com");
+        rendered.ShouldContain("[id]"); // the Guid scalar one level deep
+    }
 }

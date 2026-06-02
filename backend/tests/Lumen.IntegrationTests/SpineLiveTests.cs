@@ -102,7 +102,10 @@ public class SpineLiveTests(WebApplicationFactory<Program> factory) : IClassFixt
             if (userId != default)
             {
                 await using var db = new LumenDbContext(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(Db).Options);
-                await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync(); // FK cascade removes dependents
+                await db.UserProfiles.Where(p => p.UserId == userId).ExecuteDeleteAsync();
+                await db.ConsentRecords.Where(c => c.UserId == userId).ExecuteDeleteAsync(); // Restrict FK — delete explicitly
+                await db.UserKeys.Where(k => k.UserId == userId).ExecuteDeleteAsync();
+                await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync();
             }
         }
     }

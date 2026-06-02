@@ -64,7 +64,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.Authority = keycloakOptions.Authority;
-        options.RequireHttpsMetadata = false; // dev only; prod terminates TLS at Caddy
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment(); // plaintext metadata only in dev
         options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -82,8 +82,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             OnTokenValidated = context =>
             {
                 var azp = context.Principal?.FindFirst("azp")?.Value;
-                if (azp is not ("mobile" or "api"))
-                    context.Fail("Token authorized party (azp) is not an allowed Lumen client.");
+                var preferredUsername = context.Principal?.FindFirst("preferred_username")?.Value;
+                var isServiceAccount = preferredUsername?.StartsWith("service-account-", StringComparison.Ordinal) ?? false;
+                // Only end-user tokens from a Lumen client; reject service-account (client_credentials) tokens.
+                if (azp is not ("mobile" or "api") || isServiceAccount)
+                    context.Fail("Token is not an end-user token from an allowed Lumen client.");
                 return Task.CompletedTask;
             },
         };
@@ -159,15 +162,18 @@ app.MapPost("/onboarding/start", async (
     OnboardingStartRequest request,
     LumenDbContext db,
     IKeycloakAdmin keycloak,
-    IDekProvisioner dekProvisioner,
     IKeyWrapper keyWrapper,
     IFieldCipher cipher,
+    VaultOptions vaultOptions,
     TimeProvider clock,
     CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
         return Results.BadRequest(new { error = "email and password are required" });
-    if (!System.Net.Mail.MailAddress.TryCreate(request.Email.Trim(), out _))
+
+    // One canonical email form used for BOTH Keycloak (username/email) and the lookup hash.
+    var email = request.Email.Trim().ToLowerInvariant();
+    if (!System.Net.Mail.MailAddress.TryCreate(email, out var parsed) || parsed.Address != email)
         return Results.BadRequest(new { error = "invalid email format" });
     if (request.Password.Length is < 12 or > 128) // D-01 minimum; defense-in-depth with the realm policy
         return Results.BadRequest(new { error = "password must be between 12 and 128 characters" });
@@ -175,23 +181,40 @@ app.MapPost("/onboarding/start", async (
         (request.Timezone?.Length ?? 0) > 64 || (request.PolicyVersion?.Length ?? 0) > 64)
         return Results.BadRequest(new { error = "a field exceeds its maximum length" });
 
-    var userId = await keycloak.CreateUserAsync(request.Email, request.Password, ct);
+    var userId = await keycloak.CreateUserAsync(email, request.Password, ct);
 
     try
     {
-        // Atomic Lumen-side state: all DB writes + DEK provisioning commit together or not at all.
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-
         var now = clock.GetUtcNow();
-        var emailHash = Convert.ToHexStringLower(
-            SHA256.HashData(Encoding.UTF8.GetBytes(request.Email.Trim().ToLowerInvariant())));
+        var emailHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(email)));
+        var locale = string.IsNullOrWhiteSpace(request.Locale) ? "es-ES" : request.Locale;
+        var timezone = string.IsNullOrWhiteSpace(request.Timezone) ? "Europe/Madrid" : request.Timezone;
+
+        // Vault wrap + field encryption BEFORE the transaction, so we never hold a pooled DB connection
+        // across external HTTP round-trips. The plaintext DEK is zeroed before any DB work.
+        var dek = RandomNumberGenerator.GetBytes(32);
+        byte[] wrappedDek;
+        byte[]? displayNameEnc = null;
+        try
+        {
+            wrappedDek = await keyWrapper.WrapAsync(dek, ct);
+            if (!string.IsNullOrWhiteSpace(request.DisplayName))
+                displayNameEnc = cipher.EncryptString(request.DisplayName, dek);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(dek);
+        }
+
+        // Atomic Lumen-side state — all rows commit together or not at all.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
         db.Users.Add(new User
         {
             Id = userId,
             EmailHash = emailHash,
-            Locale = string.IsNullOrWhiteSpace(request.Locale) ? "es-ES" : request.Locale,
-            Timezone = string.IsNullOrWhiteSpace(request.Timezone) ? "Europe/Madrid" : request.Timezone,
+            Locale = locale,
+            Timezone = timezone,
             CreatedAt = now,
             UpdatedAt = now,
         });
@@ -200,34 +223,28 @@ app.MapPost("/onboarding/start", async (
             Id = Guid.NewGuid(),
             UserId = userId,
             PolicyVersion = string.IsNullOrWhiteSpace(request.PolicyVersion) ? "v1-draft" : request.PolicyVersion,
-            Locale = string.IsNullOrWhiteSpace(request.Locale) ? "es-ES" : request.Locale!,
+            Locale = locale,
             ConsentedAt = now,
         });
-        await db.SaveChangesAsync(ct);
-
-        await dekProvisioner.ProvisionAsync(userId, ct);
-
-        if (!string.IsNullOrWhiteSpace(request.DisplayName))
+        db.UserKeys.Add(new UserKey
         {
-            var keyRow = await db.UserKeys.AsNoTracking().FirstAsync(k => k.UserId == userId, ct);
-            var dek = await keyWrapper.UnwrapAsync(keyRow.WrappedDek, ct);
-            try
+            UserId = userId,
+            WrappedDek = wrappedDek,
+            KeyVersion = 1,
+            VaultKeyName = vaultOptions.KeyName,
+            CreatedAt = now,
+        });
+        if (displayNameEnc is not null)
+        {
+            db.UserProfiles.Add(new UserProfileEnc
             {
-                db.UserProfiles.Add(new UserProfileEnc
-                {
-                    UserId = userId,
-                    DisplayNameEnc = cipher.EncryptString(request.DisplayName, dek),
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                });
-                await db.SaveChangesAsync(ct);
-            }
-            finally
-            {
-                CryptographicOperations.ZeroMemory(dek);
-            }
+                UserId = userId,
+                DisplayNameEnc = displayNameEnc,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
         }
-
+        await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return Results.Ok(new { userId });
     }
