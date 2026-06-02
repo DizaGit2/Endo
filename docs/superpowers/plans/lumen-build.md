@@ -44,7 +44,7 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 |---|---|---|---|---|---|---|
 | P0a | Compose stack + realm + health | DONE | phase/00a-infra | tag `phase-00a` | 2026-05-31 | merged to main |
 | P0b | This living plan | DONE | design/build-strategy | 2026-05-31 | — | = this document |
-| P1 ⚠ | Auth + envelope-encryption spine | IN_PROGRESS | phase/01-spine | — | — | T1+T3 done; deep review |
+| P1 ⚠ | Auth + envelope-encryption spine | IN_PROGRESS | phase/01-spine | — | — | T1–T5 done; deep review |
 | P2 ⚠ | Crypto-shred + Hangfire | TODO | — | — | — | deep review |
 | P3a | Flutter foundation + theming + OpenAPI pipeline | TODO | — | — | — | Flutter install here |
 | P3b | Client OIDC + cache + screens 2/31 | TODO | — | — | — | |
@@ -210,15 +210,18 @@ cd backend; dotnet test --nologo            # all green incl. Testcontainers spi
 
 **STATUS**
 - **State:** IN_PROGRESS  ·  **Branch:** `phase/01-spine`  ·  build warnings-clean
-- **Tasks done:** **T1** (EF entities + `InitialSpine` migration, applied to the `lumen` DB → 4 tables) · **T3** (AES-256-GCM `IFieldCipher`/`AesGcmFieldCipher` + 9 unit tests green)
+- **Tasks done:** **T1** (EF entities + `InitialSpine` migration, applied → 4 tables) · **T3** (AES-256-GCM field cipher + 9 unit tests) · **T2** (`VaultTransitKeyWrapper` wrap/unwrap) · **T5** (`DekProvisioner`, idempotent, zeroes plaintext) · **T4** (`UserCryptoContext`, request-scoped DEK, zeroed on dispose). Crypto-shred **precondition proven**.
 - **Verification (pasted):**
   ```
-  $ dotnet test backend/tests/Lumen.UnitTests   -> Passed!  Failed: 0, Passed: 9
-  $ dotnet ef database update                   -> Applying '20260601141248_InitialSpine'. Done.
-  $ psql -d lumen -tc "tables"                   -> users, user_keys, user_profile_enc, consent_records
-  $ dotnet build backend/Lumen.slnx             -> Build succeeded, 0 Warning(s), 0 Error(s)
+  $ dotnet test backend/Lumen.slnx   -> UnitTests:        Passed! Failed: 0, Passed: 9
+                                        IntegrationTests: Passed! Failed: 0, Passed: 2
+  # integration (real Vault :8200 + Postgres :55432): provision DEK (idempotent) ->
+  #   wrapped DEK = "vault:v1:..." -> encrypt field -> raw bytea is ciphertext ("María" absent)
+  #   -> fresh request-scoped context decrypts back -> delete user_keys -> decrypt now throws
+  $ dotnet build backend/Lumen.slnx  -> Build succeeded, 0 Warning(s), 0 Error(s)
   ```
-- **Remaining:** T2 VaultTransitClient · T4 IUserCryptoContext · T5 DEK provisioning · T6 Keycloak JWT middleware · T7 Keycloak admin client · T8 POST /onboarding/start · T9 GET/PATCH /me · T10 Serilog PII-scrub + rate limiter · T11 OpenAPI+arch tests · T12 Testcontainers spine test + CI → then the deep adversarial security review.
+- **Remaining:** T6 Keycloak JWT middleware + `ICurrentUserAccessor` impl · T7 Keycloak admin user-create · T8 POST /onboarding/start (orchestrate admin-create + DEK provision + encrypted profile + consent) · T9 GET/PATCH /me · T10 Serilog PII-scrub + rate limiter · T11 OpenAPI snapshot + NetArchTest · T12 Testcontainers spine test (convert LiveStack tests) + `ci-backend.yml` → then the deep adversarial security review.
+- **Note:** integration tests currently target the live dev stack (`[Trait Category=LiveStack]`); T12 swaps them to Testcontainers for CI isolation.
 - **Deviations:** EF pinned 10.0.4 (Npgsql provider) for warnings-clean; unit tests consolidated in `Lumen.UnitTests` (per-layer split deferred).
 - **Resume:** `git checkout phase/01-spine`; confirm `dotnet test backend/Lumen.slnx` green, then continue at T2 (Vault — the dev stack on `localhost:8200` is available for the round-trip).
 
