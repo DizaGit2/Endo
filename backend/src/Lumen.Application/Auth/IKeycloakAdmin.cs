@@ -7,5 +7,5 @@ namespace Lumen.Application.Auth;
 /// </summary>
 public interface IKeycloakAdmin
 {
-    Task<Guid> CreateUserAsync(string email, string password, string? displayName, CancellationToken ct = default);
+    Task<Guid> CreateUserAsync(string email, string password, CancellationToken ct = default);
 }

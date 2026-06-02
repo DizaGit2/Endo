@@ -104,7 +104,7 @@ app.MapPost("/onboarding/start", async (
     if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
         return Results.BadRequest(new { error = "email and password are required" });
 
-    var userId = await keycloak.CreateUserAsync(request.Email, request.Password, request.DisplayName, ct);
+    var userId = await keycloak.CreateUserAsync(request.Email, request.Password, ct);
     var now = clock.GetUtcNow();
     var emailHash = Convert.ToHexStringLower(
         SHA256.HashData(Encoding.UTF8.GetBytes(request.Email.Trim().ToLowerInvariant())));

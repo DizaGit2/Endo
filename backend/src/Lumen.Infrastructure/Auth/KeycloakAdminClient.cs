@@ -13,7 +13,7 @@ namespace Lumen.Infrastructure.Auth;
 /// </summary>
 public sealed class KeycloakAdminClient(HttpClient http, KeycloakOptions options) : IKeycloakAdmin
 {
-    public async Task<Guid> CreateUserAsync(string email, string password, string? displayName, CancellationToken ct = default)
+    public async Task<Guid> CreateUserAsync(string email, string password, CancellationToken ct = default)
     {
         var token = await GetAdminTokenAsync(ct);
 
@@ -25,7 +25,10 @@ public sealed class KeycloakAdminClient(HttpClient http, KeycloakOptions options
             email,
             enabled = true,
             emailVerified = true,
-            firstName = displayName,
+            // Non-PII placeholders. The real display name lives ENCRYPTED in Lumen, never in Keycloak.
+            // Keycloak's declarative user profile requires first/last name to be present for login.
+            firstName = "Lumen",
+            lastName = "User",
             credentials = new[] { new { type = "password", value = password, temporary = false } },
         });
 
