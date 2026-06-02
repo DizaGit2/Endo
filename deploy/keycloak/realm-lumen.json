@@ -37,5 +37,15 @@
       "redirectUris": ["com.lumen.app:/oauth2redirect"],
       "attributes": { "pkce.code.challenge.method": "S256" }
     }
+  ],
+  "users": [
+    {
+      "username": "service-account-api",
+      "enabled": true,
+      "serviceAccountClientId": "api",
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users", "query-users"]
+      }
+    }
   ]
 }
