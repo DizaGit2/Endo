@@ -37,14 +37,14 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 
 ## §1 Status ledger  (the ONLY authority for "done")
 
-**NEXT PHASE TO RUN: P1**
-**Plan revision:** r3   **Repo HEAD when ledger last updated:** tag `phase-00a`
+**NEXT PHASE TO RUN: P3a**  (P0a, P1 DONE + merged to main. P3a installs the Flutter SDK and needs decisions D-05/D-06/D-07; P2 can also run — it depends only on P1.)
+**Plan revision:** r4   **Repo HEAD when ledger last updated:** tag `phase-01`
 
 | Phase | Name | Status | Branch | PR | Verified by | Notes |
 |---|---|---|---|---|---|---|
 | P0a | Compose stack + realm + health | DONE | phase/00a-infra | tag `phase-00a` | 2026-05-31 | merged to main |
 | P0b | This living plan | DONE | design/build-strategy | 2026-05-31 | — | = this document |
-| P1 ⚠ | Auth + envelope-encryption spine | NEEDS_REVIEW | phase/01-spine | — | — | T1–T12 + deep review done; 22 tests green |
+| P1 ⚠ | Auth + envelope-encryption spine | DONE | phase/01-spine | tag `phase-01` | 2026-06-02 | merged to main; 23 tests; security review + /code-review high both clean |
 | P2 ⚠ | Crypto-shred + Hangfire | TODO | — | — | — | deep review |
 | P3a | Flutter foundation + theming + OpenAPI pipeline | TODO | — | — | — | Flutter install here |
 | P3b | Client OIDC + cache + screens 2/31 | TODO | — | — | — | |
