@@ -3,6 +3,8 @@
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
+  "bruteForceProtected": true,
+  "passwordPolicy": "length(12)",
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "accessTokenLifespan": 900,
@@ -44,7 +46,7 @@
       "enabled": true,
       "serviceAccountClientId": "api",
       "clientRoles": {
-        "realm-management": ["manage-users", "view-users", "query-users"]
+        "realm-management": ["manage-users"]
       }
     }
   ]

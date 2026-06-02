@@ -34,14 +34,29 @@ public sealed class KeycloakAdminClient(HttpClient http, KeycloakOptions options
 
         using var response = await http.SendAsync(request, ct);
         if (response.StatusCode == HttpStatusCode.Conflict)
-            throw new InvalidOperationException("A user with that email already exists.");
-        response.EnsureSuccessStatusCode();
+            throw new DuplicateUserException("An account with that email already exists.");
+        if (!response.IsSuccessStatusCode)
+            throw new IdentityProviderException($"Keycloak user creation failed ({(int)response.StatusCode}).");
 
         // Keycloak returns 201 Created with Location: .../users/{id}
         var location = response.Headers.Location?.ToString()
-            ?? throw new InvalidOperationException("Keycloak did not return a user location header.");
+            ?? throw new IdentityProviderException("Keycloak did not return a user location header.");
         var id = location[(location.LastIndexOf('/') + 1)..];
-        return Guid.Parse(id);
+        if (!Guid.TryParse(id, out var userId))
+            throw new IdentityProviderException("Keycloak returned an unparseable user id.");
+        return userId;
+    }
+
+    public async Task DeleteUserAsync(Guid userId, CancellationToken ct = default)
+    {
+        var token = await GetAdminTokenAsync(ct);
+
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"{options.BaseUrl}/admin/realms/{options.Realm}/users/{userId}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await http.SendAsync(request, ct);
+        if (response.StatusCode is not (HttpStatusCode.NoContent or HttpStatusCode.NotFound))
+            response.EnsureSuccessStatusCode();
     }
 
     private async Task<string> GetAdminTokenAsync(CancellationToken ct)

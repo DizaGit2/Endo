@@ -79,6 +79,34 @@ public class SpineLiveTests(WebApplicationFactory<Program> factory) : IClassFixt
         }
     }
 
+    [Fact]
+    public async Task Onboarding_duplicate_email_returns_409_not_500()
+    {
+        var client = factory.CreateClient();
+        var email = $"dup-{Guid.NewGuid():N}@example.com";
+        const string password = "Sup3rSecretPassw0rd!";
+        Guid userId = default;
+        try
+        {
+            var first = await client.PostAsJsonAsync("/onboarding/start", new
+            { email, password, displayName = "Dup", locale = "es-ES", timezone = "Europe/Madrid", policyVersion = "v1-test" });
+            first.StatusCode.ShouldBe(HttpStatusCode.OK);
+            userId = (await first.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("userId").GetGuid();
+
+            var second = await client.PostAsJsonAsync("/onboarding/start", new
+            { email, password, displayName = "Dup", locale = "es-ES", timezone = "Europe/Madrid", policyVersion = "v1-test" });
+            second.StatusCode.ShouldBe(HttpStatusCode.Conflict); // DuplicateUserException -> 409 via ProblemExceptionHandler
+        }
+        finally
+        {
+            if (userId != default)
+            {
+                await using var db = new LumenDbContext(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(Db).Options);
+                await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync(); // FK cascade removes dependents
+            }
+        }
+    }
+
     private static async Task<string> GetUserTokenAsync(string email, string password)
     {
         using var http = new HttpClient();

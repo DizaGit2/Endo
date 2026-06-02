@@ -1,6 +1,8 @@
+using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using Lumen.Api;
 using Lumen.Api.Auth;
 using Lumen.Application.Auth;
 using Lumen.Application.Crypto;
@@ -12,6 +14,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.RateLimiting;
 using Lumen.Infrastructure.Logging;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
@@ -106,6 +109,7 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
+builder.Services.AddExceptionHandler<ProblemExceptionHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -113,6 +117,17 @@ builder.Services.AddSwaggerGen();
 var app = builder.Build();
 
 app.UseExceptionHandler(); // clean ProblemDetails on unhandled errors; no stack traces (with env=Production)
+
+// Trust X-Forwarded-For only from private networks (the Caddy reverse proxy) so the rate limiter
+// partitions on the real client IP rather than the proxy IP. P11 tightens KnownProxies to the exact proxy.
+var forwardedHeaders = new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedFor, ForwardLimit = 2 };
+forwardedHeaders.KnownIPNetworks.Clear();
+forwardedHeaders.KnownProxies.Clear();
+forwardedHeaders.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("10.0.0.0/8"));
+forwardedHeaders.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("172.16.0.0/12"));
+forwardedHeaders.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("192.168.0.0/16"));
+app.UseForwardedHeaders(forwardedHeaders);
+
 app.UseSerilogRequestLogging();
 app.UseSwagger();
 app.UseSwaggerUI();
@@ -161,53 +176,68 @@ app.MapPost("/onboarding/start", async (
         return Results.BadRequest(new { error = "a field exceeds its maximum length" });
 
     var userId = await keycloak.CreateUserAsync(request.Email, request.Password, ct);
-    var now = clock.GetUtcNow();
-    var emailHash = Convert.ToHexStringLower(
-        SHA256.HashData(Encoding.UTF8.GetBytes(request.Email.Trim().ToLowerInvariant())));
 
-    db.Users.Add(new User
+    try
     {
-        Id = userId,
-        EmailHash = emailHash,
-        Locale = string.IsNullOrWhiteSpace(request.Locale) ? "es-ES" : request.Locale,
-        Timezone = string.IsNullOrWhiteSpace(request.Timezone) ? "Europe/Madrid" : request.Timezone,
-        CreatedAt = now,
-        UpdatedAt = now,
-    });
-    db.ConsentRecords.Add(new ConsentRecord
-    {
-        Id = Guid.NewGuid(),
-        UserId = userId,
-        PolicyVersion = string.IsNullOrWhiteSpace(request.PolicyVersion) ? "v1-draft" : request.PolicyVersion,
-        Locale = string.IsNullOrWhiteSpace(request.Locale) ? "es-ES" : request.Locale!,
-        ConsentedAt = now,
-    });
-    await db.SaveChangesAsync(ct);
+        // Atomic Lumen-side state: all DB writes + DEK provisioning commit together or not at all.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
-    await dekProvisioner.ProvisionAsync(userId, ct);
+        var now = clock.GetUtcNow();
+        var emailHash = Convert.ToHexStringLower(
+            SHA256.HashData(Encoding.UTF8.GetBytes(request.Email.Trim().ToLowerInvariant())));
 
-    if (!string.IsNullOrWhiteSpace(request.DisplayName))
-    {
-        var keyRow = await db.UserKeys.AsNoTracking().FirstAsync(k => k.UserId == userId, ct);
-        var dek = await keyWrapper.UnwrapAsync(keyRow.WrappedDek, ct);
-        try
+        db.Users.Add(new User
         {
-            db.UserProfiles.Add(new UserProfileEnc
+            Id = userId,
+            EmailHash = emailHash,
+            Locale = string.IsNullOrWhiteSpace(request.Locale) ? "es-ES" : request.Locale,
+            Timezone = string.IsNullOrWhiteSpace(request.Timezone) ? "Europe/Madrid" : request.Timezone,
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        db.ConsentRecords.Add(new ConsentRecord
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            PolicyVersion = string.IsNullOrWhiteSpace(request.PolicyVersion) ? "v1-draft" : request.PolicyVersion,
+            Locale = string.IsNullOrWhiteSpace(request.Locale) ? "es-ES" : request.Locale!,
+            ConsentedAt = now,
+        });
+        await db.SaveChangesAsync(ct);
+
+        await dekProvisioner.ProvisionAsync(userId, ct);
+
+        if (!string.IsNullOrWhiteSpace(request.DisplayName))
+        {
+            var keyRow = await db.UserKeys.AsNoTracking().FirstAsync(k => k.UserId == userId, ct);
+            var dek = await keyWrapper.UnwrapAsync(keyRow.WrappedDek, ct);
+            try
             {
-                UserId = userId,
-                DisplayNameEnc = cipher.EncryptString(request.DisplayName, dek),
-                CreatedAt = now,
-                UpdatedAt = now,
-            });
-            await db.SaveChangesAsync(ct);
+                db.UserProfiles.Add(new UserProfileEnc
+                {
+                    UserId = userId,
+                    DisplayNameEnc = cipher.EncryptString(request.DisplayName, dek),
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
+                await db.SaveChangesAsync(ct);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(dek);
+            }
         }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(dek);
-        }
-    }
 
-    return Results.Ok(new { userId });
+        await transaction.CommitAsync(ct);
+        return Results.Ok(new { userId });
+    }
+    catch
+    {
+        // The Keycloak identity was created but Lumen-side state failed — remove the orphan (best effort)
+        // so the email is not permanently bricked for sign-up.
+        try { await keycloak.DeleteUserAsync(userId, ct); } catch { /* compensation is best-effort */ }
+        throw;
+    }
 }).AllowAnonymous();
 
 app.MapGet("/me", async (

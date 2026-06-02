@@ -8,4 +8,7 @@ namespace Lumen.Application.Auth;
 public interface IKeycloakAdmin
 {
     Task<Guid> CreateUserAsync(string email, string password, CancellationToken ct = default);
+
+    /// <summary>Deletes a Keycloak user. Used to compensate a failed multi-system onboarding. No-op if absent.</summary>
+    Task DeleteUserAsync(Guid userId, CancellationToken ct = default);
 }
