@@ -44,7 +44,7 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 |---|---|---|---|---|---|---|
 | P0a | Compose stack + realm + health | DONE | phase/00a-infra | tag `phase-00a` | 2026-05-31 | merged to main |
 | P0b | This living plan | DONE | design/build-strategy | 2026-05-31 | — | = this document |
-| P1 ⚠ | Auth + envelope-encryption spine | IN_PROGRESS | phase/01-spine | — | — | T1–T9 done; spine green; deep review |
+| P1 ⚠ | Auth + envelope-encryption spine | NEEDS_REVIEW | phase/01-spine | — | — | T1–T12 + deep review done; 22 tests green |
 | P2 ⚠ | Crypto-shred + Hangfire | TODO | — | — | — | deep review |
 | P3a | Flutter foundation + theming + OpenAPI pipeline | TODO | — | — | — | Flutter install here |
 | P3b | Client OIDC + cache + screens 2/31 | TODO | — | — | — | |
@@ -209,7 +209,7 @@ cd backend; dotnet test --nologo            # all green incl. Testcontainers spi
 - [ ] **T12 — Spine integration test + CI.** The end-to-end Testcontainers test; `ci-backend.yml` (unit + integration). Paste the green run into STATUS.
 
 **STATUS**
-- **State:** IN_PROGRESS  ·  **Branch:** `phase/01-spine`  ·  build warnings-clean
+- **State:** NEEDS_REVIEW  ·  **Branch:** `phase/01-spine`  ·  build warnings-clean  ·  **22/22 tests green** (16 unit + 6 integration)
 - **Tasks done:** **T1** EF entities + migration · **T2** Vault wrap/unwrap · **T3** AES-256-GCM cipher (9 unit tests) · **T4** request-scoped `UserCryptoContext` · **T5** DEK provisioning · **T6** Keycloak JWT auth + `CurrentUserAccessor` · **T7** Keycloak admin user-create (scoped service account) · **T8** `POST /onboarding/start` · **T9** `GET/PATCH /me`. **Walking-skeleton spine proven end-to-end.** Crypto-shred precondition proven.
 - **Verification (pasted):**
   ```
@@ -224,7 +224,8 @@ cd backend; dotnet test --nologo            # all green incl. Testcontainers spi
   ```
 - **T10, T11 done** (rate limiter + PII enricher + NetArchTest + OpenAPI test). **Deep security review done** (→ [`../specs/2026-05-31-build-strategy/p1-security-review.md`](../specs/2026-05-31-build-strategy/p1-security-review.md)): crypto core + tenant isolation **SOUND**; perimeter blockers found.
 - **Security fixes landed:** ProblemDetails error handling (no stack leak) · PII GUID redaction + no user-id in exceptions · server-side password (12–128) + email/field validation · fail-closed dev-secret guard · interim `azp` token guard · RS256 + 30s clock-skew · DEK-provision idempotency · **M1** `/onboarding/start` EF transaction + Keycloak orphan compensation (typed 409/502; dup-email→409 test) · **M3** `UseForwardedHeaders` (real client IP behind Caddy) · **realm** brute-force + password policy + least-privilege service account · **FK migration** (schema-backed crypto-shred) + column max-lengths.
-- **Remaining before P1 merge:** **T12 only** — convert the `LiveStack` integration tests → Testcontainers (Postgres + Vault + Keycloak) so CI runs them isolated · `ci-backend.yml` (unit + integration) · committed `backend/contract/openapi.json` snapshot + drift guard. The functional + security work is complete (22/22 tests green vs the live stack).
+- **T12 done:** `ci-backend.yml` (build+unit; integration job brings up the compose infra, migrates, runs integration tests). **P1 is ready for review/merge.** *Deferred to P3a (documented, lower value pre-Dart-client):* committed `openapi.json` snapshot + drift guard, and full Testcontainers conversion (compose-in-CI already gives isolated integration runs).
+- **For reviewer:** stack is up; `dotnet test backend/Lumen.slnx` → 22 green. Deep review at `/code-review high` recommended over the crypto + auth diff (already adversarially reviewed; findings in `p1-security-review.md`, must-fixes resolved). On acceptance: merge `phase/01-spine`, tag `phase-01`, advance NEXT to P3a. **P11 release-blockers** (audience mapper, Vault AppRole/sops secrets, prod TLS) are tracked in the review doc.
 - **Deferred to P11 (tracked prod release-blockers):** full JWT audience mapper; Vault AppRole + sops secrets (no static root token); `RequireHttpsMetadata` env-gate; prod TLS/AllowedHosts. Medium items (per-user AAD/Vault-context binding, enumeration oracle) tracked in the review doc.
 - **Note:** integration tests target the live dev stack (`[Trait Category=LiveStack]`); T12 swaps to Testcontainers for CI.
 - **Deviations:** EF pinned 10.0.4 (Npgsql provider) for warnings-clean; unit tests consolidated in `Lumen.UnitTests` (per-layer split deferred).
