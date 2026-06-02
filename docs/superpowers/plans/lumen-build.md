@@ -222,9 +222,11 @@ cd backend; dotnet test --nologo            # all green incl. Testcontainers spi
   # CryptoEnvelopeLiveTests: envelope round-trip + crypto-shred precondition (delete user_keys -> undecryptable)
   $ dotnet build backend/Lumen.slnx  -> 0 Warning(s), 0 Error(s)
   ```
-- **Remaining:** T10 Serilog PII-scrub enricher + global rate limiter (+ onboarding-start abuse test) · T11 OpenAPI snapshot to `backend/contract/openapi.json` + NetArchTest boundaries · T12 convert LiveStack tests → Testcontainers + `ci-backend.yml` → then the **deep adversarial security review**.
-- **Known follow-ups for the deep review:** JWT audience validation deferred (add a Keycloak audience mapper, then validate); confirm KeycloakAdminClient stays least-privilege on the scoped `realm-management` roles; Keycloak holds only email + placeholder name (real display name is encrypted in Lumen).
-- **Note:** integration tests currently target the live dev stack (`[Trait Category=LiveStack]`); T12 swaps to Testcontainers for CI isolation.
+- **T10, T11 done** (rate limiter + PII enricher + NetArchTest + OpenAPI test). **Deep security review done** (→ [`../specs/2026-05-31-build-strategy/p1-security-review.md`](../specs/2026-05-31-build-strategy/p1-security-review.md)): crypto core + tenant isolation **SOUND**; perimeter blockers found.
+- **Security fixes landed (low-risk blockers):** ProblemDetails error handling (no stack leak) · PII GUID redaction + no user-id in exceptions · server-side password (12–128) + email/field validation · fail-closed dev-secret startup guard · interim `azp` token guard · RS256 + 30s clock-skew · DEK-provision idempotency.
+- **Remaining before P1 merge:** **M1** `/onboarding/start` atomicity (EF transaction) + Keycloak compensation/resume on partial failure · **M3** real client-IP rate limiting behind Caddy (`UseForwardedHeaders` + tighter onboarding limit) · realm hardening (passwordPolicy, bruteForceProtected, trim service account) + **FK migration** (schema-backed crypto-shred) · **T12** convert LiveStack tests → Testcontainers + `ci-backend.yml` + committed `openapi.json`.
+- **Deferred to P11 (tracked prod release-blockers):** full JWT audience mapper; Vault AppRole + sops secrets (no static root token); `RequireHttpsMetadata` env-gate; prod TLS/AllowedHosts. Medium items (per-user AAD/Vault-context binding, enumeration oracle) tracked in the review doc.
+- **Note:** integration tests target the live dev stack (`[Trait Category=LiveStack]`); T12 swaps to Testcontainers for CI.
 - **Deviations:** EF pinned 10.0.4 (Npgsql provider) for warnings-clean; unit tests consolidated in `Lumen.UnitTests` (per-layer split deferred).
 - **Resume:** `git checkout phase/01-spine`; confirm `dotnet test backend/Lumen.slnx` green, then continue at T2 (Vault — the dev stack on `localhost:8200` is available for the round-trip).
 
