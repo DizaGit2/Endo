@@ -1,30 +1,29 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:lumen/main.dart';
+import 'package:lumen/app.dart';
+import 'package:lumen/core/theme/lumen_tokens.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('LumenApp smoke test — "Lumen" text renders', (tester) async {
+    await tester.pumpWidget(const ProviderScope(child: LumenApp()));
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // The placeholder home shows a centred "Lumen" text.
+    expect(find.text('Lumen'), findsOneWidget);
   });
+
+  testWidgets(
+    'LumenApp smoke test — light theme carries LumenColors extension',
+    (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: LumenApp()));
+
+      final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
+      final ext = app.theme!.extension<LumenColors>();
+
+      expect(ext, isNotNull);
+      // Spot-check: the extension's accent matches the light-mode token.
+      expect(ext!.accent, lumenLight.accent);
+      expect(ext.bg, lumenLight.bg);
+    },
+  );
 }
