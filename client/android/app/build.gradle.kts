@@ -23,6 +23,12 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // flutter_appauth requires this manifest placeholder for its OAuth redirect
+        // intent-filter. Scheme matches the Keycloak realm redirect URI
+        // (com.lumen.app:/oauth2redirect). The full OIDC flow is wired in P3b; this
+        // placeholder is required now so the Android target builds at all.
+        manifestPlaceholders["appAuthRedirectScheme"] = "com.lumen.app"
     }
 
     buildTypes {
