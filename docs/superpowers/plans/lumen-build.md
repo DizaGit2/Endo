@@ -6,7 +6,7 @@
 
 **Architecture:** Caddy → Keycloak JWT → Vault Transit per-user DEK → AES-256-GCM envelope-encrypted Postgres, Hangfire jobs, MinIO/ClamAV labs, deterministic inference engine, Anthropic lab parsing. One fresh session per phase (Model C); each session dispatches subagents per task and stops at `NEEDS_REVIEW`.
 
-**Tech Stack:** .NET 10, ASP.NET Core, EF Core + Npgsql, Keycloak, HashiCorp Vault (Transit), MinIO, ClamAV, Hangfire, Swashbuckle, QuestPDF, Docker Compose, Caddy; Flutter (Riverpod + GoRouter, flutter_appauth, dio + built_value, Hive), openapi_generator.
+**Tech Stack:** .NET 10, ASP.NET Core, EF Core + Npgsql, Keycloak, HashiCorp Vault (Transit), MinIO, ClamAV, Hangfire, Swashbuckle, QuestPDF, Docker Compose, Caddy; Flutter (Riverpod + GoRouter, flutter_appauth, dio + built_value, Hive), openapi_generator (P3a uses the `openapi-generator-cli` JAR `dart-dio` directly — the Dart `openapi_generator` build package is incompatible with this `source_gen`/`built_value_generator` set; see P3a STATUS).
 
 **Companion docs (read as referenced):** spec [`../specs/2026-05-31-build-strategy-design.md`](../specs/2026-05-31-build-strategy-design.md) · gap register [`../specs/2026-05-31-build-strategy/gap-register.md`](../specs/2026-05-31-build-strategy/gap-register.md) · decision sheet [`../specs/2026-05-31-build-strategy/decision-sheet.md`](../specs/2026-05-31-build-strategy/decision-sheet.md) · definitions [`../specs/2026-05-31-build-strategy/definitions.md`](../specs/2026-05-31-build-strategy/definitions.md) · clinical-asks / legal-asks (same folder) · orchestration / testing / environment / flutter companions (same specs folder).
 
@@ -37,8 +37,8 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 
 ## §1 Status ledger  (the ONLY authority for "done")
 
-**NEXT PHASE TO RUN: P3a**  (P0a, P1, **P2 DONE + merged to main** — tag `phase-02`, PR #1. **P3a preconditions CLEARED 2026-06-14:** Flutter installed — `flutter doctor` green; **D-05/D-06/D-07 approved** (defaults); **L-03** screen-31 trust copy drafted v0 (pending DPO sign-off). Ready to execute on branch `phase/03a-client-foundation`.)
-**Plan revision:** r8   **Repo HEAD when ledger last updated:** tag `phase-02` (P2 merged to main; P3a-precondition doc edits uncommitted)
+**NEXT PHASE TO RUN: P3a (NEEDS_REVIEW — awaiting human acceptance), then P3b.**  (P0a, P1, P2 DONE+merged. **P3a built 2026-06-14** on `phase/03a-client-foundation`: Flutter foundation + theming + OpenAPI dio/built_value client + CI drift guard + static screens 1/36/37; **106 client + 3 backend OpenAPI tests green; coverage 97.60%**. STATUS filled; final whole-phase review run. On human acceptance: merge, tag `phase-03a`, advance NEXT to **P3b** (client OIDC + cache + screens 2/31).)
+**Plan revision:** r9   **Repo HEAD when ledger last updated:** `phase/03a-client-foundation` (P3a NEEDS_REVIEW; main at `4a888bf`)
 
 | Phase | Name | Status | Branch | PR | Verified by | Notes |
 |---|---|---|---|---|---|---|
@@ -46,7 +46,7 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 | P0b | This living plan | DONE | design/build-strategy | 2026-05-31 | — | = this document |
 | P1 ⚠ | Auth + envelope-encryption spine | DONE | phase/01-spine | tag `phase-01` | 2026-06-02 | merged to main; 23 tests; security review + /code-review high both clean |
 | P2 ⚠ | Crypto-shred + Hangfire | DONE | phase/02-shred | [#1](https://github.com/DizaGit2/Endo/pull/1) | 2026-06-14 | merged to main, tag `phase-02`; 57 tests; multi-agent /review + all fixes applied |
-| P3a | Flutter foundation + theming + OpenAPI pipeline | TODO | — | — | — | Flutter install here |
+| P3a | Flutter foundation + theming + OpenAPI pipeline | NEEDS_REVIEW | phase/03a-client-foundation | — | 2026-06-14 | T1–T10 done; 106 client + 3 OpenAPI tests; cov 97.60%; awaiting human review |
 | P3b | Client OIDC + cache + screens 2/31 | TODO | — | — | — | |
 | P4a | Backend Onboarding-rest + Cycle + Symptoms | TODO | — | — | — | needs definitions + D-08..D-14 |
 | P4b | Flutter screens 3–14, 32 | TODO | — | — | — | |
@@ -278,14 +278,65 @@ subagent-driven-development; strict TDD; .NET 10. Branch phase/02-shred. Deep re
 
 ### Phase P3a — Flutter foundation + theming + OpenAPI pipeline
 
-- **Status:** TODO · **Depends on:** P2 · **Branch:** `phase/03a-client-foundation`
+- **Status:** IN_PROGRESS (started 2026-06-14) · **Depends on:** P2 · **Branch:** `phase/03a-client-foundation`
 - **Goal:** install Flutter; scaffold the app; port the design tokens; stand up the OpenAPI→Dart pipeline + CI drift guard; wire static screens 1/36/37.
 - **Preconditions:** ✅ **CLEARED 2026-06-14.** Flutter/Android installed — `flutter doctor` green (Flutter 3.44.1 stable, Dart 3.12.1, Android SDK 36.1.0, VS 2026, Chrome, 3 devices; "No issues found"). Decisions **D-03** (es-ES primary, 2026-06-01) + **D-05** (locale-driven ICU formatting, es-ES default; API locale-neutral) + **D-06** (metric-only v1, reserve `users.unit_system` enum) + **D-07** (lean client-privacy scope) **approved** — see decision-sheet.md & `ARCHITECTURE.md §A`. **L-03** screen-31 trust copy drafted v0 (ES+EN, pending DPO sign-off) — see legal-asks.md. Definitions: hormone/phase palettes (already in CLAUDE.md). **Phase is unblocked to start.**
 - **Kickoff prompt:** standard, pointing at flutter companion + CLAUDE.md tokens; **step 1 = run the Flutter install and confirm `flutter doctor` before any Dart.**
 - **Exit criteria:** `flutter doctor` green recorded; golden tests (light+dark) pass for static screens; `ThemeData` token assertions match CLAUDE.md; OpenAPI→Dart pipeline + CI drift guard operational; client coverage ≥60%.
-- **Tasks (outline):** Flutter install (human) → app scaffold (feature-first, GoRouter shell, Riverpod) → `LumenColors` ThemeExtension + `HormonePalette` + `PhasePalette` + typography → alchemist golden harness → openapi_generator config + generate from P1 spec → CI `ci-client.yml` drift guard → wire screens 1/36/37 (static) with goldens. *(Detailed at phase entry.)*
+- **Tasks (bite-sized TDD; one commit each; via `subagent-driven-development`, detailed at phase entry 2026-06-14):**
+  - [x] **T1 — Scaffold + deps + lints** (imperative shell). `flutter create` at `client/` (org `com.lumen`, project `lumen`, `--platforms=android,ios,web`); feature-first dirs per flutter companion §1.2; pubspec deps (flutter_riverpod, riverpod_annotation, go_router, dio, built_value, built_collection, flutter_appauth, flutter_secure_storage, hive, hive_flutter, intl) + dev (build_runner, riverpod_generator, built_value_generator, openapi_generator[_annotations], alchemist, flutter_lints, mocktail); `analysis_options.yaml`. Verify `flutter pub get` + `flutter analyze` (0 issues) + `flutter test`.
+  - [x] **T2 — `LumenColors` ThemeExtension** (TDD). Test exact light+dark hex for all 10 tokens (incl. border `0x1F` alpha) + lerp/copyWith. `core/theme/lumen_tokens.dart` (values per flutter companion §5.1 / CLAUDE.md).
+  - [x] **T3 — Hormone + phase palettes** (TDD). `HormonePalette.forCode` (7 codes + `estradiol`/`estrogen` alias + muted fallback) exact; `PhasePalette` 4 phases light/dark exact. `core/theme/{hormone_palette,phase_palette}.dart`.
+  - [x] **T4 — ThemeData builders + typography** (TDD). `lumenTheme(Brightness)`: `LumenColors` attached; `ColorScheme` derived (primary=accent, surface, etc.); `TextTheme` uses **only** `FontWeight.w400`/`w500` (assert); system font stack; section-label widget the only uppercase. `core/theme/lumen_theme.dart`.
+  - [x] **T5 — Locale formatting + units (D-05/D-06)** (TDD). `core/formatters/lumen_formats.dart` via `intl`: week-start, date, 24-h time, comma decimal driven by locale; es-ES default vs en-US contrast test. `UnitSystem` enum (default `metric`) + kg/cm formatters (metric-only v1, enum reserved).
+  - [x] **T6 — Golden harness + `LumenScaffold`**. `flutter_test_config.dart` (alchemist: deterministic font, no real shadows); `shared/widgets/lumen_scaffold.dart` (themed bg, 5-tab bottom-nav stub, theme toggle affordance); smoke golden light+dark.
+  - [x] **T7 — Static screens 1/36/37 + goldens** (golden-TDD). Port welcome (1), privacy (36 — per **D-07**: no analytics toggle; warrant-canary placeholder L-08; accurate data-handling stance), help_about (37). Light+dark golden each.
+  - [x] **T8 — OpenAPI snapshot + Dart client**. Emit P1+P2 spec → `backend/contract/openapi.json` (P1-deferred deliverable) via Swashbuckle CLI (`dotnet swagger tofile`; fallback: boot compose + `curl /swagger/v1/swagger.json`); pin to `client/openapi/lumen.openapi.json`; openapi_generator (dio + built_value) → `client/lib/api/`; `flutter analyze` clean; smoke import test. JDK at `C:\Program Files\Android\Android Studio\jbr`. Commit spec + config + generated together.
+  - [x] **T9 — `ci-client.yml` + OpenAPI drift guard**. GH Actions: pub get → analyze → test (goldens) → coverage; drift guard regenerates the spec from the backend and `diff`s vs the committed snapshot, failing on drift.
+  - [x] **T10 — Coverage ≥60% + wrap**. `flutter test --coverage`; record proof; fill STATUS; set ledger NEEDS_REVIEW.
 
-**STATUS** _(empty)_
+**STATUS**
+- **State:** NEEDS_REVIEW (2026-06-14) · **Branch:** `phase/03a-client-foundation` · **106 client tests + 3 backend OpenAPI tests green · coverage 97.60%** (hand-written; generated `lib/api/**` + `*.g.dart` excluded) · build/analyze clean. Executed via `subagent-driven-development` (implementer + spec + quality review per task; review fixes applied).
+- **Precondition proof — `flutter doctor` GREEN (2026-06-14):**
+  ```
+  [✓] Flutter (Channel stable, 3.44.1, on Windows 11 Pro 25H2, locale en-US)
+  [✓] Windows Version (11 Pro 64-bit, 25H2)
+  [✓] Android toolchain - Android SDK 36.1.0
+  [✓] Chrome - develop for the web
+  [✓] Visual Studio - Visual Studio Professional 2026 18.6.0
+  [✓] Connected device (3 available)
+  [✓] Network resources
+  • No issues found!
+  ```
+  Dart 3.12.1 · JDK (Android Studio jbr) OpenJDK 21.0.10 at `C:\Program Files\Android\Android Studio\jbr`.
+- **Tasks done (T1–T10, each = feat/test commit + a review-fix commit where the two-stage review found issues):**
+  - **T1** Flutter scaffold (`client/`, org `com.lumen`, android/ios/web), feature-first dirs, deps (riverpod, go_router, dio, built_value, flutter_appauth, secure_storage, hive, intl + codegen/test devs), lints. *(Two-stage review: gitignore/`description` nits fixed.)*
+  - **T2** `LumenColors` ThemeExtension — all 10 light+dark tokens (border `0x1F` alpha), copyWith/lerp. *(Spec review independently re-derived all 20 hex from CLAUDE.md — exact.)*
+  - **T3** `HormonePalette` (7 codes + estradiol alias + muted fallback) + `PhasePalette` (4 phases light/dark). *(All values verified vs CLAUDE.md.)*
+  - **T4** `lumenTheme(Brightness)` — M3 ColorScheme from tokens, two-weights-only typography guard, app shell (`LumenApp`), counter demo removed. *(Review's WCAG finding was independently recomputed and REJECTED: real contrast 4.27/3.43 light, 6.71/5.71 dark — at/above large-text AA; on-colors are design-faithful, a11y stays the P12 gate. Extension test widened to all 10 fields; weight-normaliser doc corrected.)*
+  - **T5** `LumenFormats` (D-05 locale-driven date/24h-time/comma-decimal + first-day-of-week; D-06 metric-only + reserved `UnitSystem` enum). *(Review fix: a latent `firstDayOfWeek` bug — en_GB/en_AU/bare-en were mis-classified Sunday-first — corrected to en_US-only; `initializeDateFormatting` breadcrumb for P3b.)*
+  - **T6** Alchemist golden harness (`flutter_test_config.dart`, CI-mode: text obscured + shadows off → OS-independent/deterministic) + `LumenScaffold` + `LumenBottomNav` (5-tab stub) + smoke golden. *(Determinism re-confirmed across runs; `dart_test.yaml` golden tag declared.)*
+  - **T7** Static screens **1 welcome, 36 privacy, 37 help/about** ported from `Screens/*.html` + light/dark goldens; `LumenSectionLabel`; `WelcomeScreen` wired as home. **D-07 applied** (privacy analytics toggle omitted). *(Review fixes: ALL-CAPS literal → `LumenSectionLabel` transform; primary CTA → enabled `FilledButton` with token `onPrimary`; dark-mode toggle made visible; goldens regenerated.)*
+  - **T8** OpenAPI pipeline: `backend/contract/openapi.json` emitted via an in-process env-gated snapshot/drift test (no docker), pinned byte-identical to `client/openapi/lumen.openapi.json`; **Dart dio+built_value client generated into `client/lib/api/`** (committed) + smoke test round-tripping a `built_value` DTO. **Deviation:** the `openapi_generator` Dart package is incompatible here (`source_gen` <=2 vs built_value_generator needing >=3), so generation uses the **openapi-generator-cli JAR 7.11.0** (`dart-dio`) — documented with regen command in `client/lib/api/README.md`. *(Review confirmed snapshot==live and the generated client compiles via `flutter test`.)*
+  - **T9** `.github/workflows/ci-client.yml` (pub get → spec-sync byte check → analyze → test+coverage gate) + `openapi-contract` no-docker drift job in `ci-backend.yml` (asserts live backend == committed snapshot == pinned client spec). *(Review caught a CRITICAL coverage-glob bug: `*/lib/api/*` under-excluded nested generated files, reporting 58.6% vs the true 97.60%. Replaced the lcov-glob gate with a deterministic `client/tool/check_coverage.dart` that excludes `lib/api/**` + `*.g.dart` by path.)*
+  - **T10** Verification + wrap (this block).
+- **Verification (pasted, 2026-06-14):**
+  ```
+  client (PUB_CACHE=C:\pub_cache):
+    flutter analyze            -> No issues found!
+    flutter test --coverage    -> 00:03 +106: All tests passed!   (incl. 8 golden scenarios light+dark)
+    dart run tool/check_coverage.dart -> 366/375 = 97.60% (19 generated files excluded); GATE PASS >= 60%
+  backend (no docker):
+    dotnet test --filter ~OpenApi -> Passed!  Failed: 0, Passed: 3   (snapshot==live==pinned client spec)
+  ```
+- **Exit criteria — all met:** `flutter doctor` green recorded ✓ · light+dark goldens pass for the static screens (welcome/privacy/help + LumenScaffold) ✓ · `ThemeData`/token assertions match CLAUDE.md ✓ · OpenAPI→Dart pipeline + CI drift guard operational ✓ · client coverage ≥60% (97.60%) ✓.
+- **Deviations / dev-notes (anti-drift):**
+  - **PUB_CACHE:** the home path has a space which breaks Dart native-asset build hooks (objective_c via flutter_appauth); all local flutter/dart runs use `PUB_CACHE=C:\pub_cache` (backslash). If "Building native assets failed / hook.dill not found" appears, `flutter clean; flutter pub get` resets `.dart_tool`. CI (Linux) is unaffected (no space in path).
+  - **OpenAPI generator = JAR, not the Dart package** (see T8); CI/regen needs Java + the JAR (download per `client/lib/api/README.md`). The committed client is the source of truth; CI verifies drift + compile, it does not regenerate.
+  - **Coverage gate** is a committed Dart script (not lcov) — deterministic across lcov versions.
+  - `flutter_appauth`/`flutter_secure_storage`/`hive` are wired as deps but their real use is **P3b** (OIDC + cache); `initializeDateFormatting` startup wiring is a P3b breadcrumb in `main.dart`.
+  - Deferred non-blocking polish (tracked): toggle slide-animation + `_NavRow`/`_SettingsNavRow` dedup → when settings interactivity/next settings screen land; `LumenApiApi` double-word generator class name (deterministic output).
+- **For reviewer:** `git checkout phase/03a-client-foundation`; client checks `cd client; $env:PUB_CACHE='C:\pub_cache'; flutter analyze; flutter test --coverage; dart run tool/check_coverage.dart`; drift `dotnet test backend/Lumen.slnx --filter ~OpenApi`. A final whole-phase review was run after T10. On acceptance: merge `phase/03a-client-foundation`, tag `phase-03a`, advance NEXT to **P3b** (client OIDC + cache + screens 2/31).
 
 ---
 

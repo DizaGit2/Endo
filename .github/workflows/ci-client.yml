@@ -1,0 +1,69 @@
+name: ci-client
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "client/**"
+      - "backend/contract/openapi.json"
+      - ".github/workflows/ci-client.yml"
+  pull_request:
+    paths:
+      - "client/**"
+      - "backend/contract/openapi.json"
+      - ".github/workflows/ci-client.yml"
+
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Java is harmless on Linux and covers any native-asset hook that needs it.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.1"
+          channel: stable
+
+      - name: pub get
+        working-directory: client
+        run: flutter pub get
+
+      # -----------------------------------------------------------------------
+      # Spec-sync drift guard
+      # The pinned client spec must be byte-identical to the committed backend
+      # contract. (The backend OpenApiSnapshotTests job enforces live↔committed;
+      # this step enforces committed↔pinned-client.)
+      # -----------------------------------------------------------------------
+      - name: Assert spec files are byte-identical
+        run: |
+          if ! cmp -s backend/contract/openapi.json client/openapi/lumen.openapi.json; then
+            echo "ERROR: backend/contract/openapi.json and client/openapi/lumen.openapi.json have diverged."
+            echo "Run the backend OpenApiSnapshotTests with LUMEN_OPENAPI_UPDATE=1 to refresh both files."
+            diff backend/contract/openapi.json client/openapi/lumen.openapi.json || true
+            exit 1
+          fi
+          echo "Spec files match — no drift detected."
+
+      - name: flutter analyze
+        working-directory: client
+        run: flutter analyze
+
+      - name: flutter test --coverage
+        working-directory: client
+        run: flutter test --coverage
+
+      # -----------------------------------------------------------------------
+      # Coverage gate >= 60% (generated code excluded)
+      # A self-contained Dart script parses coverage/lcov.info directly and
+      # excludes lib/api/** + *.g.dart (deterministic, no lcov-version glob
+      # quirks). Fails the job if line coverage on hand-written code is < 60%.
+      # -----------------------------------------------------------------------
+      - name: Coverage gate (>=60%, generated client excluded)
+        working-directory: client
+        run: dart run tool/check_coverage.dart
