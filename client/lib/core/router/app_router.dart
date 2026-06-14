@@ -11,14 +11,18 @@ import 'package:lumen/features/onboarding/presentation/welcome_screen.dart';
 
 /// Returns the path to redirect to, or null if no redirect is needed.
 ///
+/// [location] must be the path only (no query/fragment) — callers pass
+/// `state.uri.path`.
+///
 /// Truth table:
-/// | status          | location            | result       |
-/// |-----------------|---------------------|--------------|
-/// | unknown         | any                 | null         |
-/// | unauthenticated | "/" or "/account"   | null         |
-/// | unauthenticated | other               | "/"          |
-/// | authenticated   | "/" or "/account"   | "/profile"   |
-/// | authenticated   | other               | null         |
+/// | status          | location               | result       |
+/// |-----------------|------------------------|--------------|
+/// | unknown         | "/splash"              | null         |
+/// | unknown         | other                  | "/splash"    |
+/// | unauthenticated | "/" or "/account"      | null         |
+/// | unauthenticated | other (incl. /splash)  | "/"          |
+/// | authenticated   | "/profile" (+ others)  | null         |
+/// | authenticated   | "/", "/account", "/splash" | "/profile" |
 ///
 /// TODO(P4): Route authenticated-but-not-onboarded users to [Routes.onboarding]
 /// instead of [Routes.profile]. This requires reading an "onboarded" flag from
@@ -26,20 +30,23 @@ import 'package:lumen/features/onboarding/presentation/welcome_screen.dart';
 String? lumenRedirect(AuthStatus status, String location) {
   switch (status) {
     case AuthStatus.unknown:
-      // Still initialising — don't redirect; a brief splash on whatever
-      // route was requested is acceptable.
-      return null;
+      // Still initialising — hold on the splash so a cold start with a stored
+      // session never flashes the welcome screen before redirecting to profile.
+      return location == Routes.splash ? null : Routes.splash;
 
     case AuthStatus.unauthenticated:
-      // Allow the welcome screen and the account (login/register) screen.
+      // Allow the welcome screen and the account (login/register) screen;
+      // everything else (incl. the splash) goes to welcome.
       if (location == Routes.welcome || location == Routes.account) {
         return null;
       }
       return Routes.welcome;
 
     case AuthStatus.authenticated:
-      // Authed users have no business on the welcome / account screens.
-      if (location == Routes.welcome || location == Routes.account) {
+      // Authed users have no business on welcome / account / splash.
+      if (location == Routes.welcome ||
+          location == Routes.account ||
+          location == Routes.splash) {
         return Routes.profile;
       }
       return null;
@@ -70,15 +77,21 @@ class _AuthStatusNotifier extends ChangeNotifier {
 /// GoRouter to re-evaluate the [redirect] callback.
 final goRouterProvider = Provider<GoRouter>((ref) {
   final notifier = _AuthStatusNotifier(ref);
+  ref.onDispose(notifier.dispose);
 
   return GoRouter(
-    initialLocation: Routes.welcome,
+    initialLocation: Routes.splash,
     refreshListenable: notifier,
     redirect: (context, state) {
       final authStatus = ref.read(authStatusProvider);
-      return lumenRedirect(authStatus, state.uri.toString());
+      // Path only — query/fragment must not break the location comparison.
+      return lumenRedirect(authStatus, state.uri.path);
     },
     routes: [
+      GoRoute(
+        path: Routes.splash,
+        builder: (_, _) => const _SplashScreen(),
+      ),
       GoRoute(
         path: Routes.welcome,
         builder: (_, _) => const WelcomeScreen(),
@@ -96,6 +109,28 @@ final goRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+// ---------------------------------------------------------------------------
+// Splash — shown while auth state resolves on cold start
+// ---------------------------------------------------------------------------
+
+/// Neutral loading screen shown while [AuthStatus] is [AuthStatus.unknown].
+///
+/// Prevents a flash of the welcome screen when a stored session resolves to
+/// [AuthStatus.authenticated] a frame later.
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(color: scheme.primary),
+      ),
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Placeholder screens — replaced in T7 / T8

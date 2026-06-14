@@ -3,6 +3,10 @@
 /// These constants are the single source of truth for navigation paths used
 /// in [AppRouter] and throughout the feature screens.
 abstract final class Routes {
+  /// Splash shown while auth state is still resolving (cold start), so a stored
+  /// session lands on [profile] without a flash of [welcome].
+  static const splash = '/splash';
+
   /// Welcome / login gateway (onboarding step 1).
   static const welcome = '/';
 

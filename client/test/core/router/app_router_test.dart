@@ -3,17 +3,21 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/app_router.dart';
 
 void main() {
-  group('lumenRedirect — unknown', () {
-    test('unknown + "/" returns null', () {
-      expect(lumenRedirect(AuthStatus.unknown, '/'), isNull);
+  group('lumenRedirect — unknown (holds on splash)', () {
+    test('unknown + "/" redirects to "/splash"', () {
+      expect(lumenRedirect(AuthStatus.unknown, '/'), equals('/splash'));
     });
 
-    test('unknown + "/account" returns null', () {
-      expect(lumenRedirect(AuthStatus.unknown, '/account'), isNull);
+    test('unknown + "/account" redirects to "/splash"', () {
+      expect(lumenRedirect(AuthStatus.unknown, '/account'), equals('/splash'));
     });
 
-    test('unknown + "/profile" returns null', () {
-      expect(lumenRedirect(AuthStatus.unknown, '/profile'), isNull);
+    test('unknown + "/profile" redirects to "/splash"', () {
+      expect(lumenRedirect(AuthStatus.unknown, '/profile'), equals('/splash'));
+    });
+
+    test('unknown + "/splash" returns null (already on splash)', () {
+      expect(lumenRedirect(AuthStatus.unknown, '/splash'), isNull);
     });
   });
 
@@ -35,6 +39,10 @@ void main() {
         lumenRedirect(AuthStatus.unauthenticated, '/some/deep/path'),
         equals('/'),
       );
+    });
+
+    test('unauthenticated on "/splash" redirects to "/"', () {
+      expect(lumenRedirect(AuthStatus.unauthenticated, '/splash'), equals('/'));
     });
   });
 
@@ -58,6 +66,13 @@ void main() {
       expect(
         lumenRedirect(AuthStatus.authenticated, '/onboarding'),
         isNull,
+      );
+    });
+
+    test('authenticated on "/splash" redirects to "/profile"', () {
+      expect(
+        lumenRedirect(AuthStatus.authenticated, '/splash'),
+        equals('/profile'),
       );
     });
   });
