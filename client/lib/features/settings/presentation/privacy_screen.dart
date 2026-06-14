@@ -114,7 +114,7 @@ class PrivacyScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      '✶ Lumen has never received a data request',
+                      '✦ Lumen has never received a data request',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w400,

@@ -74,7 +74,7 @@ class HelpAboutScreen extends StatelessWidget {
                       children: [
                         // Lumen icon — asterism glyph in accent
                         Text(
-                          '✶',
+                          '✦',
                           style: TextStyle(
                             fontSize: 32,
                             color: c.accent,
@@ -139,7 +139,7 @@ class HelpAboutScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      '✶ Made with care for everyone who\'s been told it\'s just cramps',
+                      '✦ Made with care for everyone who\'s been told it\'s just cramps',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 11,
