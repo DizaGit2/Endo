@@ -359,8 +359,24 @@ subagent-driven-development; strict TDD; .NET 10. Branch phase/02-shred. Deep re
   - [ ] **T10 — Live walking-skeleton proof + wrap**. Bring up the compose stack; run on the emulator (host `10.0.2.2`); complete a real Keycloak PKCE login → `POST /onboarding/start` → screen 31 renders decrypted `GET /me` (screenshot proof; full CI automation of the browser login is out of scope — document if manual). Confirm no OpenAPI drift (P3b adds no backend endpoints). Coverage ≥60% (generated excluded); fill STATUS; ledger NEEDS_REVIEW.
 
 **STATUS**
-- **State:** IN_PROGRESS · **Branch:** `phase/03b-client-spine` · executing via `subagent-driven-development` (implementer + spec + quality review per task).
-- **Tasks:** T1–T10 pending.
+- **State:** IN_PROGRESS — **T1–T9 DONE; T10 (live proof) pending** · **Branch:** `phase/03b-client-spine` · executing via `subagent-driven-development` (per-task implementer + spec + quality review, fixes applied). **203 tests green · `flutter analyze` clean.**
+- **Tasks done (each = feat/test commit + a review-fix commit where the two-stage review found issues):**
+  - **T1** `TokenStore` over flutter_secure_storage (access/refresh/id + expiry; `clear()` deletes the 4 keys individually, never `deleteAll`).
+  - **T2** `IOidcClient`/`AppAuthOidcClient` (PKCE realm `lumen`, redirect `com.lumen.app:/oauth2redirect`) + `AuthController` (`authStatusProvider`). Native wrapper untested (behind the interface); controller fully tested. `allowInsecureConnections` gated on `kDebugMode`.
+  - **T3** Dio `AuthInterceptor` — bearer + proactive + single-flight 401 refresh (proven exactly-one under concurrent 401s) + retry-once guard + PII-safe `kDebugMode` logger; `Failure` + `mapDioException`. (Review fix: retry-time non-auth errors surface real DioException, not AuthFailure.)
+  - **T4** Encrypted Hive (`HiveAesCipher` key from secure storage) + `CacheStore` + `CachedQuery` (SWR; **writes never queue**; `NetworkRequired`/`Stale`/`Fresh`). At-rest test reads raw box bytes → no plaintext. (Review fix: only network/server failures fall back to cache; others propagate.)
+  - **T5** GoRouter auth guard (`MaterialApp.router`); pure `lumenRedirect`; welcome→account nav. (Review fix: splash for `unknown` (no cold-start flash); redirect on `state.uri.path`; notifier disposed.)
+  - **T6** `main()` async startup: `initializeDateFormatting` (es-ES/en-US) + Hive cache boot.
+  - **T7** Account screen (screen 2) full-bleed: register → `POST /onboarding/start` → appauth login; idle/loading/error states; goldens. **D-01 social-login buttons omitted.**
+  - **T8** Profile screen (screen 31) full-bleed: `GET /me` decrypted via `CachedQuery` (Fresh/Stale/NetworkRequired states) + `PATCH /me` edit; **L-03 v0 trust copy** replaces the inaccurate "stays on your device"; goldens. (Review fix: failed edit keeps the profile on screen + inline error; dialog controller disposed.)
+  - **T9** Logout teardown purges the encrypted cache (best-effort) so no decrypted PII survives sign-out; repo-level writes-never-queue tests.
+- **Verification (pasted, 2026-06-14):**
+  ```
+  client (PUB_CACHE=C:\pub_cache):  flutter test -> 203 passed   ·   flutter analyze -> No issues found!
+  ```
+- **T10 — REMAINING (the walking-skeleton proof; needs the live environment):** bring up the compose stack + emulator (host `10.0.2.2`), complete a real Keycloak PKCE login → `POST /onboarding/start` → screen 31 renders decrypted `GET /me` (screenshot). The interactive Keycloak login is not fully CI-automatable. Also: confirm no OpenAPI drift (P3b adds no backend endpoints), run the coverage gate (≥60%, generated excluded), then fill STATUS + flip ledger to NEEDS_REVIEW.
+- **Tracked minor cleanups (non-blocking, deferred):** global `cacheStore` holder test-isolation (`setCacheStore`); MeRepository round-trip test asserts presence vs equality (round-trip is exercised via the Stale path); account screen lacks client-side empty-field validation (server 422 surfaces inline).
+- **Deviations (anti-drift):** `OidcConfig.issuer` dev default `http://10.0.2.2:8080/realms/lumen` + `allowInsecureConnections=kDebugMode` — **P11 must use the https Caddy issuer** (release builds already force TLS). API base in `dio_provider` is a `10.0.2.2` dev default (TODO P3b-T10/finalize).
 
 ---
 
