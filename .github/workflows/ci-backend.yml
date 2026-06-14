@@ -66,6 +66,7 @@ jobs:
         run: dotnet test backend/tests/Lumen.IntegrationTests --nologo
 
       - name: Security/GDPR tests
+        if: always()
         run: dotnet test backend/tests/Lumen.SecurityTests --nologo
 
       - name: Dump service logs on failure

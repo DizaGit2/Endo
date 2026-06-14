@@ -27,8 +27,9 @@ public class GdprErasureBaselineTests
 
     private sealed class CapturingSink : ILogEventSink
     {
-        public List<LogEvent> Events { get; } = [];
-        public void Emit(LogEvent logEvent) => Events.Add(logEvent);
+        private readonly System.Collections.Concurrent.ConcurrentBag<LogEvent> _events = [];
+        public IReadOnlyCollection<LogEvent> Events => _events;
+        public void Emit(LogEvent logEvent) => _events.Add(logEvent);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────────────────
@@ -39,19 +40,9 @@ public class GdprErasureBaselineTests
     private static JobCryptoContext NewCryptoContext(LumenDbContext db, Guid userId)
         => new(db, new VaultTransitKeyWrapper(SecurityTestFixtures.Vault()), new AesGcmFieldCipher(), userId);
 
-    private static User NewUser(Guid userId) => new()
-    {
-        Id = userId,
-        EmailHash = "hash-" + userId.ToString("N"),
-        Locale = "es-ES",
-        Timezone = "Europe/Madrid",
-        CreatedAt = DateTimeOffset.UtcNow,
-        UpdatedAt = DateTimeOffset.UtcNow,
-    };
-
     private static async Task SeedUserWithDekAndProfileAsync(LumenDbContext db, Guid userId)
     {
-        db.Users.Add(NewUser(userId));
+        db.Users.Add(SecurityTestFixtures.NewUser(userId));
         await db.SaveChangesAsync();
 
         var provisioner = new DekProvisioner(
@@ -193,18 +184,11 @@ public class GdprErasureBaselineTests
         await using var db = SecurityTestFixtures.NewDb();
         try
         {
-            // Seed with a recognisable email hash (using the email string directly so we can
-            // search for it) — the job does not receive the email, but we verify no accidental
-            // leakage occurs from the User entity the job loads.
-            db.Users.Add(new User
-            {
-                Id = userId,
-                EmailHash = userEmail,
-                Locale = "es-ES",
-                Timezone = "Europe/Madrid",
-                CreatedAt = DateTimeOffset.UtcNow,
-                UpdatedAt = DateTimeOffset.UtcNow,
-            });
+            // EmailHash is deliberately set to the raw email (not a real hash) so the assertion
+            // can prove the job never logs it; real hashes aren't reversible to the email anyway.
+            var u = SecurityTestFixtures.NewUser(userId);
+            u.EmailHash = userEmail;
+            db.Users.Add(u);
             await db.SaveChangesAsync();
 
             var provisioner = new DekProvisioner(
