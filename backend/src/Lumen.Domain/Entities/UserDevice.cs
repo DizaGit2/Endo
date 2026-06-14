@@ -1,8 +1,9 @@
 namespace Lumen.Domain.Entities;
 
 /// <summary>
-/// A registered push-notification device for a user. <see cref="PushToken"/> is blanked during
-/// crypto-shred so no push target survives erasure (§F). Platform is "ios" or "android".
+/// A registered push-notification device for a user. The P2 crypto-shred job DELETES all
+/// user_devices rows for the user — right-to-erasure removes device records entirely (§F).
+/// Platform is "ios" or "android".
 /// </summary>
 public class UserDevice
 {

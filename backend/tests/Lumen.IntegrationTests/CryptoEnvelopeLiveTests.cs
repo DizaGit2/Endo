@@ -17,25 +17,14 @@ namespace Lumen.IntegrationTests;
 [Trait("Category", "LiveStack")]
 public class CryptoEnvelopeLiveTests
 {
-    private const string Db = "Host=localhost;Port=55432;Database=lumen;Username=postgres;Password=postgres";
     private static VaultOptions Vault() => new() { Address = "http://127.0.0.1:8200", Token = "root", KeyName = "lumen-dev-kek" };
-    private static LumenDbContext NewDb() => new(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(Db).Options);
+    private static LumenDbContext NewDb() => new(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(TestFixtures.Db).Options);
 
     private sealed class StubUser(Guid id) : ICurrentUserAccessor
     {
         public bool IsAuthenticated => true;
         public Guid UserId { get; } = id;
     }
-
-    private static User NewUser(Guid id) => new()
-    {
-        Id = id,
-        EmailHash = "hash-" + id.ToString("N"),
-        Locale = "es-ES",
-        Timezone = "Europe/Madrid",
-        CreatedAt = DateTimeOffset.UtcNow,
-        UpdatedAt = DateTimeOffset.UtcNow,
-    };
 
     [Fact]
     public async Task Full_envelope_roundtrip_through_vault_and_postgres()
@@ -46,7 +35,7 @@ public class CryptoEnvelopeLiveTests
         await using var db = NewDb();
         try
         {
-            db.Users.Add(NewUser(userId));
+            db.Users.Add(TestFixtures.NewUser(userId));
             await db.SaveChangesAsync();
 
             // T5 — provision DEK (twice, to prove idempotency)
@@ -99,7 +88,7 @@ public class CryptoEnvelopeLiveTests
         await using var db = NewDb();
         try
         {
-            db.Users.Add(NewUser(userId));
+            db.Users.Add(TestFixtures.NewUser(userId));
             await db.SaveChangesAsync();
             await new DekProvisioner(db, wrapper, Vault(), TimeProvider.System).ProvisionAsync(userId);
 

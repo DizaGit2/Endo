@@ -19,8 +19,6 @@ namespace Lumen.IntegrationTests;
 [Trait("Category", "LiveStack")]
 public class SpineLiveTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
-    private const string Db = "Host=localhost;Port=55432;Database=lumen;Username=postgres;Password=postgres";
-
     [Fact]
     public async Task Walking_skeleton_spine_end_to_end()
     {
@@ -62,7 +60,7 @@ public class SpineLiveTests(WebApplicationFactory<Program> factory) : IClassFixt
             body.GetProperty("locale").GetString().ShouldBe("es-ES");
 
             // 5. the stored display name is ciphertext at rest
-            await using var db = new LumenDbContext(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(Db).Options);
+            await using var db = new LumenDbContext(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(TestFixtures.Db).Options);
             var profile = await db.UserProfiles.AsNoTracking().SingleAsync(p => p.UserId == userId);
             System.Text.Encoding.UTF8.GetString(profile.DisplayNameEnc!).ShouldNotContain("María");
         }
@@ -70,7 +68,7 @@ public class SpineLiveTests(WebApplicationFactory<Program> factory) : IClassFixt
         {
             if (userId != default)
             {
-                await using var db = new LumenDbContext(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(Db).Options);
+                await using var db = new LumenDbContext(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(TestFixtures.Db).Options);
                 await db.UserProfiles.Where(p => p.UserId == userId).ExecuteDeleteAsync();
                 await db.ConsentRecords.Where(c => c.UserId == userId).ExecuteDeleteAsync();
                 await db.UserKeys.Where(k => k.UserId == userId).ExecuteDeleteAsync();
@@ -101,7 +99,7 @@ public class SpineLiveTests(WebApplicationFactory<Program> factory) : IClassFixt
         {
             if (userId != default)
             {
-                await using var db = new LumenDbContext(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(Db).Options);
+                await using var db = new LumenDbContext(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(TestFixtures.Db).Options);
                 await db.UserProfiles.Where(p => p.UserId == userId).ExecuteDeleteAsync();
                 await db.ConsentRecords.Where(c => c.UserId == userId).ExecuteDeleteAsync(); // Restrict FK — delete explicitly
                 await db.UserKeys.Where(k => k.UserId == userId).ExecuteDeleteAsync();
