@@ -45,6 +45,11 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   intl: ^0.20.2
+  # The generated OpenAPI client (dart-dio output) lives in lib/api/ as first-class
+  # sources of this package (imports as package:lumen/api/...). It uses one_of /
+  # one_of_serializer for the dart-dio serializer plumbing.
+  one_of: ^1.5.0
+  one_of_serializer: ^1.5.0
 
 dev_dependencies:
   flutter_test:
