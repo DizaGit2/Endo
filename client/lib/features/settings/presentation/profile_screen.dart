@@ -374,33 +374,48 @@ class _EditButton extends ConsumerWidget {
   }
 
   Future<void> _showEditDialog(BuildContext context, WidgetRef ref) async {
-    final controller =
-        TextEditingController(text: me.displayName ?? '');
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Edit display name'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Display name'),
+    final controller = TextEditingController(text: me.displayName ?? '');
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Edit display name'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Display name'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Save'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && controller.text.isNotEmpty) {
-      await ref
-          .read(profileControllerProvider.notifier)
-          .saveDisplayName(controller.text.trim());
+      );
+      if (confirmed == true && controller.text.trim().isNotEmpty) {
+        try {
+          await ref
+              .read(profileControllerProvider.notifier)
+              .saveDisplayName(controller.text.trim());
+        } catch (_) {
+          // Online-only: the save failed and is NOT queued. Keep the profile on
+          // screen and tell the user to retry (no pending-write is persisted).
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Could not save your changes. Please try again.'),
+              ),
+            );
+          }
+        }
+      }
+    } finally {
+      controller.dispose();
     }
   }
 }

@@ -29,19 +29,14 @@ class ProfileController
 
   // ── saveDisplayName ────────────────────────────────────────────────────────
 
-  /// Updates the display name via [PATCH /me] and invalidates the local cache.
+  /// Updates the display name via [PATCH /me] and invalidates the local cache,
+  /// then re-fetches the profile.
   ///
-  /// Sets state to [AsyncLoading] while the request is in flight, then
-  /// re-fetches the profile from the server/cache.
+  /// The currently-displayed profile stays on screen during the save; a failure
+  /// is RETHROWN to the caller (the edit dialog surfaces it inline) rather than
+  /// replacing the whole screen with an error and losing the loaded data.
   Future<void> saveDisplayName(String name) async {
-    state = const AsyncLoading();
-    try {
-      await _repo.updateMe(displayName: name);
-    } catch (err, st) {
-      // updateMe already threw a typed Failure; surface it as AsyncError.
-      state = AsyncError(err, st);
-      return;
-    }
+    await _repo.updateMe(displayName: name); // throws a typed Failure on error
     // Refresh: re-fetch profile (may return Fresh or Stale depending on
     // network state after the write).
     state = await AsyncValue.guard(_repo.getMe);
