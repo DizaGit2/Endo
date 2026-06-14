@@ -46,7 +46,7 @@ public class SpineLiveTests(LumenApiFactory factory) : IClassFixture<LumenApiFac
             (await client.GetAsync("/me")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
 
             // 3. log in (password grant) to obtain a real Keycloak access token
-            var token = await GetUserTokenAsync(email, password);
+            var token = await TestFixtures.GetUserTokenAsync(email, password);
 
             // 4. GET /me with the token -> 200 + decrypted profile
             var authed = factory.CreateClient();
@@ -107,21 +107,4 @@ public class SpineLiveTests(LumenApiFactory factory) : IClassFixture<LumenApiFac
         }
     }
 
-    private static async Task<string> GetUserTokenAsync(string email, string password)
-    {
-        using var http = new HttpClient();
-        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["grant_type"] = "password",
-            ["client_id"] = "api",
-            ["client_secret"] = "dev-api-secret",
-            ["username"] = email,
-            ["password"] = password,
-            ["scope"] = "openid",
-        });
-        var response = await http.PostAsync("http://localhost:8080/realms/lumen/protocol/openid-connect/token", form);
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return doc.RootElement.GetProperty("access_token").GetString()!;
-    }
 }

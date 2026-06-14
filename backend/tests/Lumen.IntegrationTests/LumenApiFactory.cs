@@ -9,7 +9,7 @@ namespace Lumen.IntegrationTests;
 /// (so dev secrets + plaintext OIDC metadata work) but disables the Hangfire background server so
 /// enqueued jobs never execute mid-test.
 /// </summary>
-public sealed class LumenApiFactory : WebApplicationFactory<Program>
+public class LumenApiFactory : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder) =>
         builder.ConfigureAppConfiguration((_, cfg) =>

@@ -7,10 +7,8 @@ using Hangfire.Common;
 using Hangfire.States;
 using Lumen.Infrastructure.Jobs;
 using Lumen.Infrastructure.Persistence;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 using Xunit;
@@ -20,17 +18,16 @@ namespace Lumen.IntegrationTests;
 /// <summary>
 /// A WAF fixture that replaces <see cref="IBackgroundJobClient"/> with a
 /// <see cref="RecordingBackgroundJobClient"/> so enqueues are captured deterministically without
-/// the Hangfire server ever executing the job.
+/// the Hangfire server ever executing the job. Extends <see cref="LumenApiFactory"/> to inherit
+/// the Hangfire server-disable config without duplication.
 /// </summary>
-public sealed class RecordingJobFactory : WebApplicationFactory<Program>
+public sealed class RecordingJobFactory : LumenApiFactory
 {
     public RecordingBackgroundJobClient Stub { get; } = new();
 
     protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
     {
-        // Mirror LumenApiFactory: keep Development env so dev secrets work, disable Hangfire server.
-        builder.ConfigureAppConfiguration((_, cfg) =>
-            cfg.AddInMemoryCollection(new Dictionary<string, string?> { ["Hangfire:EnableServer"] = "false" }));
+        base.ConfigureWebHost(builder);
         builder.ConfigureTestServices(s => s.AddSingleton<IBackgroundJobClient>(Stub));
     }
 }
@@ -46,46 +43,6 @@ public sealed class RecordingJobFactory : WebApplicationFactory<Program>
 public class DeleteMeLiveTests(RecordingJobFactory factory) : IClassFixture<RecordingJobFactory>
 {
     // ------------------------------------------------------------------ helpers
-
-    private static async Task<string> GetUserTokenAsync(string email, string password)
-    {
-        using var http = new HttpClient();
-        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["grant_type"] = "password",
-            ["client_id"] = "api",
-            ["client_secret"] = "dev-api-secret",
-            ["username"] = email,
-            ["password"] = password,
-            ["scope"] = "openid",
-        });
-        var response = await http.PostAsync(
-            "http://localhost:8080/realms/lumen/protocol/openid-connect/token", form);
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return doc.RootElement.GetProperty("access_token").GetString()!;
-    }
-
-    /// <summary>
-    /// Attempts a password-grant token request and returns the HTTP status code.
-    /// Does NOT throw on non-2xx — used to verify that a disabled user cannot authenticate.
-    /// </summary>
-    private static async Task<HttpStatusCode> TryGetUserTokenStatusAsync(string email, string password)
-    {
-        using var http = new HttpClient();
-        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["grant_type"] = "password",
-            ["client_id"] = "api",
-            ["client_secret"] = "dev-api-secret",
-            ["username"] = email,
-            ["password"] = password,
-            ["scope"] = "openid",
-        });
-        var response = await http.PostAsync(
-            "http://localhost:8080/realms/lumen/protocol/openid-connect/token", form);
-        return response.StatusCode;
-    }
 
     private async Task<(Guid userId, string token)> OnboardAndLoginAsync(string email, string password)
     {
@@ -103,7 +60,7 @@ public class DeleteMeLiveTests(RecordingJobFactory factory) : IClassFixture<Reco
         var userId = (await start.Content.ReadFromJsonAsync<JsonElement>())
             .GetProperty("userId").GetGuid();
 
-        var token = await GetUserTokenAsync(email, password);
+        var token = await TestFixtures.GetUserTokenAsync(email, password);
         return (userId, token);
     }
 
@@ -132,7 +89,7 @@ public class DeleteMeLiveTests(RecordingJobFactory factory) : IClassFixture<Reco
                 await http.SendAsync(del); // best-effort
             }
         }
-        catch { /* best-effort */ }
+        catch (Exception ex) { Console.Error.WriteLine($"[DeleteMeLiveTests cleanup] {ex.Message}"); }
 
         await using var db = TestFixtures.NewDb();
         await db.UserProfiles.Where(p => p.UserId == userId).ExecuteDeleteAsync();
@@ -151,6 +108,7 @@ public class DeleteMeLiveTests(RecordingJobFactory factory) : IClassFixture<Reco
         var email = $"del-{Guid.NewGuid():N}@example.com";
         const string password = "Sup3rSecretPassw0rd!";
         Guid userId = default;
+        // Reset the shared stub (xUnit runs tests in a class sequentially).
         factory.Stub.Captured.Clear();
 
         try
@@ -174,7 +132,7 @@ public class DeleteMeLiveTests(RecordingJobFactory factory) : IClassFixture<Reco
             state.ShouldBeOfType<EnqueuedState>();
 
             // Assert: Keycloak user is now disabled — password-grant must fail for a disabled account.
-            var tokenStatus = await TryGetUserTokenStatusAsync(email, password);
+            var tokenStatus = await TestFixtures.TryGetUserTokenStatusAsync(email, password);
             tokenStatus.ShouldNotBe(HttpStatusCode.OK,
                 "A disabled Keycloak user must not be able to obtain a token.");
             ((int)tokenStatus).ShouldBeGreaterThanOrEqualTo(400,
@@ -201,6 +159,7 @@ public class DeleteMeLiveTests(RecordingJobFactory factory) : IClassFixture<Reco
         var email = $"del-tomb-{Guid.NewGuid():N}@example.com";
         const string password = "Sup3rSecretPassw0rd!";
         Guid userId = default;
+        // Reset the shared stub (xUnit runs tests in a class sequentially).
         factory.Stub.Captured.Clear();
 
         try
