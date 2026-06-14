@@ -1,0 +1,100 @@
+name: ci-client
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "client/**"
+      - "backend/contract/openapi.json"
+      - ".github/workflows/ci-client.yml"
+  pull_request:
+    paths:
+      - "client/**"
+      - "backend/contract/openapi.json"
+      - ".github/workflows/ci-client.yml"
+
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Java is harmless on Linux and covers any native-asset hook that needs it.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.1"
+          channel: stable
+
+      - name: pub get
+        working-directory: client
+        run: flutter pub get
+
+      # -----------------------------------------------------------------------
+      # Spec-sync drift guard
+      # The pinned client spec must be byte-identical to the committed backend
+      # contract. (The backend OpenApiSnapshotTests job enforces live↔committed;
+      # this step enforces committed↔pinned-client.)
+      # -----------------------------------------------------------------------
+      - name: Assert spec files are byte-identical
+        run: |
+          if ! cmp -s backend/contract/openapi.json client/openapi/lumen.openapi.json; then
+            echo "ERROR: backend/contract/openapi.json and client/openapi/lumen.openapi.json have diverged."
+            echo "Run the backend OpenApiSnapshotTests with LUMEN_OPENAPI_UPDATE=1 to refresh both files."
+            diff backend/contract/openapi.json client/openapi/lumen.openapi.json || true
+            exit 1
+          fi
+          echo "Spec files match — no drift detected."
+
+      - name: flutter analyze
+        working-directory: client
+        run: flutter analyze
+
+      - name: flutter test --coverage
+        working-directory: client
+        run: flutter test --coverage
+
+      # -----------------------------------------------------------------------
+      # Coverage gate >= 60% (generated code excluded)
+      # Strips SF records belonging to lib/api/** and *.g.dart from lcov.info,
+      # then computes line-hit percentage on the remainder. Fails if < 60%.
+      # -----------------------------------------------------------------------
+      - name: Install lcov
+        run: sudo apt-get install -y lcov
+
+      - name: Compute coverage (excluding generated code)
+        working-directory: client
+        run: |
+          # Strip generated code from the lcov data file before processing.
+          lcov \
+            --remove coverage/lcov.info \
+            '*/lib/api/*' \
+            '*.g.dart' \
+            --output-file coverage/lcov_filtered.info \
+            --ignore-errors unused
+
+          # Summarise the filtered data.
+          SUMMARY=$(lcov --summary coverage/lcov_filtered.info 2>&1)
+          echo "$SUMMARY"
+
+          # Extract line coverage percentage (e.g. "58.3%").
+          PCT=$(echo "$SUMMARY" | grep -oP 'lines\.*:\s*\K[0-9]+\.[0-9]+(?=%)' || echo "")
+          if [ -z "$PCT" ]; then
+            # Fallback: integer percentage (e.g. "100%").
+            PCT=$(echo "$SUMMARY" | grep -oP 'lines\.*:\s*\K[0-9]+(?=%)' || echo "0")
+          fi
+
+          echo "Line coverage (excl. generated): ${PCT}%"
+
+          # awk comparison: fail if PCT < 60.
+          awk -v pct="$PCT" 'BEGIN {
+            if (pct + 0 < 60) {
+              print "GATE FAIL: coverage " pct "% is below the 60% threshold."
+              exit 1
+            }
+            print "GATE PASS: coverage " pct "% >= 60%."
+          }'

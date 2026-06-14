@@ -5,15 +5,33 @@ on:
     branches: ["**"]
     paths:
       - "backend/**"
+      - "client/openapi/**"
       - "deploy/**"
       - ".github/workflows/ci-backend.yml"
   pull_request:
     paths:
       - "backend/**"
+      - "client/openapi/**"
       - "deploy/**"
       - ".github/workflows/ci-backend.yml"
 
 jobs:
+  # -------------------------------------------------------------------------
+  # OpenAPI contract drift guard (no docker required)
+  # Boots the API in-process and asserts:
+  #   live backend == backend/contract/openapi.json == client/openapi/lumen.openapi.json
+  # Triggers on any backend change OR a change to the pinned client spec.
+  # -------------------------------------------------------------------------
+  openapi-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: OpenAPI snapshot / contract drift guard
+        run: dotnet test backend/Lumen.slnx --filter "FullyQualifiedName~OpenApi" --nologo
+
   build-and-unit:
     runs-on: ubuntu-latest
     steps:
