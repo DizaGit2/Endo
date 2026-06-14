@@ -10,6 +10,8 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
     public DbSet<UserKey> UserKeys => Set<UserKey>();
     public DbSet<UserProfileEnc> UserProfiles => Set<UserProfileEnc>();
     public DbSet<ConsentRecord> ConsentRecords => Set<ConsentRecord>();
+    public DbSet<UserDevice> UserDevices => Set<UserDevice>();
+    public DbSet<AdminAuditLog> AdminAuditLogs => Set<AdminAuditLog>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         // The soft-delete query filter on User intentionally coexists with required dependents.
@@ -54,6 +56,29 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
             e.Property(x => x.Locale).HasMaxLength(35);
             // Consent proof must survive erasure (crypto-shred, not a row delete) — do NOT cascade.
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<UserDevice>(e =>
+        {
+            e.ToTable("user_devices");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Platform).IsRequired().HasMaxLength(16);
+            e.Property(x => x.PushToken).IsRequired().HasMaxLength(512);
+            e.HasIndex(x => new { x.UserId, x.PushToken }).IsUnique();
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<AdminAuditLog>(e =>
+        {
+            e.ToTable("admin_audit_log");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Action).IsRequired().HasMaxLength(64);
+            e.Property(x => x.EntityType).IsRequired().HasMaxLength(64);
+            e.Property(x => x.EntityId).HasMaxLength(128);
+            e.Property(x => x.BeforeJson).HasColumnType("jsonb");
+            e.Property(x => x.AfterJson).HasColumnType("jsonb");
+            e.HasIndex(x => x.At);
+            // No FK to User — audit history must survive crypto-shred (§F).
         });
     }
 }
