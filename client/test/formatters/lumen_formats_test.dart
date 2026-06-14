@@ -110,8 +110,16 @@ void main() {
       expect(LumenFormats.firstDayOfWeek('en_US'), DateTime.sunday);
     });
 
-    test('bare "en" → DateTime.sunday (7)', () {
-      expect(LumenFormats.firstDayOfWeek('en'), DateTime.sunday);
+    test('en-US (hyphen form) → DateTime.sunday (7)', () {
+      expect(LumenFormats.firstDayOfWeek('en-US'), DateTime.sunday);
+    });
+
+    test('bare "en" → DateTime.monday (1) — only en_US is Sunday-first', () {
+      expect(LumenFormats.firstDayOfWeek('en'), DateTime.monday);
+    });
+
+    test('en_GB → DateTime.monday (1) — UK is Monday-first', () {
+      expect(LumenFormats.firstDayOfWeek('en_GB'), DateTime.monday);
     });
 
     test('unknown locale fr_FR → DateTime.monday (1) — safe default', () {

@@ -113,14 +113,16 @@ abstract final class LumenFormats {
     return DateTime.monday;
   }
 
-  /// Locale language codes (lower-case, underscore-separated) that use
-  /// Sunday as the first day of the week per D-05.
+  /// Locale identifiers (lower-case, underscore-separated) that use Sunday as
+  /// the first day of the week per D-05.
   ///
-  /// Currently only `en` with country `US` (and bare `en`) is Sunday-first.
-  /// Extend this list when adding support for additional locales (e.g. `he`
-  /// for Hebrew, `ar` for Arabic variants).
+  /// Only `en_US` is Sunday-first in v1. Other English locales (en_GB, en_AU,
+  /// en_CA, en_IE, and bare `en`) are Monday-first and therefore fall through
+  /// to the [DateTime.monday] default — do NOT add a bare `en` entry here, as
+  /// that would wrongly classify those Monday-first English regions as
+  /// Sunday-first. Extend this list per-locale when adding support (e.g. `he`,
+  /// `ar` variants).
   static const List<String> _sundayFirstLocales = [
-    'en',    // bare "en" and any en_XX except those overridden below
     'en_us', // explicit en_US — Sunday-first per D-05
   ];
 
