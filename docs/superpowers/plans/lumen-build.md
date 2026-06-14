@@ -37,8 +37,8 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 
 ## §1 Status ledger  (the ONLY authority for "done")
 
-**NEXT PHASE TO RUN: P3b**  (P0a, P1, P2, **P3a DONE** — merged to main 2026-06-14, tag `phase-03a`, merge `39acac4`; 106 client + 3 backend OpenAPI tests, coverage 97.60%. **P3b** = client OIDC (flutter_appauth PKCE, realm `lumen`) + online-only encrypted Hive cache + screens 2 (account→`POST /onboarding/start`) & 31 (profile→`GET /me`). Depends on P3a + P1 endpoints. Preconditions: D-07 app-lock scope ✓, L-03 privacy copy drafted v0; wire `initializeDateFormatting` at startup (P3a breadcrumb). Branch `phase/03b-client-spine` off main.)
-**Plan revision:** r10   **Repo HEAD when ledger last updated:** `main` (P3a merged, tag `phase-03a`, merge `39acac4`)
+**NEXT PHASE TO RUN: P3b (IN_PROGRESS, started 2026-06-14).**  (P0a, P1, P2, P3a DONE. Two P3a post-merge fixes also on main+origin: Android `appAuthRedirectScheme` build fix `57f3a03`, full-bleed static screens `662ded4`. **P3b** = client OIDC (flutter_appauth PKCE, realm `lumen`) + online-only encrypted Hive cache + screens 2 (account→`POST /onboarding/start`) & 31 (profile→`GET /me`), on branch `phase/03b-client-spine`. T1–T10 detailed in §3. Final exit = real PKCE login → decrypted `GET /me` on screen 31 (needs the live compose stack + emulator).)
+**Plan revision:** r11   **Repo HEAD when ledger last updated:** `phase/03b-client-spine` (P3b IN_PROGRESS; main+origin at `662ded4`)
 
 | Phase | Name | Status | Branch | PR | Verified by | Notes |
 |---|---|---|---|---|---|---|
@@ -47,7 +47,7 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 | P1 ⚠ | Auth + envelope-encryption spine | DONE | phase/01-spine | tag `phase-01` | 2026-06-02 | merged to main; 23 tests; security review + /code-review high both clean |
 | P2 ⚠ | Crypto-shred + Hangfire | DONE | phase/02-shred | [#1](https://github.com/DizaGit2/Endo/pull/1) | 2026-06-14 | merged to main, tag `phase-02`; 57 tests; multi-agent /review + all fixes applied |
 | P3a | Flutter foundation + theming + OpenAPI pipeline | DONE | phase/03a-client-foundation | tag `phase-03a` | 2026-06-14 | merged to main (merge `39acac4`); 106 client + 3 OpenAPI tests; cov 97.60% |
-| P3b | Client OIDC + cache + screens 2/31 | TODO | — | — | — | |
+| P3b | Client OIDC + cache + screens 2/31 | IN_PROGRESS | phase/03b-client-spine | — | — | started 2026-06-14; T1–T10 |
 | P4a | Backend Onboarding-rest + Cycle + Symptoms | TODO | — | — | — | needs definitions + D-08..D-14 |
 | P4b | Flutter screens 3–14, 32 | TODO | — | — | — | |
 | P5 | Body + Activity + Treatment | TODO | — | — | — | needs D-15/D-16 |
@@ -342,13 +342,25 @@ subagent-driven-development; strict TDD; .NET 10. Branch phase/02-shred. Deep re
 
 ### Phase P3b — Client OIDC + online-only cache + screens 2/31
 
-- **Status:** TODO · **Depends on:** P3a (+ P1 endpoints) · **Branch:** `phase/03b-client-spine`
+- **Status:** IN_PROGRESS (started 2026-06-14) · **Depends on:** P3a (+ P1 endpoints) · **Branch:** `phase/03b-client-spine`
 - **Goal:** prove the client half of the spine — login via Keycloak renders decrypted `GET /me`.
-- **Preconditions:** D-07 (app-lock scope), L-03 (corrected privacy copy). Hard prereq is **P1** endpoints + committed spec (P2 is soft ordering).
+- **Preconditions:** ✅ D-07 (app-lock scope) approved; L-03 trust copy v0 drafted; **P1** endpoints + committed OpenAPI spec + generated Dart client all present (from P3a); Android `appAuthRedirectScheme` placeholder already set (P3a follow-up). Realm `lumen` has a public PKCE mobile client with redirect `com.lumen.app:/oauth2redirect` (P0a). Design refs: flutter companion §4 (auth/cache), `ARCHITECTURE.md §C.1/§F`. Mockups: screen 2 (account), screen 31 (profile).
 - **Exit criteria:** real device logs in (PKCE) → `POST /onboarding/start` → screen 31 shows decrypted `GET /me`; tokens in Keychain/Keystore; **Hive box unreadable without the secure-storage key**; online-only write-errors-don't-queue test; goldens both themes.
-- **Tasks (outline):** flutter_appauth PKCE against realm `lumen` → secure token storage → Dio interceptor (bearer + single-flight 401 refresh + PII-safe logging) → `CachedQuery` online-only + encrypted Hive → GoRouter auth/onboarding guard → wire screen 2 (account→OIDC+onboarding/start) + screen 31 (profile) → integration_test + Hive-at-rest test. *(Detailed at phase entry.)*
+- **Tasks (bite-sized TDD; one commit each; via `subagent-driven-development`, detailed at phase entry 2026-06-14):**
+  - [ ] **T1 — Secure token storage** (TDD). `core/auth/token_store.dart` over `flutter_secure_storage` (Keychain/Keystore): get/set/clear `access_token`, `refresh_token`, `id_token`, `access_token_expiry`. Test against an in-memory/mocked secure-storage.
+  - [ ] **T2 — OIDC client + AuthController** (TDD via mock). `core/auth/oidc_client.dart` = an `IOidcClient` abstraction wrapping `flutter_appauth` (authorize+PKCE+token exchange via realm `lumen` discovery, refresh, end-session; scopes `openid profile offline_access`; redirect `com.lumen.app:/oauth2redirect`). `auth_controller.dart` = Riverpod notifier holding auth state from TokenStore + IOidcClient (login/logout/refresh). Test AuthController with a mocked IOidcClient + TokenStore. iOS URL type wired (Android intent-filter covered by the placeholder).
+  - [ ] **T3 — Dio + auth interceptor + error mapping** (TDD). `core/network/dio_provider.dart`, `core/auth/auth_interceptor.dart`: attach bearer; proactive refresh within 30s of expiry (single-flight `Completer`); on 401 single-flight refresh + retry once; on refresh failure clear tokens + signal logout; PII-safe logging (never log `Authorization` or me/onboarding/settings bodies). `core/error/{failure,error_mapper}.dart` maps `DioException` + `problem+json` → typed `Failure`. Tests: bearer attached; burst-401 → exactly one refresh; retry once; refresh-fail clears tokens; mapper cases.
+  - [ ] **T4 — Encrypted Hive + `CachedQuery` (online-only)** (TDD). `core/cache/hive_boot.dart` (init; encrypted box via `HiveAesCipher` keyed from secure storage, key generated once) + `cached_query.dart` (stale-while-revalidate read; always network; write-through invalidation; **writes never queue**; `NetworkRequired` failure when no cache + offline; per-query TTL; purge on logout). Tests + **Hive-at-rest test** (box file bytes contain no plaintext without the key).
+  - [ ] **T5 — GoRouter auth/onboarding guard** (TDD). `core/router/app_router.dart` + typed routes; `app.dart` → `MaterialApp.router`. Redirect: unauthenticated → welcome/account; authed + `onboardingCompletedAt==null` → onboarding (screen 2 flow / stub steps); authed + onboarded → profile/home. Wire welcome (screen 1) "Begin"→account. Test the redirect function across auth/onboarding states.
+  - [ ] **T6 — `initializeDateFormatting` at startup** (small). `main` async; init `es_ES`/`en_US` locale data before `runApp` (P3a breadcrumb). Update smoke test.
+  - [ ] **T7 — Screen 2 (account) wiring + states + goldens**. Port screen 2 full-bleed (per P3a pattern); flow: collect registration → `POST /onboarding/start` (generated client) → `flutter_appauth` login → store tokens → route on. Designed loading/error/retry states (online-only, no queue). Light+dark goldens. Widget tests with a mocked auth/onboarding repository (idle/loading/error).
+  - [ ] **T8 — Screen 31 (profile) wiring + L-03 copy + goldens**. Port screen 31 full-bleed; `GET /me` decrypted via `CachedQuery`; `PATCH /me` edit; replace the inaccurate "stays on your device" line with the **L-03 v0** trust copy. Light+dark goldens. Widget tests with a mocked repo returning a decrypted `MeResponse`.
+  - [ ] **T9 — Online-only write-doesn't-queue + logout purge** (TDD). Prove a failed write surfaces a retryable error and persists NO pending write; logout clears secure storage + purges all Hive boxes + calls end-session.
+  - [ ] **T10 — Live walking-skeleton proof + wrap**. Bring up the compose stack; run on the emulator (host `10.0.2.2`); complete a real Keycloak PKCE login → `POST /onboarding/start` → screen 31 renders decrypted `GET /me` (screenshot proof; full CI automation of the browser login is out of scope — document if manual). Confirm no OpenAPI drift (P3b adds no backend endpoints). Coverage ≥60% (generated excluded); fill STATUS; ledger NEEDS_REVIEW.
 
-**STATUS** _(empty)_
+**STATUS**
+- **State:** IN_PROGRESS · **Branch:** `phase/03b-client-spine` · executing via `subagent-driven-development` (implementer + spec + quality review per task).
+- **Tasks:** T1–T10 pending.
 
 ---
 
