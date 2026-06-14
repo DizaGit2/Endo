@@ -46,7 +46,7 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 | P0b | This living plan | DONE | design/build-strategy | 2026-05-31 | — | = this document |
 | P1 ⚠ | Auth + envelope-encryption spine | DONE | phase/01-spine | tag `phase-01` | 2026-06-02 | merged to main; 23 tests; security review + /code-review high both clean |
 | P2 ⚠ | Crypto-shred + Hangfire | DONE | phase/02-shred | [#1](https://github.com/DizaGit2/Endo/pull/1) | 2026-06-14 | merged to main, tag `phase-02`; 57 tests; multi-agent /review + all fixes applied |
-| P3a | Flutter foundation + theming + OpenAPI pipeline | TODO | — | — | — | Flutter install here |
+| P3a | Flutter foundation + theming + OpenAPI pipeline | IN_PROGRESS | phase/03a-client-foundation | — | — | preconditions cleared 2026-06-14; T1–T10 |
 | P3b | Client OIDC + cache + screens 2/31 | TODO | — | — | — | |
 | P4a | Backend Onboarding-rest + Cycle + Symptoms | TODO | — | — | — | needs definitions + D-08..D-14 |
 | P4b | Flutter screens 3–14, 32 | TODO | — | — | — | |
@@ -278,14 +278,38 @@ subagent-driven-development; strict TDD; .NET 10. Branch phase/02-shred. Deep re
 
 ### Phase P3a — Flutter foundation + theming + OpenAPI pipeline
 
-- **Status:** TODO · **Depends on:** P2 · **Branch:** `phase/03a-client-foundation`
+- **Status:** IN_PROGRESS (started 2026-06-14) · **Depends on:** P2 · **Branch:** `phase/03a-client-foundation`
 - **Goal:** install Flutter; scaffold the app; port the design tokens; stand up the OpenAPI→Dart pipeline + CI drift guard; wire static screens 1/36/37.
 - **Preconditions:** ✅ **CLEARED 2026-06-14.** Flutter/Android installed — `flutter doctor` green (Flutter 3.44.1 stable, Dart 3.12.1, Android SDK 36.1.0, VS 2026, Chrome, 3 devices; "No issues found"). Decisions **D-03** (es-ES primary, 2026-06-01) + **D-05** (locale-driven ICU formatting, es-ES default; API locale-neutral) + **D-06** (metric-only v1, reserve `users.unit_system` enum) + **D-07** (lean client-privacy scope) **approved** — see decision-sheet.md & `ARCHITECTURE.md §A`. **L-03** screen-31 trust copy drafted v0 (ES+EN, pending DPO sign-off) — see legal-asks.md. Definitions: hormone/phase palettes (already in CLAUDE.md). **Phase is unblocked to start.**
 - **Kickoff prompt:** standard, pointing at flutter companion + CLAUDE.md tokens; **step 1 = run the Flutter install and confirm `flutter doctor` before any Dart.**
 - **Exit criteria:** `flutter doctor` green recorded; golden tests (light+dark) pass for static screens; `ThemeData` token assertions match CLAUDE.md; OpenAPI→Dart pipeline + CI drift guard operational; client coverage ≥60%.
-- **Tasks (outline):** Flutter install (human) → app scaffold (feature-first, GoRouter shell, Riverpod) → `LumenColors` ThemeExtension + `HormonePalette` + `PhasePalette` + typography → alchemist golden harness → openapi_generator config + generate from P1 spec → CI `ci-client.yml` drift guard → wire screens 1/36/37 (static) with goldens. *(Detailed at phase entry.)*
+- **Tasks (bite-sized TDD; one commit each; via `subagent-driven-development`, detailed at phase entry 2026-06-14):**
+  - [ ] **T1 — Scaffold + deps + lints** (imperative shell). `flutter create` at `client/` (org `com.lumen`, project `lumen`, `--platforms=android,ios,web`); feature-first dirs per flutter companion §1.2; pubspec deps (flutter_riverpod, riverpod_annotation, go_router, dio, built_value, built_collection, flutter_appauth, flutter_secure_storage, hive, hive_flutter, intl) + dev (build_runner, riverpod_generator, built_value_generator, openapi_generator[_annotations], alchemist, flutter_lints, mocktail); `analysis_options.yaml`. Verify `flutter pub get` + `flutter analyze` (0 issues) + `flutter test`.
+  - [ ] **T2 — `LumenColors` ThemeExtension** (TDD). Test exact light+dark hex for all 10 tokens (incl. border `0x1F` alpha) + lerp/copyWith. `core/theme/lumen_tokens.dart` (values per flutter companion §5.1 / CLAUDE.md).
+  - [ ] **T3 — Hormone + phase palettes** (TDD). `HormonePalette.forCode` (7 codes + `estradiol`/`estrogen` alias + muted fallback) exact; `PhasePalette` 4 phases light/dark exact. `core/theme/{hormone_palette,phase_palette}.dart`.
+  - [ ] **T4 — ThemeData builders + typography** (TDD). `lumenTheme(Brightness)`: `LumenColors` attached; `ColorScheme` derived (primary=accent, surface, etc.); `TextTheme` uses **only** `FontWeight.w400`/`w500` (assert); system font stack; section-label widget the only uppercase. `core/theme/lumen_theme.dart`.
+  - [ ] **T5 — Locale formatting + units (D-05/D-06)** (TDD). `core/formatters/lumen_formats.dart` via `intl`: week-start, date, 24-h time, comma decimal driven by locale; es-ES default vs en-US contrast test. `UnitSystem` enum (default `metric`) + kg/cm formatters (metric-only v1, enum reserved).
+  - [ ] **T6 — Golden harness + `LumenScaffold`**. `flutter_test_config.dart` (alchemist: deterministic font, no real shadows); `shared/widgets/lumen_scaffold.dart` (themed bg, 5-tab bottom-nav stub, theme toggle affordance); smoke golden light+dark.
+  - [ ] **T7 — Static screens 1/36/37 + goldens** (golden-TDD). Port welcome (1), privacy (36 — per **D-07**: no analytics toggle; warrant-canary placeholder L-08; accurate data-handling stance), help_about (37). Light+dark golden each.
+  - [ ] **T8 — OpenAPI snapshot + Dart client**. Emit P1+P2 spec → `backend/contract/openapi.json` (P1-deferred deliverable) via Swashbuckle CLI (`dotnet swagger tofile`; fallback: boot compose + `curl /swagger/v1/swagger.json`); pin to `client/openapi/lumen.openapi.json`; openapi_generator (dio + built_value) → `client/lib/api/`; `flutter analyze` clean; smoke import test. JDK at `C:\Program Files\Android\Android Studio\jbr`. Commit spec + config + generated together.
+  - [ ] **T9 — `ci-client.yml` + OpenAPI drift guard**. GH Actions: pub get → analyze → test (goldens) → coverage; drift guard regenerates the spec from the backend and `diff`s vs the committed snapshot, failing on drift.
+  - [ ] **T10 — Coverage ≥60% + wrap**. `flutter test --coverage`; record proof; fill STATUS; set ledger NEEDS_REVIEW.
 
-**STATUS** _(empty)_
+**STATUS**
+- **State:** IN_PROGRESS · **Branch:** `phase/03a-client-foundation`
+- **Precondition proof — `flutter doctor` GREEN (2026-06-14):**
+  ```
+  [✓] Flutter (Channel stable, 3.44.1, on Windows 11 Pro 25H2, locale en-US)
+  [✓] Windows Version (11 Pro 64-bit, 25H2)
+  [✓] Android toolchain - Android SDK 36.1.0
+  [✓] Chrome - develop for the web
+  [✓] Visual Studio - Visual Studio Professional 2026 18.6.0
+  [✓] Connected device (3 available)
+  [✓] Network resources
+  • No issues found!
+  ```
+  Dart 3.12.1 · JDK (Android Studio jbr) OpenJDK 21.0.10 at `C:\Program Files\Android\Android Studio\jbr`.
+- **Tasks:** T1–T10 pending; executing now via `subagent-driven-development`.
 
 ---
 
