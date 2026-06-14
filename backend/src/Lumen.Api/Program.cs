@@ -66,6 +66,7 @@ builder.Services.AddSingleton<IFieldCipher, AesGcmFieldCipher>();
 builder.Services.AddSingleton<IKeyWrapper, VaultTransitKeyWrapper>();
 builder.Services.AddScoped<IDekProvisioner, DekProvisioner>();
 builder.Services.AddScoped<IUserCryptoContext, UserCryptoContext>();
+builder.Services.AddScoped<IJobCryptoContextFactory, JobCryptoContextFactory>();
 
 // --- identity ---
 builder.Services.AddHttpContextAccessor();
