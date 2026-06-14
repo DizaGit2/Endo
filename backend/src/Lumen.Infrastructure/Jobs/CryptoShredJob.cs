@@ -8,8 +8,9 @@ namespace Lumen.Infrastructure.Jobs;
 /// <summary>
 /// Hangfire background job that performs GDPR right-to-erasure (§F) for one user. Deleting the user's
 /// <c>user_keys</c> row crypto-shreds ALL their AES-256-GCM ciphertext — the DEK can no longer be
-/// unwrapped, so the data is permanently unreadable. The job also empties push tokens (deletes
-/// <c>user_devices</c>), tombstones the user row, and records the erasure in the audit log. It is
+/// unwrapped, so the data is permanently unreadable. The job also deletes the user's device rows
+/// (push tokens) in <c>user_devices</c>, tombstones the user row, and records the erasure in the
+/// audit log. It is
 /// idempotent (the <c>DeletedAt</c> tombstone is the completion sentinel) and emits NO PII in logs.
 /// Disabling the Keycloak user is the API endpoint's responsibility, NOT this job's.
 /// </summary>
@@ -38,10 +39,28 @@ public sealed class CryptoShredJob(
             return;
         }
 
+        // Single captured instant — reused for the tombstone update AND the audit At so they're equal.
         var now = timeProvider.GetUtcNow();
 
         // Keys + devices + tombstone + audit must commit together or not at all.
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        // Atomic claim: only the first run whose row still has DeletedAt == null proceeds. A racing run
+        // blocks on this row's lock and, once the winner commits, matches 0 rows and bails — so exactly
+        // one audit entry is ever written, without relying on Hangfire to serialize retries.
+        // Use the injected TimeProvider for determinism (never DateTime.UtcNow — architecture rule).
+        var claimed = await db.Users.IgnoreQueryFilters()
+            .Where(u => u.Id == userId && u.DeletedAt == null)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(u => u.DeletedAt, now)
+                .SetProperty(u => u.UpdatedAt, now), ct);
+        if (claimed == 0)
+        {
+            // A concurrent run already shredded this user between our outer check and here. Bail without
+            // a second audit row; tx disposes -> rollback (nothing committed). PII-free outcome only (§F).
+            logger.LogInformation("CryptoShredJob finished with outcome {Outcome}", "already-shredded");
+            return;
+        }
 
         // THE crypto-shred: delete the DEK row so every ciphertext for this user becomes unreadable.
         await db.UserKeys.Where(k => k.UserId == userId).ExecuteDeleteAsync(ct);
@@ -52,12 +71,8 @@ public sealed class CryptoShredJob(
         // TODO(P7a): delete MinIO objects under {user_id}/ once labs/object-storage lands. Erasure of
         // stored objects is NOT yet complete.
 
-        // Tombstone the user — keep the row + id for FK integrity, do NOT delete it. Use the injected
-        // TimeProvider for determinism (never DateTime.UtcNow — architecture rule).
         // NOTE: email-hash retention / re-registration is deferred — whether erasure frees the email for
         // re-registration is an unresolved product decision out of scope here, so EmailHash is NOT cleared.
-        user.DeletedAt = now;
-        user.UpdatedAt = now;
 
         // Exactly ONE audit entry. EntityId carries the bare user GUID (the intended erasure record); the
         // audit table has no user_id FK and survives the tombstone. Before/After stay null — no PII.

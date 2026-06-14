@@ -90,6 +90,10 @@ public class CryptoShredJobLiveTests
             logs[0].BeforeJson.ShouldBeNull();
             logs[0].AfterJson.ShouldBeNull();
 
+            // Determinism: the job captures ONE instant and uses it for both the tombstone and the audit
+            // row, so the tombstoned user's DeletedAt must equal the audit row's At.
+            user.DeletedAt.ShouldBe(logs[0].At);
+
             // The encrypted profile row still exists but is now undecryptable — no DEK to unwrap.
             var stored = await read.UserProfiles.AsNoTracking().SingleAsync(p => p.UserId == userId);
             stored.DisplayNameEnc.ShouldNotBeNull();
