@@ -94,6 +94,13 @@ public class GdprErasureBaselineTests
             var stored = await read.UserProfiles.AsNoTracking().SingleAsync(p => p.UserId == userId);
             stored.DisplayNameEnc.ShouldNotBeNull("profile row must still exist after shred");
 
+            // Residual non-encrypted quasi-identifiers must be blanked on the retained tombstone row:
+            // Locale/Timezone are plain NOT-NULL text the crypto-shred cannot make unreadable, so erasure
+            // clears them to empty strings (which still satisfy the required/NOT-NULL constraint).
+            var tombstoned = await read.Users.IgnoreQueryFilters().AsNoTracking().SingleAsync(u => u.Id == userId);
+            tombstoned.Locale.ShouldBe("");
+            tombstoned.Timezone.ShouldBe("");
+
             // A fresh JobCryptoContext for this user must throw — there is no DEK to unwrap.
             await using var ctx = NewCryptoContext(read, userId);
             await Should.ThrowAsync<InvalidOperationException>(

@@ -80,6 +80,11 @@ public class CryptoShredJobLiveTests
             var user = await read.Users.IgnoreQueryFilters().AsNoTracking().SingleAsync(u => u.Id == userId);
             user.DeletedAt.ShouldNotBeNull();
 
+            // Residual non-encrypted quasi-identifiers are blanked: Locale/Timezone are plain NOT-NULL
+            // text (never DEK-encrypted, so the shred can't make them unreadable) — erasure clears them.
+            user.Locale.ShouldBe("");
+            user.Timezone.ShouldBe("");
+
             // Exactly one audit row, system actor, bare user GUID as EntityId, no PII in Before/After.
             var logs = await read.AdminAuditLogs.AsNoTracking()
                 .Where(l => l.EntityId == userId.ToString() && l.Action == "crypto_shred")

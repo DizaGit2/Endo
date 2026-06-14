@@ -19,6 +19,11 @@ public sealed class CryptoShredJob(
     TimeProvider timeProvider,
     ILogger<CryptoShredJob> logger)
 {
+    // Explicit retry policy (matches Hangfire's default of 10). Retries are SAFE because the guarded
+    // tombstone-claim below (ExecuteUpdate WHERE DeletedAt == null) makes the job idempotent: a retry
+    // after a partial/failed run either re-claims an un-tombstoned row or matches 0 rows and bails,
+    // so the crypto-shred and its single audit entry happen at most once.
+    [Hangfire.AutomaticRetry(Attempts = 10)]
     public async Task ExecuteAsync(Guid userId, CancellationToken ct = default)
     {
         // Bypass the soft-delete query filter so an already-tombstoned user is still found (idempotency).
@@ -35,6 +40,9 @@ public sealed class CryptoShredJob(
         {
             // Already shredded. DeletedAt being set is the completion marker, so re-runs never write a
             // second audit row. Return WITHOUT a new audit entry.
+            // INVARIANT: this sentinel is valid only because CryptoShredJob is the SOLE writer of
+            // DeletedAt. If any other path ever tombstones a user, DeletedAt no longer implies the
+            // crypto-shred ran, and this early-return must also verify user_keys absence before bailing.
             logger.LogInformation("CryptoShredJob finished with outcome {Outcome}", "already-shredded");
             return;
         }
@@ -49,11 +57,17 @@ public sealed class CryptoShredJob(
         // blocks on this row's lock and, once the winner commits, matches 0 rows and bails — so exactly
         // one audit entry is ever written, without relying on Hangfire to serialize retries.
         // Use the injected TimeProvider for determinism (never DateTime.UtcNow — architecture rule).
+        // Clearing Locale/Timezone here also erases the residual non-encrypted quasi-identifiers: they are
+        // plain NOT-NULL text columns the DEK deletion can't make unreadable, so blank them as part of the
+        // erasure (empty string satisfies the required/NOT-NULL constraint). EmailHash retention stays
+        // deferred as documented below (unresolved re-registration product decision).
         var claimed = await db.Users.IgnoreQueryFilters()
             .Where(u => u.Id == userId && u.DeletedAt == null)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(u => u.DeletedAt, now)
-                .SetProperty(u => u.UpdatedAt, now), ct);
+                .SetProperty(u => u.UpdatedAt, now)
+                .SetProperty(u => u.Locale, "")
+                .SetProperty(u => u.Timezone, ""), ct);
         if (claimed == 0)
         {
             // A concurrent run already shredded this user between our outer check and here. Bail without
