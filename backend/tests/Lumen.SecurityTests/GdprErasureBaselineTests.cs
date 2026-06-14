@@ -1,7 +1,6 @@
 using Lumen.Domain.Entities;
 using Lumen.Infrastructure.Crypto;
 using Lumen.Infrastructure.Jobs;
-using Lumen.Infrastructure.Logging;
 using Lumen.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -178,6 +177,13 @@ public class GdprErasureBaselineTests
     {
         // §F: the job must emit ZERO PII in structured log properties or rendered messages.
         // This test guards against future regressions (e.g. someone accidentally logging userId).
+        //
+        // The capture pipeline is deliberately wired WITHOUT the production PiiRedactionEnricher:
+        // the enricher redacts GUID scalars to "[id]" and emails to "[redacted-email]" BEFORE they
+        // reach the sink, which would mask the most likely regression — the job logging userId as a
+        // structured property ("...{UserId}", userId) — and let this test pass vacuously. Scanning the
+        // RAW events proves the job itself never emits PII (interpolated OR structured). The enricher's
+        // own redaction behaviour is separately covered by PiiRedactionEnricherTests (unit).
         var userId = Guid.NewGuid();
         const string userEmail = "piitest@example.com";
 
@@ -202,45 +208,81 @@ public class GdprErasureBaselineTests
             var keyRow = await db.UserKeys.AsNoTracking().SingleAsync(k => k.UserId == userId);
             var wrappedDekStr = System.Text.Encoding.ASCII.GetString(keyRow.WrappedDek);
 
-            // Build a Serilog logger wired through the production PiiRedactionEnricher, writing
-            // to an in-memory sink so we can inspect every structured log event afterwards.
-            var sink = new CapturingSink();
-            Serilog.ILogger serilogLogger = new LoggerConfiguration()
-                .Enrich.With(new PiiRedactionEnricher())
-                .WriteTo.Sink(sink)
-                .CreateLogger();
+            var (msLogger, sink) = NewRawCapturingLogger<CryptoShredJob>();
 
-            // Bridge Serilog → ILogger<CryptoShredJob> via ILoggerFactory extension method.
-            using ILoggerFactory msLoggerFactory = new Serilog.Extensions.Logging.SerilogLoggerFactory(serilogLogger);
-            var msLogger = msLoggerFactory.CreateLogger<CryptoShredJob>();
-
-            // Act — run the job with the capturing logger.
+            // Act — run the job with the raw (un-enriched) capturing logger.
             await NewJob(db, msLogger).ExecuteAsync(userId);
 
             sink.Events.ShouldNotBeEmpty("job must emit at least one log event (outcome message)");
 
-            // Assert: scan every rendered message AND every structured property value for PII.
-            var userIdStr = userId.ToString();
-            foreach (var ev in sink.Events)
-            {
-                var rendered = ev.RenderMessage();
-                rendered.ShouldNotContain(userIdStr);
-                rendered.ShouldNotContain(userEmail);
-                rendered.ShouldNotContain(wrappedDekStr);
-
-                // Walk all structured property values as rendered strings.
-                foreach (var prop in ev.Properties.Values)
-                {
-                    var propStr = prop.ToString();
-                    propStr.ShouldNotContain(userIdStr);
-                    propStr.ShouldNotContain(userEmail);
-                    propStr.ShouldNotContain(wrappedDekStr);
-                }
-            }
+            // Assert: scan every raw event for the userId, email, and wrapped-DEK material.
+            EventsContainAny(sink.Events, userId.ToString(), userEmail, wrappedDekStr)
+                .ShouldBeFalse("job log output must contain no userId, email, or wrapped-DEK material");
         }
         finally
         {
             await CleanupAsync(userId);
         }
+    }
+
+    // ── Test 4b (negative control): the capture+scan mechanism can actually detect a leak ────────
+
+    [Fact]
+    public void Capture_and_scan_detects_a_deliberate_pii_leak()
+    {
+        // Proves Test 4 is NOT vacuous: a logger that DOES leak userId and email — through the same
+        // un-enriched CapturingSink and the same EventsContainAny scan — must be detected. Without this
+        // control a broken capture (or an accidental enricher in the pipeline) would let Test 4 pass for
+        // the wrong reason.
+        var userId = Guid.NewGuid();
+        const string userEmail = "leak@example.com";
+
+        var (logger, sink) = NewRawCapturingLogger<GdprErasureBaselineTests>();
+
+        // Interpolated leak (in the rendered message) AND structured leak (a {UserId} property).
+        logger.LogInformation("leaking userId={UserId} and {Email}", userId, userEmail);
+
+        sink.Events.ShouldNotBeEmpty();
+        EventsContainAny(sink.Events, userId.ToString(), userEmail, wrappedDek: "n/a")
+            .ShouldBeTrue("the capture+scan mechanism must detect a deliberate userId/email leak");
+    }
+
+    // ── PII-scan plumbing shared by Test 4 and its negative control ──────────────────────────────
+
+    /// <summary>
+    /// Builds an <see cref="ILogger{T}"/> writing to a fresh <see cref="CapturingSink"/> with NO
+    /// PiiRedactionEnricher in the pipeline, so captured events are the RAW events the caller emitted.
+    /// </summary>
+    private static (ILogger<T> logger, CapturingSink sink) NewRawCapturingLogger<T>()
+    {
+        var sink = new CapturingSink();
+        Serilog.ILogger serilogLogger = new LoggerConfiguration()
+            .WriteTo.Sink(sink)
+            .CreateLogger();
+        var msLoggerFactory = new Serilog.Extensions.Logging.SerilogLoggerFactory(serilogLogger);
+        return (msLoggerFactory.CreateLogger<T>(), sink);
+    }
+
+    /// <summary>
+    /// True if ANY captured event's rendered message OR any structured property value contains the
+    /// userId, email, or wrapped-DEK material. Catches both interpolated and structured-property leaks.
+    /// </summary>
+    private static bool EventsContainAny(
+        IReadOnlyCollection<LogEvent> events, string userId, string email, string wrappedDek)
+    {
+        foreach (var ev in events)
+        {
+            var rendered = ev.RenderMessage();
+            if (rendered.Contains(userId) || rendered.Contains(email) || rendered.Contains(wrappedDek))
+                return true;
+
+            foreach (var prop in ev.Properties.Values)
+            {
+                var propStr = prop.ToString();
+                if (propStr.Contains(userId) || propStr.Contains(email) || propStr.Contains(wrappedDek))
+                    return true;
+            }
+        }
+        return false;
     }
 }
