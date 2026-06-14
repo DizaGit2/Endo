@@ -4,6 +4,8 @@ namespace Lumen.Application.Crypto;
 /// Factory for creating job-scoped <see cref="IJobCryptoContext"/> instances. A factory is required
 /// because the user id is a runtime value (known only when the job runs), not a DI-resolvable dependency.
 /// Resolved as a scoped service so it shares the job-scoped <c>DbContext</c>.
+/// Each returned context is single-owner and must be used sequentially — no overlapping/concurrent crypto
+/// ops; contexts from this factory share the job-scoped DbContext, which is not thread-safe.
 /// </summary>
 public interface IJobCryptoContextFactory
 {

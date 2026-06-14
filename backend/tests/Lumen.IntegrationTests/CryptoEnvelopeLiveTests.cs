@@ -17,7 +17,6 @@ namespace Lumen.IntegrationTests;
 [Trait("Category", "LiveStack")]
 public class CryptoEnvelopeLiveTests
 {
-
     private sealed class StubUser(Guid id) : ICurrentUserAccessor
     {
         public bool IsAuthenticated => true;

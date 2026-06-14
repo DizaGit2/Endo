@@ -20,7 +20,7 @@ public sealed class UserCryptoContext(
     ICurrentUserAccessor currentUser) : IUserCryptoContext
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private byte[]? _dek;
+    private volatile byte[]? _dek;
 
     private async Task<byte[]> GetDekAsync(CancellationToken ct)
     {

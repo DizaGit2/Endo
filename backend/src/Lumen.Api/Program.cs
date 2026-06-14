@@ -155,6 +155,8 @@ app.UseRateLimiter();
 app.UseAuthorization();
 
 // --- Hangfire dashboard (lumen-admin only) ---
+// Bearer-gated (deny-by-default via HangfireDashboardAuthorizationFilter); intended to be reached via an
+// admin reverse-proxy that injects the token. Cookie/OIDC dashboard auth is deferred to a later phase.
 app.MapHangfireDashboard("/hangfire", new DashboardOptions
 {
     Authorization = [new HangfireDashboardAuthorizationFilter()],

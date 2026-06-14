@@ -6,6 +6,8 @@ namespace Lumen.Application.Crypto;
 /// is supplied at construction time (via <see cref="IJobCryptoContextFactory"/>), not obtained from an
 /// HTTP request context. The DEK is unwrapped at most once and held only for this context's lifetime,
 /// then zeroed on disposal — the same custody invariants as the request-scoped context.
+/// Single-owner: each instance is intended for sequential use only — do not issue overlapping/concurrent
+/// crypto calls; the underlying job-scoped DbContext is not thread-safe.
 /// </summary>
 public interface IJobCryptoContext : IAsyncDisposable
 {

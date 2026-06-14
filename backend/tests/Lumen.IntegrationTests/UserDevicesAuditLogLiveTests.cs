@@ -1,5 +1,4 @@
 using Lumen.Domain.Entities;
-using Lumen.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Shouldly;
 using Xunit;
@@ -13,12 +12,10 @@ namespace Lumen.IntegrationTests;
 [Trait("Category", "LiveStack")]
 public class UserDevicesAuditLogLiveTests
 {
-    private static LumenDbContext NewDb() => new(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(TestFixtures.Db).Options);
-
     [Fact]
     public async Task Tables_exist_in_live_postgres()
     {
-        await using var db = NewDb();
+        await using var db = TestFixtures.NewDb();
         // Throws if the tables are absent — proves the migration was applied to the live stack.
         var deviceCount = await db.UserDevices.AsNoTracking().CountAsync();
         var logCount = await db.AdminAuditLogs.AsNoTracking().CountAsync();
@@ -30,7 +27,7 @@ public class UserDevicesAuditLogLiveTests
     public async Task Can_insert_and_read_back_UserDevice_and_AdminAuditLog()
     {
         var userId = Guid.NewGuid();
-        await using var db = NewDb();
+        await using var db = TestFixtures.NewDb();
         try
         {
             // Need a parent User for the UserDevice FK.
@@ -63,7 +60,7 @@ public class UserDevicesAuditLogLiveTests
             db.AdminAuditLogs.Add(log);
             await db.SaveChangesAsync();
 
-            await using var read = NewDb();
+            await using var read = TestFixtures.NewDb();
             var deviceBack = await read.UserDevices.AsNoTracking().SingleAsync(d => d.Id == device.Id);
             deviceBack.Platform.ShouldBe("ios");
             deviceBack.UserId.ShouldBe(userId);
@@ -87,7 +84,7 @@ public class UserDevicesAuditLogLiveTests
     {
         var userId = Guid.NewGuid();
         var token = "dup-tok-" + Guid.NewGuid().ToString("N");
-        await using var db = NewDb();
+        await using var db = TestFixtures.NewDb();
         try
         {
             db.Users.Add(TestFixtures.NewUser(userId));
@@ -118,7 +115,7 @@ public class UserDevicesAuditLogLiveTests
     public async Task AdminAuditLog_null_actor_survives_round_trip()
     {
         var logId = Guid.NewGuid();
-        await using var db = NewDb();
+        await using var db = TestFixtures.NewDb();
         try
         {
             db.AdminAuditLogs.Add(new AdminAuditLog
@@ -132,7 +129,7 @@ public class UserDevicesAuditLogLiveTests
             });
             await db.SaveChangesAsync();
 
-            await using var read = NewDb();
+            await using var read = TestFixtures.NewDb();
             var back = await read.AdminAuditLogs.AsNoTracking().SingleAsync(l => l.Id == logId);
             back.ActorId.ShouldBeNull();
             back.Action.ShouldBe("system_job");

@@ -67,7 +67,7 @@ public class JobCryptoContextLiveTests
         {
             await db.UserProfiles.Where(p => p.UserId == userId).ExecuteDeleteAsync();
             await db.UserKeys.Where(k => k.UserId == userId).ExecuteDeleteAsync();
-            await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync();
+            await db.Users.IgnoreQueryFilters().Where(u => u.Id == userId).ExecuteDeleteAsync();
         }
     }
 
@@ -106,7 +106,7 @@ public class JobCryptoContextLiveTests
         finally
         {
             await db.UserKeys.Where(k => k.UserId == userAId || k.UserId == userBId).ExecuteDeleteAsync();
-            await db.Users.Where(u => u.Id == userAId || u.Id == userBId).ExecuteDeleteAsync();
+            await db.Users.IgnoreQueryFilters().Where(u => u.Id == userAId || u.Id == userBId).ExecuteDeleteAsync();
         }
     }
 
@@ -137,7 +137,7 @@ public class JobCryptoContextLiveTests
         finally
         {
             await db.UserKeys.Where(k => k.UserId == userId).ExecuteDeleteAsync();
-            await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync();
+            await db.Users.IgnoreQueryFilters().Where(u => u.Id == userId).ExecuteDeleteAsync();
         }
     }
 
