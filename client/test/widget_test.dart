@@ -5,11 +5,11 @@ import 'package:lumen/app.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 
 void main() {
-  testWidgets('LumenApp smoke test — "Lumen" text renders', (tester) async {
+  testWidgets('LumenApp smoke test — welcome screen renders', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: LumenApp()));
 
-    // The placeholder home shows a centred "Lumen" text.
-    expect(find.text('Lumen'), findsOneWidget);
+    // The welcome screen shows the app tagline headline.
+    expect(find.text('Your cycle, understood'), findsOneWidget);
   });
 
   testWidgets(

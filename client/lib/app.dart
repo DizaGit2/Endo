@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'core/theme/lumen_theme.dart';
+import 'features/onboarding/presentation/welcome_screen.dart';
 
 /// Root application widget for Lumen.
 ///
 /// Wires [MaterialApp] with the light and dark [ThemeData] built from design
 /// tokens, respecting the system theme mode.
 ///
-/// Note: the [home] placeholder (a centered "Lumen" text on the theme
-/// background) is replaced in T7 / P3b with the real onboarding welcome
-/// screen (screen_01).
+/// Home is [WelcomeScreen] — the first screen of the onboarding flow (T7/P3a).
+/// Navigation between screens is wired in P3b.
 class LumenApp extends StatelessWidget {
   const LumenApp({super.key});
 
@@ -20,24 +20,7 @@ class LumenApp extends StatelessWidget {
       theme: lumenTheme(Brightness.light),
       darkTheme: lumenTheme(Brightness.dark),
       themeMode: ThemeMode.system,
-      home: const _PlaceholderHome(),
-    );
-  }
-}
-
-/// Temporary placeholder home screen — replaced in T7/P3b.
-class _PlaceholderHome extends StatelessWidget {
-  const _PlaceholderHome();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Text(
-          'Lumen',
-          style: Theme.of(context).textTheme.displaySmall,
-        ),
-      ),
+      home: const WelcomeScreen(),
     );
   }
 }
