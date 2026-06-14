@@ -8,8 +8,8 @@ namespace Lumen.Application.Crypto;
 public interface IJobCryptoContextFactory
 {
     /// <summary>
-    /// Creates a new <see cref="IJobCryptoContext"/> bound to the specified <paramref name="userId"/>.
-    /// Callers are responsible for disposing the returned context.
+    /// Creates a new <see cref="IJobCryptoContext"/> bound to <paramref name="userId"/>. The caller owns
+    /// the returned instance and MUST dispose it (via <c>await using</c>) so the unwrapped DEK is zeroed promptly.
     /// </summary>
     IJobCryptoContext Create(Guid userId);
 }

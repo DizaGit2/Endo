@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Lumen.Infrastructure.Crypto;
 
+// Mirrored by JobCryptoContext (job-scoped). Keep the DEK-custody logic in sync.
 /// <summary>
 /// Request-scoped implementation of <see cref="IUserCryptoContext"/>. The DEK is unwrapped at most
 /// once per instance (guarded for concurrent first-use), held only in this instance, and zeroed on

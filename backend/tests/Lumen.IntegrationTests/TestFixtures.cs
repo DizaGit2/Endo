@@ -1,4 +1,7 @@
 using Lumen.Domain.Entities;
+using Lumen.Infrastructure.Crypto;
+using Lumen.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Lumen.IntegrationTests;
 
@@ -9,6 +12,9 @@ namespace Lumen.IntegrationTests;
 internal static class TestFixtures
 {
     public const string Db = "Host=localhost;Port=55432;Database=lumen;Username=postgres;Password=postgres";
+
+    public static VaultOptions Vault() => new() { Address = "http://127.0.0.1:8200", Token = "root", KeyName = "lumen-dev-kek" };
+    public static LumenDbContext NewDb() => new(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(Db).Options);
 
     public static User NewUser(Guid id) => new()
     {

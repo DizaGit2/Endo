@@ -20,23 +20,20 @@ namespace Lumen.IntegrationTests;
 [Trait("Category", "LiveStack")]
 public class JobCryptoContextLiveTests
 {
-    private static VaultOptions Vault() => new() { Address = "http://127.0.0.1:8200", Token = "root", KeyName = "lumen-dev-kek" };
-    private static LumenDbContext NewDb() => new(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(TestFixtures.Db).Options);
-
     private static JobCryptoContextFactory NewFactory(LumenDbContext db)
-        => new(db, new VaultTransitKeyWrapper(Vault()), new AesGcmFieldCipher());
+        => new(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), new AesGcmFieldCipher());
 
     [Fact]
     public async Task Round_trip_job_context_encrypts_and_decrypts_field_correctly()
     {
         var userId = Guid.NewGuid();
-        await using var db = NewDb();
+        await using var db = TestFixtures.NewDb();
         try
         {
             db.Users.Add(TestFixtures.NewUser(userId));
             await db.SaveChangesAsync();
 
-            await new DekProvisioner(db, new VaultTransitKeyWrapper(Vault()), Vault(), TimeProvider.System).ProvisionAsync(userId);
+            await new DekProvisioner(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), TestFixtures.Vault(), TimeProvider.System).ProvisionAsync(userId);
 
             const string displayName = "María José";
             var factory = NewFactory(db);
@@ -56,7 +53,7 @@ public class JobCryptoContextLiveTests
             }
 
             // Ciphertext at rest must not contain the plaintext.
-            await using var raw = NewDb();
+            await using var raw = TestFixtures.NewDb();
             var stored = await raw.UserProfiles.AsNoTracking().SingleAsync(p => p.UserId == userId);
             stored.DisplayNameEnc.ShouldNotBeNull();
             Encoding.UTF8.GetString(stored.DisplayNameEnc!).ShouldNotContain("María");
@@ -79,14 +76,14 @@ public class JobCryptoContextLiveTests
     {
         var userAId = Guid.NewGuid();
         var userBId = Guid.NewGuid();
-        await using var db = NewDb();
+        await using var db = TestFixtures.NewDb();
         try
         {
             db.Users.Add(TestFixtures.NewUser(userAId));
             db.Users.Add(TestFixtures.NewUser(userBId));
             await db.SaveChangesAsync();
 
-            var provisioner = new DekProvisioner(db, new VaultTransitKeyWrapper(Vault()), Vault(), TimeProvider.System);
+            var provisioner = new DekProvisioner(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), TestFixtures.Vault(), TimeProvider.System);
             await provisioner.ProvisionAsync(userAId);
             await provisioner.ProvisionAsync(userBId);
 
@@ -117,13 +114,13 @@ public class JobCryptoContextLiveTests
     public async Task CryptoShred_precondition_deleting_user_key_makes_job_context_throw_InvalidOperationException()
     {
         var userId = Guid.NewGuid();
-        await using var db = NewDb();
+        await using var db = TestFixtures.NewDb();
         try
         {
             db.Users.Add(TestFixtures.NewUser(userId));
             await db.SaveChangesAsync();
 
-            await new DekProvisioner(db, new VaultTransitKeyWrapper(Vault()), Vault(), TimeProvider.System).ProvisionAsync(userId);
+            await new DekProvisioner(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), TestFixtures.Vault(), TimeProvider.System).ProvisionAsync(userId);
 
             byte[] enc;
             var factory = NewFactory(db);

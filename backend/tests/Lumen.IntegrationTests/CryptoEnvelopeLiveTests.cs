@@ -17,8 +17,6 @@ namespace Lumen.IntegrationTests;
 [Trait("Category", "LiveStack")]
 public class CryptoEnvelopeLiveTests
 {
-    private static VaultOptions Vault() => new() { Address = "http://127.0.0.1:8200", Token = "root", KeyName = "lumen-dev-kek" };
-    private static LumenDbContext NewDb() => new(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(TestFixtures.Db).Options);
 
     private sealed class StubUser(Guid id) : ICurrentUserAccessor
     {
@@ -30,16 +28,16 @@ public class CryptoEnvelopeLiveTests
     public async Task Full_envelope_roundtrip_through_vault_and_postgres()
     {
         var userId = Guid.NewGuid();
-        var wrapper = new VaultTransitKeyWrapper(Vault());
+        var wrapper = new VaultTransitKeyWrapper(TestFixtures.Vault());
         var cipher = new AesGcmFieldCipher();
-        await using var db = NewDb();
+        await using var db = TestFixtures.NewDb();
         try
         {
             db.Users.Add(TestFixtures.NewUser(userId));
             await db.SaveChangesAsync();
 
             // T5 — provision DEK (twice, to prove idempotency)
-            var provisioner = new DekProvisioner(db, wrapper, Vault(), TimeProvider.System);
+            var provisioner = new DekProvisioner(db, wrapper, TestFixtures.Vault(), TimeProvider.System);
             await provisioner.ProvisionAsync(userId);
             await provisioner.ProvisionAsync(userId);
 
@@ -62,7 +60,7 @@ public class CryptoEnvelopeLiveTests
                 await db.SaveChangesAsync();
             }
 
-            await using var raw = NewDb();
+            await using var raw = TestFixtures.NewDb();
             var stored = await raw.UserProfiles.AsNoTracking().SingleAsync(p => p.UserId == userId);
             stored.DisplayNameEnc.ShouldNotBeNull();
             Encoding.UTF8.GetString(stored.DisplayNameEnc!).ShouldNotContain("María"); // ciphertext at rest
@@ -83,14 +81,14 @@ public class CryptoEnvelopeLiveTests
     public async Task CryptoShred_precondition_deleting_user_key_makes_field_undecryptable()
     {
         var userId = Guid.NewGuid();
-        var wrapper = new VaultTransitKeyWrapper(Vault());
+        var wrapper = new VaultTransitKeyWrapper(TestFixtures.Vault());
         var cipher = new AesGcmFieldCipher();
-        await using var db = NewDb();
+        await using var db = TestFixtures.NewDb();
         try
         {
             db.Users.Add(TestFixtures.NewUser(userId));
             await db.SaveChangesAsync();
-            await new DekProvisioner(db, wrapper, Vault(), TimeProvider.System).ProvisionAsync(userId);
+            await new DekProvisioner(db, wrapper, TestFixtures.Vault(), TimeProvider.System).ProvisionAsync(userId);
 
             byte[] enc;
             await using (var crypto = new UserCryptoContext(db, wrapper, cipher, new StubUser(userId)))
