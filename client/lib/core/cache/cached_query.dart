@@ -56,9 +56,11 @@ final class NetworkRequired<T> extends CacheResult<T> {
 ///    (no network call).
 /// 2. Otherwise attempt the network [fetch].
 /// 3. On success → write-through via [store.putJson] and return [Fresh].
-/// 4. On [DioException] / [NetworkFailure] WITH a cached value → [Stale].
-/// 5. On [DioException] / [NetworkFailure] WITHOUT a cached value →
+/// 4. On a connectivity/transient-server failure ([NetworkFailure] /
+///    [ServerFailure]) WITH a cached value → [Stale]; WITHOUT one →
 ///    [NetworkRequired].
+/// 5. Any other failure (validation / auth / not-found / unknown) is REAL and
+///    propagates to the caller — it is never masked as stale/offline.
 Future<CacheResult<T>> cachedRead<T>({
   required String key,
   required CacheStore store,
@@ -89,14 +91,19 @@ Future<CacheResult<T>> cachedRead<T>({
   }
 }
 
-/// Checks cache and returns [Stale] or [NetworkRequired] depending on whether
-/// a cached entry exists.
+/// For connectivity/transient-server failures, falls back to cache: returns
+/// [Stale] if a cached entry exists, else [NetworkRequired]. Any other failure
+/// (validation/auth/not-found/unknown) is real and is rethrown to the caller
+/// rather than being masked as an offline state.
 CacheResult<T> _resolveFailure<T>({
   required CacheStore store,
   required String key,
   required Failure failure,
   required T Function(Map<String, dynamic>) fromJson,
 }) {
+  if (failure is! NetworkFailure && failure is! ServerFailure) {
+    throw failure;
+  }
   final cached = store.getJson(key);
   if (cached != null) {
     return Stale(fromJson(cached));
