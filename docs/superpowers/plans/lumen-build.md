@@ -37,15 +37,15 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 
 ## §1 Status ledger  (the ONLY authority for "done")
 
-**NEXT PHASE TO RUN: P3a**  (P0a, P1 DONE + merged to main. **P2 is NEEDS_REVIEW — PR #1, awaiting human deep review + merge.** P3a installs the Flutter SDK and needs decisions D-05/D-06/D-07.)
-**Plan revision:** r6   **Repo HEAD when ledger last updated:** branch `phase/02-shred` (tip `d1e4047` + this docs commit)
+**NEXT PHASE TO RUN: P3a**  (P0a, P1, **P2 DONE + merged to main** — tag `phase-02`, PR #1. P3a installs the Flutter SDK (human step) and needs decisions D-05/D-06/D-07.)
+**Plan revision:** r7   **Repo HEAD when ledger last updated:** tag `phase-02` (P2 merged to main)
 
 | Phase | Name | Status | Branch | PR | Verified by | Notes |
 |---|---|---|---|---|---|---|
 | P0a | Compose stack + realm + health | DONE | phase/00a-infra | tag `phase-00a` | 2026-05-31 | merged to main |
 | P0b | This living plan | DONE | design/build-strategy | 2026-05-31 | — | = this document |
 | P1 ⚠ | Auth + envelope-encryption spine | DONE | phase/01-spine | tag `phase-01` | 2026-06-02 | merged to main; 23 tests; security review + /code-review high both clean |
-| P2 ⚠ | Crypto-shred + Hangfire | NEEDS_REVIEW | phase/02-shred | [#1](https://github.com/DizaGit2/Endo/pull/1) | — | 57 tests green; multi-agent /review applied (2 important + minors fixed); **awaiting human deep review** |
+| P2 ⚠ | Crypto-shred + Hangfire | DONE | phase/02-shred | [#1](https://github.com/DizaGit2/Endo/pull/1) | 2026-06-14 | merged to main, tag `phase-02`; 57 tests; multi-agent /review + all fixes applied |
 | P3a | Flutter foundation + theming + OpenAPI pipeline | TODO | — | — | — | Flutter install here |
 | P3b | Client OIDC + cache + screens 2/31 | TODO | — | — | — | |
 | P4a | Backend Onboarding-rest + Cycle + Symptoms | TODO | — | — | — | needs definitions + D-08..D-14 |
@@ -254,7 +254,7 @@ subagent-driven-development; strict TDD; .NET 10. Branch phase/02-shred. Deep re
 **Tasks (outline — detail at phase entry):** `user_devices` + `admin_audit_log` entities/migration → Hangfire registration (Postgres storage, gated dashboard) → `IJobCryptoContext` → `CryptoShredJob` (delete `user_keys`, empty tokens, tombstone user, MinIO-delete no-op TODO, audit entry; idempotent) → `DELETE /me` (enqueue + disable + 202) → the `Lumen.Security.Tests` GDPR baseline (unreadable + backup-unreadable + idempotent + job-log-scrubbed) → deep review.
 
 **STATUS**
-- **State:** NEEDS_REVIEW  ·  **Branch:** `phase/02-shred`  ·  **PR:** [#1](https://github.com/DizaGit2/Endo/pull/1)  ·  build warnings-clean (`-warnaserror`)  ·  **57 tests green** (25 unit + 27 integration + 5 GDPR security)  ·  per-task two-stage review (spec + quality) + final whole-phase deep review + adversarial multi-agent `/review` (9-dimension, 30 agents) — **all confirmed findings applied** (2 important + minors/nits; 2 findings refuted as false-positives)
+- **State:** DONE (merged to main 2026-06-14, tag `phase-02`)  ·  **Branch:** `phase/02-shred`  ·  **PR:** [#1](https://github.com/DizaGit2/Endo/pull/1)  ·  build warnings-clean (`-warnaserror`)  ·  **57 tests green** (25 unit + 27 integration + 5 GDPR security)  ·  per-task two-stage review (spec + quality) + final whole-phase deep review + adversarial multi-agent `/review` (9-dimension, 30 agents) — **all confirmed findings applied** (2 important + minors/nits; 2 findings refuted as false-positives)
 - **Tasks done** (each = one `feat`/`test` commit + one `refactor` review-fix commit; executed via `subagent-driven-development`):
   - **T1** `UserDevice` + `AdminAuditLog` entities + EF config + migration `AddUserDevicesAndAuditLog` (snake_case tables, PascalCase columns; `admin_audit_log` has **no** user-FK so it survives the tombstone). Added `ModelSyncTests` (unit drift guard) + shared `TestFixtures`.
   - **T2** Hangfire (Postgres storage) + `AddHangfireServer` (gated off in tests via `Hangfire:EnableServer`) + `/hangfire` dashboard gated to realm role `lumen-admin` (`HangfireDashboardAuthorizationFilter`, deny-by-default, never throws, unit-tested ×7). Pinned `Newtonsoft.Json` 13.0.4 to override Hangfire's vulnerable transitive 11.0.1 (NU1903).
@@ -272,7 +272,7 @@ subagent-driven-development; strict TDD; .NET 10. Branch phase/02-shred. Deep re
 - **Erasure-completeness ledger (P2):** DELETED → `user_keys` (the shred — renders all ciphertext permanently unreadable), `user_devices`. TOMBSTONED → `users` (`DeletedAt`; id + `EmailHash` kept for FK integrity / deferred re-registration decision). RETAINED-as-undecryptable → `user_profile_enc`. RETAINED by design → `consent_records` (legal proof, no plaintext PII), `admin_audit_log` (+1 erasure row, bare user GUID, no user-FK). DEFERRED (NOT done) → MinIO `{user_id}/` objects → **P7a**.
 - **Deviations / notes (anti-drift):** the GDPR test project is named **`Lumen.SecurityTests`** (this outline said `Lumen.Security.Tests`). `IJobCryptoContext` is established now but the shred job never decrypts (it only deletes keys); the abstraction is proven by its own round-trip + tenant-isolation tests for later jobs (P6/P7b/P9b). Live-stack integration/security tests run **serialized** (`DisableTestParallelization`) to avoid WebApplicationFactory cold-start contention against the shared Keycloak/Vault — re-run cleanly if a transient 502 appears under cross-assembly parallelism.
 - **`/review` pass (commits `7030938`..`d1e4047`) — confirmed findings fixed, including the two earlier-flagged seams:** (1) the **502/Keycloak-disable seam is resolved** — `DELETE /me` now re-attempts the (idempotent) disable on the already-tombstoned branch, so a transient disable failure self-heals on retry instead of leaving a shredded-but-loginable account. (My earlier "mitigated by the tombstone guard" framing was **wrong** — the guard had been *dropping* the disable.) (2) the **residual post-erasure footprint is reduced** — `Locale`/`Timezone` are now blanked on shred; only the bare user GUID, the documented `EmailHash`, undecryptable ciphertext, consent proof, one audit row, and the deferred-to-P7a MinIO objects remain. Other fixes: non-vacuous PII-log-scrub test (+ negative control), `(EntityId, Action)` audit index, concurrency-race + real Hangfire enqueue→execute tests, explicit `[AutomaticRetry]`, accurate OpenAPI 202/401, and nits (`volatile` DEK, sequential-use docs, test hygiene). Two findings were **refuted** as false-positives by adversarial verification (an "idempotency guard racy" claim already accurately documented; a CI `if:` change whose suggested fix was semantically wrong). Two read-only verifier agents confirmed **no regression** to erasure/DEK-custody/idempotency/§F-order.
-- **For the human deep-reviewer (⚠ phase — required before DONE):** stack is up; all three test projects green (25 + 27 + 5). On acceptance: merge `phase/02-shred`, tag `phase-02`, advance NEXT to P3a.
+- **Accepted & merged 2026-06-14** (human authorized the merge on the strength of the layered review above — per-task two-stage + final deep + 9-dimension adversarial `/review` with all confirmed findings applied). Merged to `main`, tagged `phase-02`, PR #1 closed. **NEXT = P3a.**
 
 ---
 
