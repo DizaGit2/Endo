@@ -37,15 +37,15 @@
 ### D-05 🔴 Locale conventions: week-start, date/time format, decimal separator
 **Conflict:** Mockups use **US conventions** (Sunday-first calendars `S M T W T F S`, "8:00 AM", "60.4 kg") but the product is EU/Spanish-primary.
 **Recommended default:** Drive all of it from `users.locale` via ICU formatting. For es-ES: **Monday-first** weeks, **24-hour** clock, **comma** decimal. Treat the US-formatted mockups as English artifacts, not the spec. **API payloads are always locale-neutral** (period decimal, ISO dates); format/parse only at the client.
-**Decision:** ​_______________________________________________
+**Decision:** ✅ approved 2026-06-14 — locale-driven (es-ES default), Monday-first / 24-hour / comma, ICU; API stays locale-neutral. Mockup US formats are English artifacts.
 
 ### D-06 🟠 Units — metric only?
 **Recommended default:** **Metric-only v1** (kg / cm / %). Reserve a `users.unit_system` enum (default `metric`) so a future imperial *display* toggle needs no migration. (Every body screen is already metric; zero imperial terms found across all 38 screens.)
-**Decision:** ​_______________________________________________
+**Decision:** ✅ approved 2026-06-14 — metric-only v1 (kg / cm / %); reserve `users.unit_system` enum (default `metric`) for a future imperial *display* toggle (no migration).
 
 ### D-07 🟠 Client-only privacy features scope (analytics / device-backup / app-lock / language picker)
 **Recommended default:** No analytics v1 (hide the screen-36 toggle); **iCloud/Google device-backup toggle out of scope** (contradicts online-only server model — hide it); Face-ID app-lock + app-switcher blur **in** (client-only, cheap); **no in-app language selector** v1 (device locale only). Also: **correct the inaccurate "Health info stays on your device" copy** (screen 31) — data is server-stored/encrypted and lab text goes to Anthropic (legal item L-06).
-**Decision:** ​_______________________________________________
+**Decision:** ✅ approved 2026-06-14 — lean scope: no analytics (hide screen-36 toggle); no device-backup toggle (online-only model); biometric app-lock + app-switcher blur IN; no in-app language picker (device locale only); correct the screen-31 copy (see L-03).
 
 ---
 

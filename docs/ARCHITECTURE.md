@@ -41,6 +41,9 @@ Every architectural choice made in the design session. Each row stands alone.
 | Rate limiting | ASP.NET built-in rate limiter middleware + per-user daily LLM-call quota enforced in DB | Protects LLM cost and prevents trivial abuse. |
 | LLM guardrails | Strict JSON schema + unit whitelist + physiological range validation + mandatory user confirm | Lab parsing is safety-critical; rejected parses fall back to manual entry. |
 | Observability | Grafana + Loki + Prometheus on a separate sidecar VPS | No subprocessor, survives main-VPS outage. |
+| Client locale/formatting (D-05, 2026-06-14) | Week-start, date/time, decimals formatted from `users.locale` via ICU (es-ES default: Monday-first, 24-hour, comma). API payloads stay locale-neutral (ISO dates, period decimal); format/parse only on the client | EU/es-ES-primary product, EU-only hosting. The US-formatted mockups (Sunday-first, AM/PM, period decimal) are English artifacts, not the spec. |
+| Units (D-06, 2026-06-14) | Metric-only v1 (kg / cm / %). Reserve `users.unit_system` enum (default `metric`) for a future imperial *display* toggle | All 38 screens already metric; the enum avoids a later migration. |
+| Client privacy scope (D-07, 2026-06-14) | No analytics v1 (hide screen-36 toggle); no iCloud/Google device-backup toggle; biometric app-lock + app-switcher blur in; no in-app language picker (device locale only); correct the inaccurate screen-31 "stays on your device" copy | Cheap client-only privacy wins; drop features that contradict the online-only server model or misstate data handling (see L-03). |
 
 ---
 

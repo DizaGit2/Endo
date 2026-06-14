@@ -37,8 +37,8 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 
 ## §1 Status ledger  (the ONLY authority for "done")
 
-**NEXT PHASE TO RUN: P3a**  (P0a, P1, **P2 DONE + merged to main** — tag `phase-02`, PR #1. P3a installs the Flutter SDK (human step) and needs decisions D-05/D-06/D-07.)
-**Plan revision:** r7   **Repo HEAD when ledger last updated:** tag `phase-02` (P2 merged to main)
+**NEXT PHASE TO RUN: P3a**  (P0a, P1, **P2 DONE + merged to main** — tag `phase-02`, PR #1. **P3a preconditions CLEARED 2026-06-14:** Flutter installed — `flutter doctor` green; **D-05/D-06/D-07 approved** (defaults); **L-03** screen-31 trust copy drafted v0 (pending DPO sign-off). Ready to execute on branch `phase/03a-client-foundation`.)
+**Plan revision:** r8   **Repo HEAD when ledger last updated:** tag `phase-02` (P2 merged to main; P3a-precondition doc edits uncommitted)
 
 | Phase | Name | Status | Branch | PR | Verified by | Notes |
 |---|---|---|---|---|---|---|
@@ -280,7 +280,7 @@ subagent-driven-development; strict TDD; .NET 10. Branch phase/02-shred. Deep re
 
 - **Status:** TODO · **Depends on:** P2 · **Branch:** `phase/03a-client-foundation`
 - **Goal:** install Flutter; scaffold the app; port the design tokens; stand up the OpenAPI→Dart pipeline + CI drift guard; wire static screens 1/36/37.
-- **Preconditions:** **HUMAN STEP — install Flutter/Android per environment companion §2, `flutter doctor` green** (the session cannot do this). Decisions **D-03/D-05/D-06/D-07** (locale, formats, units, client-privacy scope); **L-03** copy correction for screen 31 (used in P3b but theming/strings start here). Definitions: hormone/phase palettes (already in CLAUDE.md).
+- **Preconditions:** ✅ **CLEARED 2026-06-14.** Flutter/Android installed — `flutter doctor` green (Flutter 3.44.1 stable, Dart 3.12.1, Android SDK 36.1.0, VS 2026, Chrome, 3 devices; "No issues found"). Decisions **D-03** (es-ES primary, 2026-06-01) + **D-05** (locale-driven ICU formatting, es-ES default; API locale-neutral) + **D-06** (metric-only v1, reserve `users.unit_system` enum) + **D-07** (lean client-privacy scope) **approved** — see decision-sheet.md & `ARCHITECTURE.md §A`. **L-03** screen-31 trust copy drafted v0 (ES+EN, pending DPO sign-off) — see legal-asks.md. Definitions: hormone/phase palettes (already in CLAUDE.md). **Phase is unblocked to start.**
 - **Kickoff prompt:** standard, pointing at flutter companion + CLAUDE.md tokens; **step 1 = run the Flutter install and confirm `flutter doctor` before any Dart.**
 - **Exit criteria:** `flutter doctor` green recorded; golden tests (light+dark) pass for static screens; `ThemeData` token assertions match CLAUDE.md; OpenAPI→Dart pipeline + CI drift guard operational; client coverage ≥60%.
 - **Tasks (outline):** Flutter install (human) → app scaffold (feature-first, GoRouter shell, Riverpod) → `LumenColors` ThemeExtension + `HormonePalette` + `PhasePalette` + typography → alchemist golden harness → openapi_generator config + generate from P1 spec → CI `ci-client.yml` drift guard → wire screens 1/36/37 (static) with goldens. *(Detailed at phase entry.)*
@@ -451,7 +451,8 @@ subagent-driven-development; strict TDD; .NET 10. Branch phase/02-shred. Deep re
 | 2026-05-31 | LLM provider = Anthropic (Claude) | ARCHITECTURE §A/§I; spec D4 |
 | 2026-05-31 | Lab PDF encryption = server-side | ARCHITECTURE §D/§E; spec D5 |
 | 2026-06-01 | D-01 password policy (min 12, Unicode, block-breached, no forced rotation), D-02 consent record (versioned, written at /onboarding/start), D-03 locale es-ES primary (device fallback) — adopted as defaults for P1 | decision-sheet.md; ARCHITECTURE §A on P1 merge |
-| _pending_ | Product decisions D-04…D-23 | decision-sheet.md → record on approval |
+| 2026-06-14 | **D-05** locale/formatting (ICU, es-ES default; API locale-neutral), **D-06** metric-only (+ `users.unit_system` enum), **D-07** lean client-privacy scope — approved (recommended defaults) to unblock P3a; **L-03** screen-31 trust copy drafted v0 (pending DPO sign-off) | decision-sheet.md; legal-asks.md (L-03); `ARCHITECTURE.md §A` |
+| _pending_ | Product decisions D-04, D-08…D-23 | decision-sheet.md → record on approval |
 | _pending_ | Clinical sign-offs C-01…C-15 | clinical-asks.md → record on receipt |
 | _pending_ | Legal items L-01…L-09 | legal-asks.md → record on receipt |
 | _pending_ | §I infra (backup provider, Vault auto-unseal, operator MFA, crash reporting) | resolve at P0a/P11/P12b |

@@ -27,8 +27,11 @@ No age gate exists in onboarding today, yet the app processes minors' reproducti
 ## Gates P3a/P3b (copy shown before screens freeze)
 
 ### L-03 🟠 "Health info stays on your device" copy correction (screen 31)
-This statement is **materially inaccurate** — data is server-stored (encrypted at rest) and lab text is sent to Anthropic. Provide accurate trust copy (ES + EN): ______
-**Owner / date:** ____________
+This statement is **materially inaccurate** — data is server-stored (encrypted at rest) and lab text is sent to Anthropic. Provide accurate trust copy (ES + EN):
+**PROPOSED (`trust_copy_v0-draft`, engineer-drafted 2026-06-14 — pending DPO sign-off before launch; wired as a version string so legal can finalize without a code change):**
+- EN: "Your health data is encrypted and stored on EU servers — only you can read it. Lab PDFs you upload are processed by our AI provider (Anthropic) to extract your results, then encrypted at rest."
+- ES: "Tus datos de salud están cifrados y almacenados en servidores de la UE; solo tú puedes leerlos. Los PDF de laboratorio que subes los procesa nuestro proveedor de IA (Anthropic) para extraer tus resultados y se guardan cifrados."
+**Owner / date:** product owner / 2026-06-14 — accepted engineer-drafted copy as v0-draft; **DPO legal sign-off still required before public/beta launch**.
 
 ---
 
