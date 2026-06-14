@@ -7,6 +7,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Lumen.IntegrationTests/Lumen.IntegrationTests.csproj" />
+    <Project Path="tests/Lumen.SecurityTests/Lumen.SecurityTests.csproj" />
     <Project Path="tests/Lumen.UnitTests/Lumen.UnitTests.csproj" />
   </Folder>
 </Solution>
