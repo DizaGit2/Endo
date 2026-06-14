@@ -12,6 +12,7 @@ using Lumen.Application.Crypto;
 using Lumen.Domain.Entities;
 using Lumen.Infrastructure.Auth;
 using Lumen.Infrastructure.Crypto;
+using Lumen.Infrastructure.Jobs;
 using Lumen.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -50,6 +51,8 @@ builder.Services.AddHangfire(cfg => cfg
 // jobs don't execute non-deterministically; job logic is tested by invoking jobs directly.
 if (builder.Configuration.GetValue("Hangfire:EnableServer", true))
     builder.Services.AddHangfireServer();
+// Resolvable from a job scope by Hangfire's activator (e.g. the GDPR crypto-shred erasure job).
+builder.Services.AddScoped<CryptoShredJob>();
 
 // Fail closed: never start outside Development with the dev sentinel secrets (prod hardening is P11).
 if (!builder.Environment.IsDevelopment() &&
