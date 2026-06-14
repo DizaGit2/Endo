@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/auth/oidc_client.dart';
 import 'package:lumen/core/auth/token_store.dart';
+import 'package:lumen/core/cache/hive_boot.dart';
 import 'package:mocktail/mocktail.dart';
 
 // ---------------------------------------------------------------------------
@@ -19,19 +20,24 @@ class MockIOidcClient extends Mock implements IOidcClient {}
 
 class MockTokenStore extends Mock implements TokenStore {}
 
+class MockCacheStore extends Mock implements CacheStore {}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Builds a fresh [ProviderContainer] with mocked [IOidcClient] and [TokenStore].
+/// Builds a fresh [ProviderContainer] with mocked [IOidcClient], [TokenStore],
+/// and [CacheStore].
 ProviderContainer makeContainer({
   required MockIOidcClient oidc,
   required MockTokenStore store,
+  MockCacheStore? cache,
 }) {
   return ProviderContainer(
     overrides: [
       oidcClientProvider.overrideWithValue(oidc),
       tokenStoreProvider.overrideWithValue(store),
+      if (cache != null) cacheStoreProvider.overrideWithValue(cache),
     ],
   );
 }
@@ -63,10 +69,12 @@ void main() {
 
   late MockIOidcClient oidc;
   late MockTokenStore store;
+  late MockCacheStore cache;
 
   setUp(() {
     oidc = MockIOidcClient();
     store = MockTokenStore();
+    cache = MockCacheStore();
   });
 
   // -------------------------------------------------------------------------
@@ -173,8 +181,9 @@ void main() {
       when(() => oidc.endSession(idToken: any(named: 'idToken')))
           .thenAnswer((_) async {});
       when(() => store.clear()).thenAnswer((_) async {});
+      when(() => cache.purge()).thenAnswer((_) async => 0);
 
-      final container = makeContainer(oidc: oidc, store: store);
+      final container = makeContainer(oidc: oidc, store: store, cache: cache);
       addTearDown(container.dispose);
 
       await container.read(authStatusProvider.notifier).initialized;
@@ -182,26 +191,51 @@ void main() {
 
       verify(() => oidc.endSession(idToken: 'id-tok')).called(1);
       verify(() => store.clear()).called(1);
+      verify(() => cache.purge()).called(1);
       expect(container.read(authStatusProvider), AuthStatus.unauthenticated);
     });
 
     test(
-        'if endSession throws, clear still runs and state is unauthenticated',
+        'if endSession throws, clear and purge still run and state is unauthenticated',
         () async {
       when(() => store.hasValidSession()).thenAnswer((_) async => true);
       when(() => store.readIdToken()).thenAnswer((_) async => 'id-tok');
       when(() => oidc.endSession(idToken: any(named: 'idToken')))
           .thenThrow(Exception('network error'));
       when(() => store.clear()).thenAnswer((_) async {});
+      when(() => cache.purge()).thenAnswer((_) async => 0);
 
-      final container = makeContainer(oidc: oidc, store: store);
+      final container = makeContainer(oidc: oidc, store: store, cache: cache);
       addTearDown(container.dispose);
 
       await container.read(authStatusProvider.notifier).initialized;
       await container.read(authStatusProvider.notifier).logout();
 
-      // clear must have run despite endSession throwing.
+      // clear and purge must have run despite endSession throwing.
       verify(() => store.clear()).called(1);
+      verify(() => cache.purge()).called(1);
+      expect(container.read(authStatusProvider), AuthStatus.unauthenticated);
+    });
+
+    test(
+        'if purge throws, logout still completes and state is unauthenticated',
+        () async {
+      when(() => store.hasValidSession()).thenAnswer((_) async => true);
+      when(() => store.readIdToken()).thenAnswer((_) async => 'id-tok');
+      when(() => oidc.endSession(idToken: any(named: 'idToken')))
+          .thenAnswer((_) async {});
+      when(() => store.clear()).thenAnswer((_) async {});
+      when(() => cache.purge()).thenThrow(Exception('purge error'));
+
+      final container = makeContainer(oidc: oidc, store: store, cache: cache);
+      addTearDown(container.dispose);
+
+      await container.read(authStatusProvider.notifier).initialized;
+      // Must NOT throw — purge failure is best-effort.
+      await container.read(authStatusProvider.notifier).logout();
+
+      verify(() => store.clear()).called(1);
+      // State is still unauthenticated even though purge threw.
       expect(container.read(authStatusProvider), AuthStatus.unauthenticated);
     });
   });

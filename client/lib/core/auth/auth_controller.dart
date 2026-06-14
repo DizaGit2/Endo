@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/core/auth/oidc_client.dart';
 import 'package:lumen/core/auth/token_store.dart';
+import 'package:lumen/core/cache/hive_boot.dart';
 
 // ---------------------------------------------------------------------------
 // Auth status
@@ -81,11 +82,13 @@ class AuthController extends Notifier<AuthStatus> {
 
   /// Logs the user out.
   ///
-  /// Sends an RP-initiated end-session request (best-effort — errors are
-  /// swallowed so a network failure never blocks local sign-out), then clears
-  /// persisted tokens and transitions to [AuthStatus.unauthenticated].
-  ///
-  /// TODO(P3b-T9): hook cache purge here before `_store.clear()`.
+  /// Teardown order (each step is best-effort; a failure in any step never
+  /// blocks the remaining steps or the final state transition):
+  ///   1. RP-initiated end-session (network; errors swallowed).
+  ///   2. Clear persisted tokens from secure storage.
+  ///   3. Purge the encrypted Hive cache so no decrypted PII survives sign-out
+  ///      (best-effort: a purge failure does not block sign-out).
+  ///   4. Transition to [AuthStatus.unauthenticated].
   Future<void> logout() async {
     final idToken = await _store.readIdToken();
     if (idToken != null && idToken.isNotEmpty) {
@@ -96,6 +99,11 @@ class AuthController extends Notifier<AuthStatus> {
       }
     }
     await _store.clear();
+    try {
+      await ref.read(cacheStoreProvider).purge();
+    } catch (_) {
+      // Best-effort: a purge failure must not block the state transition.
+    }
     state = AuthStatus.unauthenticated;
   }
 }
