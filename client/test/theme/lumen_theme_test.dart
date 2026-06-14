@@ -43,10 +43,15 @@ void main() {
       final ext = theme.extension<LumenColors>();
       expect(ext, isNotNull);
       expect(ext!.bg, lumenLight.bg);
-      expect(ext.accent, lumenLight.accent);
-      expect(ext.sage, lumenLight.sage);
-      expect(ext.ink, lumenLight.ink);
       expect(ext.surface, lumenLight.surface);
+      expect(ext.ink, lumenLight.ink);
+      expect(ext.muted, lumenLight.muted);
+      expect(ext.accent, lumenLight.accent);
+      expect(ext.accentSoft, lumenLight.accentSoft);
+      expect(ext.sage, lumenLight.sage);
+      expect(ext.sageSoft, lumenLight.sageSoft);
+      expect(ext.border, lumenLight.border);
+      expect(ext.input, lumenLight.input);
     });
   });
 
@@ -89,10 +94,15 @@ void main() {
       final ext = theme.extension<LumenColors>();
       expect(ext, isNotNull);
       expect(ext!.bg, lumenDark.bg);
-      expect(ext.accent, lumenDark.accent);
-      expect(ext.sage, lumenDark.sage);
-      expect(ext.ink, lumenDark.ink);
       expect(ext.surface, lumenDark.surface);
+      expect(ext.ink, lumenDark.ink);
+      expect(ext.muted, lumenDark.muted);
+      expect(ext.accent, lumenDark.accent);
+      expect(ext.accentSoft, lumenDark.accentSoft);
+      expect(ext.sage, lumenDark.sage);
+      expect(ext.sageSoft, lumenDark.sageSoft);
+      expect(ext.border, lumenDark.border);
+      expect(ext.input, lumenDark.input);
     });
   });
 

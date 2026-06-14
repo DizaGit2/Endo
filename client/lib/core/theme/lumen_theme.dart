@@ -7,12 +7,15 @@ import 'lumen_tokens.dart';
 /// "witchy" dark palette defined in [lumenLight] / [lumenDark].
 ///
 /// Typography: no custom [fontFamily] is set — the platform system sans-serif
-/// stack is the design spec. All 15 named text styles are normalised to only
-/// [FontWeight.w400] or [FontWeight.w500] (the two weights mandated by the
-/// design). Material-3's [Typography.material2021] already uses only these two
-/// weights for the englishLike script, but the normalisation step is applied
-/// explicitly and defensively so the guarantee holds even if the SDK defaults
-/// ever change.
+/// stack is the design spec. The design mandates exactly two weights,
+/// [FontWeight.w400] and [FontWeight.w500]. Material-3's
+/// [Typography.material2021] already satisfies this for the englishLike script
+/// (it uses only w400/w500), and at the [ThemeData.textTheme] level most slots
+/// expose `fontWeight: null` (inherit) — the concrete weight is resolved from
+/// [Typography] at render time. [_normaliseWeights] is therefore a safety net:
+/// it only clamps a slot that carries an *explicit* out-of-range weight
+/// (e.g. introduced by a future SDK change or a custom `.apply`), leaving the
+/// null/inherit and already-compliant slots untouched.
 ThemeData lumenTheme(Brightness brightness) {
   final c = brightness == Brightness.light ? lumenLight : lumenDark;
 
