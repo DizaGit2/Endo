@@ -277,7 +277,10 @@ app.MapPost("/onboarding/start", async (
         try { await keycloak.DeleteUserAsync(userId, ct); } catch { /* compensation is best-effort */ }
         throw;
     }
-}).AllowAnonymous();
+})
+.AllowAnonymous()
+.Produces<object>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status400BadRequest);
 
 app.MapGet("/me", async (
     ICurrentUserAccessor current,
@@ -293,7 +296,10 @@ app.MapGet("/me", async (
     var displayName = profile?.DisplayNameEnc is { } enc ? await crypto.DecryptStringAsync(enc, ct) : null;
 
     return Results.Ok(new MeResponse(userId, displayName, user.Locale, user.Timezone, user.OnboardingCompletedAt is not null));
-}).RequireAuthorization();
+})
+.RequireAuthorization()
+.Produces<MeResponse>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status401Unauthorized);
 
 app.MapDelete("/me", async (
     ICurrentUserAccessor current,
@@ -307,7 +313,7 @@ app.MapDelete("/me", async (
     // Idempotent guard: never re-enqueue the shred for an already-tombstoned (or missing) user.
     var user = await db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId, ct);
     if (user is null)
-        return Results.Accepted(); // nothing to disable — no Keycloak identity to act on
+        return TypedResults.Accepted((string?)null); // nothing to disable — no Keycloak identity to act on
 
     if (user.DeletedAt is not null)
     {
@@ -315,14 +321,16 @@ app.MapDelete("/me", async (
         // Keycloak disable fail (5xx), leaving the account still login-enabled. Re-attempt the
         // disable on retry — it is idempotent (204/404 no-op) — so no enqueue, just remediation.
         await keycloak.DisableUserAsync(userId, ct);
-        return Results.Accepted();
+        return TypedResults.Accepted((string?)null);
     }
 
     // §F order: enqueue shred job, then disable in Keycloak, then 202.
     backgroundJobs.Enqueue<CryptoShredJob>(j => j.ExecuteAsync(userId, CancellationToken.None));
     await keycloak.DisableUserAsync(userId, ct);
-    return Results.Accepted();
-}).RequireAuthorization();
+    return TypedResults.Accepted((string?)null);
+})
+.RequireAuthorization()
+.ProducesProblem(StatusCodes.Status401Unauthorized);
 
 app.MapPatch("/me", async (
     UpdateMeRequest request,
@@ -345,7 +353,10 @@ app.MapPatch("/me", async (
     profile.UpdatedAt = now;
     await db.SaveChangesAsync(ct);
     return Results.NoContent();
-}).RequireAuthorization();
+})
+.RequireAuthorization()
+.Produces(StatusCodes.Status204NoContent)
+.ProducesProblem(StatusCodes.Status401Unauthorized);
 
 app.Run();
 
