@@ -141,7 +141,8 @@ class AuthInterceptor extends Interceptor {
         },
       );
 
-      final retryDio = dio ?? Dio();
+      final retryDio = dio ??
+          (throw StateError('AuthInterceptor.dio must be set before requests run'));
       final retryResponse = await retryDio.fetch(retryOptions);
       handler.resolve(retryResponse);
     } on _AuthLostException {
@@ -152,6 +153,11 @@ class AuthInterceptor extends Interceptor {
           type: DioExceptionType.unknown,
         ),
       );
+    } on DioException catch (e) {
+      // Refresh succeeded but the RETRIED request failed for a non-auth reason
+      // (timeout, 5xx, repeated 401 caught by the retry guard). Surface the real
+      // error so callers map it correctly — do NOT mislabel it as AuthFailure.
+      handler.reject(e);
     } catch (_) {
       handler.reject(
         DioException(

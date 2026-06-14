@@ -65,6 +65,7 @@ Failure mapDioException(DioException e) {
     case DioExceptionType.sendTimeout:
     case DioExceptionType.receiveTimeout:
     case DioExceptionType.connectionError:
+    case DioExceptionType.badCertificate:
       return const NetworkFailure();
 
     case DioExceptionType.badResponse:
@@ -91,7 +92,6 @@ Failure mapDioException(DioException e) {
 
     case DioExceptionType.cancel:
     case DioExceptionType.unknown:
-    case DioExceptionType.badCertificate:
       return const UnknownFailure();
   }
 }
