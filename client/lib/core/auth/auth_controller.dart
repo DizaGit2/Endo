@@ -88,10 +88,12 @@ class AuthController extends Notifier<AuthStatus> {
   /// TODO(P3b-T9): hook cache purge here before `_store.clear()`.
   Future<void> logout() async {
     final idToken = await _store.readIdToken();
-    try {
-      await _oidc.endSession(idToken: idToken ?? '');
-    } catch (_) {
-      // Best-effort: a failed end-session must not block local sign-out.
+    if (idToken != null && idToken.isNotEmpty) {
+      try {
+        await _oidc.endSession(idToken: idToken);
+      } catch (_) {
+        // Best-effort: a failed end-session must not block local sign-out.
+      }
     }
     await _store.clear();
     state = AuthStatus.unauthenticated;

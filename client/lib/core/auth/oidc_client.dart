@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -44,21 +45,31 @@ class OidcTokens {
 
 /// Compile-time OIDC configuration.
 ///
-/// Dev defaults target the Android emulator reaching the host Keycloak
-/// instance via the 10.0.2.2 alias.
-// TODO(P3b-T10): finalize issuer/host for the live run (emulator 10.0.2.2 vs Caddy https)
+/// Dev defaults target the Android emulator reaching the host Keycloak instance
+/// via the 10.0.2.2 alias. [allowInsecureConnections] defaults to [kDebugMode]
+/// so HTTP / cert-bypass is permitted ONLY in debug/dev builds (required for the
+/// emulator→host http run at T10); release builds force TLS and cannot ship an
+/// insecure OIDC connection.
+// TODO(P3b-T10): point issuer at the live host for the emulator run.
+// TODO(P11): production must use the https Caddy issuer (allowInsecureConnections
+//   is kDebugMode-gated, so release builds are already safe).
 class OidcConfig {
   const OidcConfig({
     this.issuer = 'http://10.0.2.2:8080/realms/lumen',
     this.clientId = 'mobile',
     this.redirectUrl = 'com.lumen.app:/oauth2redirect',
     this.scopes = const ['openid', 'profile', 'offline_access'],
+    this.allowInsecureConnections = kDebugMode,
   });
 
   final String issuer;
   final String clientId;
   final String redirectUrl;
   final List<String> scopes;
+
+  /// Allow plain-HTTP / cert-bypass OIDC endpoints. Defaults to [kDebugMode]
+  /// (dev only); never true in release builds.
+  final bool allowInsecureConnections;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,7 +124,7 @@ class AppAuthOidcClient implements IOidcClient {
         issuer: _config.issuer,
         scopes: _config.scopes,
         // PKCE is handled automatically by flutter_appauth.
-        allowInsecureConnections: true, // dev only — revisit at T10
+        allowInsecureConnections: _config.allowInsecureConnections,
       ),
     );
     return _tokensFromResponse(response);
@@ -129,7 +140,7 @@ class AppAuthOidcClient implements IOidcClient {
         scopes: _config.scopes,
         refreshToken: refreshToken,
         grantType: GrantType.refreshToken,
-        allowInsecureConnections: true, // dev only — revisit at T10
+        allowInsecureConnections: _config.allowInsecureConnections,
       ),
     );
     return _tokensFromResponse(response);
@@ -141,7 +152,7 @@ class AppAuthOidcClient implements IOidcClient {
       EndSessionRequest(
         idTokenHint: idToken,
         issuer: _config.issuer,
-        allowInsecureConnections: true, // dev only — revisit at T10
+        allowInsecureConnections: _config.allowInsecureConnections,
       ),
     );
   }
