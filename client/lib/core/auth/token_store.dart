@@ -14,6 +14,10 @@ const _kAccessTokenExpiry = 'access_token_expiry';
 // Default storage instance
 // ---------------------------------------------------------------------------
 
+// AndroidOptions() uses v10's modern cipher defaults. Its default
+// resetOnError:true means a corrupted Android keystore (OS upgrade, certain
+// backup/restore cases) silently clears stored data — acceptable here: the user
+// simply re-authenticates (the server-held DEK means no data is lost on re-login).
 const _defaultStorage = FlutterSecureStorage(
   aOptions: AndroidOptions(),
   iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock_this_device),
@@ -36,7 +40,9 @@ class TokenStore {
   // Write
   // -------------------------------------------------------------------------
 
-  /// Writes all four token fields atomically (individual writes).
+  /// Writes all four token fields (sequentially — the platform API has no batch
+  /// write, so a process kill mid-save can leave a partial set; callers treat a
+  /// missing/!hasValidSession state as logged-out and re-authenticate).
   ///
   /// [accessTokenExpiry] is stored as an ISO-8601 UTC string.
   Future<void> saveTokens({
