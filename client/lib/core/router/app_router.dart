@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/routes.dart';
+import 'package:lumen/features/onboarding/presentation/account_screen.dart';
 import 'package:lumen/features/onboarding/presentation/welcome_screen.dart';
 
 // ---------------------------------------------------------------------------
@@ -98,8 +99,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: Routes.account,
-        // TODO(T7): replace _AccountPlaceholder with the real AccountScreen.
-        builder: (_, _) => const _AccountPlaceholder(),
+        builder: (_, _) => const AccountScreen(),
       ),
       GoRoute(
         path: Routes.profile,
@@ -135,20 +135,6 @@ class _SplashScreen extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Placeholder screens — replaced in T7 / T8
 // ---------------------------------------------------------------------------
-
-/// Temporary placeholder for the Account screen (register / sign-in).
-///
-/// Replaced by the real AccountScreen in T7.
-class _AccountPlaceholder extends StatelessWidget {
-  const _AccountPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(child: Text('Account')),
-    );
-  }
-}
 
 /// Temporary placeholder for the Profile / home screen.
 ///
