@@ -78,6 +78,7 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
             e.Property(x => x.BeforeJson).HasColumnType("jsonb");
             e.Property(x => x.AfterJson).HasColumnType("jsonb");
             e.HasIndex(x => x.At);
+            e.HasIndex(x => new { x.EntityId, x.Action }); // GDPR/DSAR erasure-proof lookup: WHERE EntityId = ? AND Action = 'crypto_shred'
             // No FK to User — audit history must survive crypto-shred (§F).
         });
     }
