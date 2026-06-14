@@ -20,22 +20,14 @@ class PrivacyScreen extends StatelessWidget {
     final c = Theme.of(context).extension<LumenColors>()!;
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: c.surface,
       body: SafeArea(
-        child: Center(
-          child: SizedBox(
-            width: 300,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(22, 44, 22, 20),
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: BorderRadius.circular(36),
-                border: Border.all(color: c.border),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 44, 22, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                   // Back affordance row (icon + section tag)
                   Row(
                     children: [
@@ -123,7 +115,6 @@ class PrivacyScreen extends StatelessWidget {
                     ),
                   ),
                 ],
-              ),
             ),
           ),
         ),
