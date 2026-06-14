@@ -17,7 +17,11 @@ public class RateLimitLiveTests
     public async Task Global_limiter_returns_429_after_limit()
     {
         await using var factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder => builder.UseSetting("RateLimit:PermitPerMinute", "3"));
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("RateLimit:PermitPerMinute", "3");
+                builder.UseSetting("Hangfire:EnableServer", "false");
+            });
         var client = factory.CreateClient();
 
         var statuses = new List<HttpStatusCode>();

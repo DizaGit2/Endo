@@ -46,7 +46,10 @@ builder.Services.AddDbContext<LumenDbContext>(o => o.UseNpgsql(connectionString)
 // Job classes land in later tasks; this only registers the runtime and secures the dashboard.
 builder.Services.AddHangfire(cfg => cfg
     .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(connectionString)));
-builder.Services.AddHangfireServer();
+// The background server is disabled in integration tests (Hangfire:EnableServer=false) so enqueued
+// jobs don't execute non-deterministically; job logic is tested by invoking jobs directly.
+if (builder.Configuration.GetValue("Hangfire:EnableServer", true))
+    builder.Services.AddHangfireServer();
 
 // Fail closed: never start outside Development with the dev sentinel secrets (prod hardening is P11).
 if (!builder.Environment.IsDevelopment() &&

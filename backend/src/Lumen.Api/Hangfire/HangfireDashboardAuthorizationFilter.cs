@@ -55,7 +55,7 @@ public sealed class HangfireDashboardAuthorizationFilter : IDashboardAuthorizati
             foreach (var role in rolesElement.EnumerateArray())
             {
                 if (role.ValueKind == JsonValueKind.String &&
-                    role.GetString() == "lumen-admin")
+                    role.GetString()?.Equals("lumen-admin", StringComparison.Ordinal) is true)
                     return true;
             }
         }

@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Lumen.Infrastructure.Persistence;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Shouldly;
 using Xunit;
@@ -17,7 +16,7 @@ namespace Lumen.IntegrationTests;
 /// GET /me decrypts and returns the profile. T12 converts to Testcontainers for CI.
 /// </summary>
 [Trait("Category", "LiveStack")]
-public class SpineLiveTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+public class SpineLiveTests(LumenApiFactory factory) : IClassFixture<LumenApiFactory>
 {
     [Fact]
     public async Task Walking_skeleton_spine_end_to_end()

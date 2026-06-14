@@ -1,4 +1,3 @@
-using System.Net;
 using Hangfire;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,8 +12,8 @@ namespace Lumen.IntegrationTests;
 /// schema is initialised, and that the dashboard at /hangfire is not publicly accessible.
 /// </summary>
 [Trait("Category", "LiveStack")]
-public class HangfireLiveTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public class HangfireLiveTests(LumenApiFactory factory)
+    : IClassFixture<LumenApiFactory>
 {
     [Fact]
     public async Task Hangfire_services_are_registered_in_DI()
@@ -28,11 +27,8 @@ public class HangfireLiveTests(WebApplicationFactory<Program> factory)
     [Fact]
     public async Task Hangfire_postgres_schema_exists_after_startup()
     {
-        // Trigger app startup and force the Hangfire storage to initialise by resolving
-        // the JobStorage and calling GetMonitoringApi() — this exercises the lazy schema
-        // creation that Hangfire.PostgreSql performs on first use.
-        var storage = factory.Services.GetRequiredService<JobStorage>();
-        _ = storage.GetMonitoringApi(); // lazy schema init
+        // The Hangfire schema is created during app startup; verify it exists via a direct Postgres query.
+        _ = factory.Services.GetRequiredService<JobStorage>(); // ensure app has started
 
         await using var conn = new NpgsqlConnection(TestFixtures.Db);
         await conn.OpenAsync();

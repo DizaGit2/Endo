@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Shouldly;
 using Xunit;
 
@@ -10,7 +9,7 @@ namespace Lumen.IntegrationTests;
 /// snapshot (<c>backend/contract/openapi.json</c>) + the CI drift-guard land with T12.
 /// (Static doc — needs no DB/Keycloak.)
 /// </summary>
-public class OpenApiContractTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+public class OpenApiContractTests(LumenApiFactory factory) : IClassFixture<LumenApiFactory>
 {
     [Fact]
     public async Task OpenApi_documents_the_spine_endpoints()
