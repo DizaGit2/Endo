@@ -295,6 +295,26 @@ app.MapGet("/me", async (
     return Results.Ok(new MeResponse(userId, displayName, user.Locale, user.Timezone, user.OnboardingCompletedAt is not null));
 }).RequireAuthorization();
 
+app.MapDelete("/me", async (
+    ICurrentUserAccessor current,
+    LumenDbContext db,
+    IBackgroundJobClient backgroundJobs,
+    IKeycloakAdmin keycloak,
+    CancellationToken ct) =>
+{
+    var userId = current.UserId;
+
+    // Idempotent guard: if already tombstoned (or user not found), return 202 without enqueuing again.
+    var user = await db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId, ct);
+    if (user is null || user.DeletedAt is not null)
+        return Results.Accepted();
+
+    // §F order: enqueue shred job, then disable in Keycloak, then 202.
+    backgroundJobs.Enqueue<CryptoShredJob>(j => j.ExecuteAsync(userId, CancellationToken.None));
+    await keycloak.DisableUserAsync(userId, ct);
+    return Results.Accepted();
+}).RequireAuthorization();
+
 app.MapPatch("/me", async (
     UpdateMeRequest request,
     ICurrentUserAccessor current,

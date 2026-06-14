@@ -11,4 +11,10 @@ public interface IKeycloakAdmin
 
     /// <summary>Deletes a Keycloak user. Used to compensate a failed multi-system onboarding. No-op if absent.</summary>
     Task DeleteUserAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Disables a Keycloak user so they can no longer authenticate; used by right-to-erasure.
+    /// No-op if absent.
+    /// </summary>
+    Task DisableUserAsync(Guid userId, CancellationToken ct = default);
 }

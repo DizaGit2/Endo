@@ -59,6 +59,21 @@ public sealed class KeycloakAdminClient(HttpClient http, KeycloakOptions options
             response.EnsureSuccessStatusCode();
     }
 
+    public async Task DisableUserAsync(Guid userId, CancellationToken ct = default)
+    {
+        var token = await GetAdminTokenAsync(ct);
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"{options.BaseUrl}/admin/realms/{options.Realm}/users/{userId}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Content = JsonContent.Create(new { enabled = false });
+
+        using var response = await http.SendAsync(request, ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return; // no-op — user already gone
+        if (response.StatusCode != HttpStatusCode.NoContent)
+            throw new IdentityProviderException($"Keycloak disable-user failed ({(int)response.StatusCode}).");
+    }
+
     private async Task<string> GetAdminTokenAsync(CancellationToken ct)
     {
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
