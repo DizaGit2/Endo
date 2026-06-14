@@ -2,8 +2,11 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using Hangfire;
+using Hangfire.PostgreSql;
 using Lumen.Api;
 using Lumen.Api.Auth;
+using Lumen.Api.Hangfire;
 using Lumen.Application.Auth;
 using Lumen.Application.Crypto;
 using Lumen.Domain.Entities;
@@ -38,6 +41,12 @@ builder.Services.AddSingleton(TimeProvider.System);
 var connectionString = builder.Configuration.GetConnectionString("Lumen")
     ?? "Host=localhost;Port=55432;Database=lumen;Username=postgres;Password=postgres";
 builder.Services.AddDbContext<LumenDbContext>(o => o.UseNpgsql(connectionString));
+
+// --- background jobs (Hangfire) ---
+// Job classes land in later tasks; this only registers the runtime and secures the dashboard.
+builder.Services.AddHangfire(cfg => cfg
+    .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(connectionString)));
+builder.Services.AddHangfireServer();
 
 // Fail closed: never start outside Development with the dev sentinel secrets (prod hardening is P11).
 if (!builder.Environment.IsDevelopment() &&
@@ -137,6 +146,12 @@ app.UseSwaggerUI();
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
+
+// --- Hangfire dashboard (lumen-admin only) ---
+app.MapHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = [new HangfireDashboardAuthorizationFilter()],
+});
 
 // --- health (P0a) ---
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" })).AllowAnonymous();
