@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/shared/widgets/lumen_section_label.dart';
 
@@ -101,7 +103,7 @@ class WelcomeScreen extends StatelessWidget {
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton(
-                            onPressed: () {}, // TODO(P3b): navigate to account
+                            onPressed: () => context.go(Routes.account),
                             style: FilledButton.styleFrom(
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
@@ -121,7 +123,7 @@ class WelcomeScreen extends StatelessWidget {
 
                         // Secondary link — "I already have an account"
                         TextButton(
-                          onPressed: () {}, // TODO(P3b): navigate to login
+                          onPressed: () => context.go(Routes.account),
                           style: TextButton.styleFrom(
                             foregroundColor: c.muted,
                             textStyle: const TextStyle(

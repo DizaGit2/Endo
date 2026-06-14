@@ -1,26 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/router/app_router.dart';
 import 'core/theme/lumen_theme.dart';
-import 'features/onboarding/presentation/welcome_screen.dart';
 
 /// Root application widget for Lumen.
 ///
-/// Wires [MaterialApp] with the light and dark [ThemeData] built from design
-/// tokens, respecting the system theme mode.
+/// Wires [MaterialApp.router] with the [goRouterProvider] (GoRouter with
+/// auth-guard redirect logic) and the light/dark [ThemeData] built from
+/// design tokens, respecting the system theme mode.
 ///
-/// Home is [WelcomeScreen] — the first screen of the onboarding flow (T7/P3a).
-/// Navigation between screens is wired in P3b.
-class LumenApp extends StatelessWidget {
+/// Navigation is managed by GoRouter (P3b-T5). The initial route is [Routes.welcome]
+/// (the onboarding welcome screen) and the router redirects based on [AuthStatus].
+class LumenApp extends ConsumerWidget {
   const LumenApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
+  Widget build(BuildContext context, WidgetRef ref) {
+    return MaterialApp.router(
       title: 'Lumen',
       debugShowCheckedModeBanner: false,
       theme: lumenTheme(Brightness.light),
       darkTheme: lumenTheme(Brightness.dark),
       themeMode: ThemeMode.system,
-      home: const WelcomeScreen(),
+      routerConfig: ref.watch(goRouterProvider),
     );
   }
 }
