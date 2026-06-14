@@ -297,7 +297,13 @@ class _MiniToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
-    final trackColor = enabled ? c.accent : c.border;
+    // OFF track: a low-opacity muted tint — visible in both light and dark themes
+    // without referencing hard-coded brand hex. ON track: full accent colour.
+    final trackColor =
+        enabled ? c.accent : c.muted.withValues(alpha: 0.35);
+    // Thumb: surface colour — contrasts clearly against both accent (ON) and the
+    // muted tint (OFF) in light AND dark themes.
+    final thumbColor = c.surface;
     return SizedBox(
       width: 26,
       height: 16,
@@ -319,8 +325,8 @@ class _MiniToggle extends StatelessWidget {
             child: Container(
               width: 12,
               height: 12,
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFFCF7),
+              decoration: BoxDecoration(
+                color: thumbColor,
                 shape: BoxShape.circle,
               ),
             ),

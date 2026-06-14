@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
+import 'package:lumen/shared/widgets/lumen_section_label.dart';
 
 /// Screen 1 — Welcome (onboarding step 1 of 7).
 ///
@@ -37,15 +38,11 @@ class WelcomeScreen extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Section tag
-                  Text(
-                    'LUMEN · 1 OF 7',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: c.sage,
-                      letterSpacing: 1.5,
-                    ),
+                  // Section tag — sentence-case source; widget uppercases via toUpperCase().
+                  const LumenSectionLabel(
+                    'Lumen · 1 of 7',
+                    fontSize: 11,
+                    letterSpacing: 1.5,
                   ),
 
                   const SizedBox(height: 24),
@@ -102,15 +99,13 @@ class WelcomeScreen extends StatelessWidget {
                   const SizedBox(height: 24),
 
                   // Primary CTA — "Begin"
+                  // FilledButton uses colorScheme.primary (accent) background and
+                  // colorScheme.onPrimary foreground — both token-correct in light + dark.
                   SizedBox(
                     width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: null, // TODO(P3b): navigate to account screen
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: c.accent,
-                        foregroundColor: const Color(0xFFFFFCF7),
-                        disabledBackgroundColor: c.accent,
-                        disabledForegroundColor: const Color(0xFFFFFCF7),
+                    child: FilledButton(
+                      onPressed: () {}, // TODO(P3b): navigate to account screen
+                      style: FilledButton.styleFrom(
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
@@ -129,10 +124,9 @@ class WelcomeScreen extends StatelessWidget {
 
                   // Secondary link — "I already have an account"
                   TextButton(
-                    onPressed: null, // TODO(P3b): navigate to login screen
+                    onPressed: () {}, // TODO(P3b): navigate to login screen
                     style: TextButton.styleFrom(
                       foregroundColor: c.muted,
-                      disabledForegroundColor: c.muted,
                       textStyle: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w400,
