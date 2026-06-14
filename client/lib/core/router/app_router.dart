@@ -5,6 +5,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
 import 'package:lumen/features/onboarding/presentation/welcome_screen.dart';
+import 'package:lumen/features/settings/presentation/profile_screen.dart';
 
 // ---------------------------------------------------------------------------
 // Redirect logic (pure function — unit-testable without a router instance)
@@ -103,8 +104,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: Routes.profile,
-        // TODO(T8): replace _ProfilePlaceholder with the real ProfileScreen.
-        builder: (_, _) => const _ProfilePlaceholder(),
+        builder: (_, _) => const ProfileScreen(),
       ),
     ],
   );
@@ -132,20 +132,3 @@ class _SplashScreen extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Placeholder screens — replaced in T7 / T8
-// ---------------------------------------------------------------------------
-
-/// Temporary placeholder for the Profile / home screen.
-///
-/// Replaced by the real ProfileScreen in T8.
-class _ProfilePlaceholder extends StatelessWidget {
-  const _ProfilePlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(child: Text('Profile')),
-    );
-  }
-}
