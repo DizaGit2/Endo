@@ -192,6 +192,59 @@ public class DeleteMeLiveTests(RecordingJobFactory factory) : IClassFixture<Reco
                 await CleanupAsync(userId);
         }
     }
+
+    [Fact]
+    public async Task Delete_me_on_tombstoned_user_self_heals_a_failed_keycloak_disable()
+    {
+        var email = $"del-heal-{Guid.NewGuid():N}@example.com";
+        const string password = "Sup3rSecretPassw0rd!";
+        Guid userId = default;
+        // Reset the shared stub (xUnit runs tests in a class sequentially).
+        factory.Stub.Captured.Clear();
+
+        try
+        {
+            (userId, var token) = await OnboardAndLoginAsync(email, password);
+
+            // Simulate a prior DELETE /me whose shred ran (tombstone set) but whose Keycloak
+            // disable FAILED — the account is tombstoned in Lumen yet STILL login-enabled.
+            await using var db = TestFixtures.NewDb();
+            await db.Users.IgnoreQueryFilters()
+                .Where(u => u.Id == userId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(u => u.DeletedAt, DateTimeOffset.UtcNow)
+                    .SetProperty(u => u.UpdatedAt, DateTimeOffset.UtcNow));
+
+            // Sanity: the still-enabled account can currently obtain a token.
+            var before = await TestFixtures.TryGetUserTokenStatusAsync(email, password);
+            before.ShouldBe(HttpStatusCode.OK,
+                "Pre-retry the Keycloak account is still enabled (the prior disable failed).");
+
+            // Act: a retry of DELETE /me must self-heal the disable without re-shredding.
+            var authed = factory.CreateClient();
+            authed.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var response = await authed.DeleteAsync("/me");
+
+            // Assert: 202 Accepted (idempotent retry)
+            response.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+
+            // Assert: NO new enqueue — tombstoned, so no re-shred.
+            factory.Stub.Captured.Count.ShouldBe(0,
+                "Already-tombstoned user must not trigger another shred enqueue.");
+
+            // Assert: the disable was re-attempted — the Keycloak user is now disabled.
+            var after = await TestFixtures.TryGetUserTokenStatusAsync(email, password);
+            after.ShouldNotBe(HttpStatusCode.OK,
+                "The retry must disable the still-enabled Keycloak account.");
+            ((int)after).ShouldBeGreaterThanOrEqualTo(400,
+                "Keycloak returns a 4xx for a disabled user's password-grant attempt.");
+        }
+        finally
+        {
+            if (userId != default)
+                await CleanupAsync(userId);
+        }
+    }
 }
 
 /// <summary>

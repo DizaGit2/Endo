@@ -304,10 +304,19 @@ app.MapDelete("/me", async (
 {
     var userId = current.UserId;
 
-    // Idempotent guard: if already tombstoned (or user not found), return 202 without enqueuing again.
+    // Idempotent guard: never re-enqueue the shred for an already-tombstoned (or missing) user.
     var user = await db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId, ct);
-    if (user is null || user.DeletedAt is not null)
+    if (user is null)
+        return Results.Accepted(); // nothing to disable — no Keycloak identity to act on
+
+    if (user.DeletedAt is not null)
+    {
+        // Self-heal: a prior DELETE /me may have shredded (tombstoned) the user but had its
+        // Keycloak disable fail (5xx), leaving the account still login-enabled. Re-attempt the
+        // disable on retry — it is idempotent (204/404 no-op) — so no enqueue, just remediation.
+        await keycloak.DisableUserAsync(userId, ct);
         return Results.Accepted();
+    }
 
     // §F order: enqueue shred job, then disable in Keycloak, then 202.
     backgroundJobs.Enqueue<CryptoShredJob>(j => j.ExecuteAsync(userId, CancellationToken.None));
