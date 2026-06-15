@@ -153,6 +153,67 @@ void main() {
       // getMe was called at least twice (initial + after refresh)
       verify(() => mockRepo.getMe()).called(greaterThanOrEqualTo(2));
     });
+
+    test(
+        'keeps the loaded profile (with the new name) when the post-save '
+        're-fetch returns NetworkRequired — does NOT blank the screen',
+        () async {
+      final me = _sampleMe(displayName: 'María');
+      var call = 0;
+      when(() => mockRepo.getMe()).thenAnswer((_) async {
+        call++;
+        return call == 1
+            ? Fresh(me)
+            : const NetworkRequired<MeResponse>(NetworkFailure());
+      });
+      when(() => mockRepo.updateMe(displayName: any(named: 'displayName')))
+          .thenAnswer((_) async {});
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      await container.read(profileControllerProvider.future);
+
+      await container
+          .read(profileControllerProvider.notifier)
+          .saveDisplayName('Nueva');
+
+      // PATCH succeeded; the transient re-fetch failure must NOT replace the
+      // profile with the "connect to load" empty state.
+      final state = container.read(profileControllerProvider);
+      expect(state, isA<AsyncData<CacheResult<MeResponse>>>());
+      final result = state.requireValue;
+      expect(result, isA<Fresh<MeResponse>>());
+      expect((result as Fresh<MeResponse>).value.displayName, 'Nueva');
+    });
+
+    test(
+        'keeps the loaded profile (with the new name) when the post-save '
+        're-fetch throws — does NOT surface AsyncError', () async {
+      final me = _sampleMe(displayName: 'María');
+      var call = 0;
+      when(() => mockRepo.getMe()).thenAnswer((_) async {
+        call++;
+        if (call == 1) return Fresh(me);
+        throw Exception('refetch failed');
+      });
+      when(() => mockRepo.updateMe(displayName: any(named: 'displayName')))
+          .thenAnswer((_) async {});
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      await container.read(profileControllerProvider.future);
+
+      await container
+          .read(profileControllerProvider.notifier)
+          .saveDisplayName('Nueva');
+
+      final state = container.read(profileControllerProvider);
+      expect(state, isA<AsyncData<CacheResult<MeResponse>>>());
+      expect(
+        (state.requireValue as Fresh<MeResponse>).value.displayName,
+        'Nueva',
+      );
+    });
   });
 }
 

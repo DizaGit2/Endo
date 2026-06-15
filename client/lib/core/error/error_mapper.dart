@@ -51,9 +51,13 @@ Map<String, List<String>> _problemFields(dynamic data) {
 ///
 /// Rules:
 /// - Connection/timeout types → [NetworkFailure]
+/// - TLS certificate validation failure → [TlsFailure] (HARD failure — never
+///   served from stale cache)
 /// - HTTP 400 / 422 → [ValidationFailure] (parse RFC 7807 `problem+json`)
 /// - HTTP 401 → [AuthFailure]
 /// - HTTP 404 → [NotFoundFailure]
+/// - HTTP 409 → [ConflictFailure] (carries the problem+json `detail`/`title`)
+/// - HTTP 429 → [RateLimitFailure]
 /// - HTTP 5xx → [ServerFailure]
 /// - Anything else → [UnknownFailure]
 ///
@@ -65,8 +69,13 @@ Failure mapDioException(DioException e) {
     case DioExceptionType.sendTimeout:
     case DioExceptionType.receiveTimeout:
     case DioExceptionType.connectionError:
-    case DioExceptionType.badCertificate:
       return const NetworkFailure();
+
+    case DioExceptionType.badCertificate:
+      // A TLS validation failure (possible MITM / cert tampering) is a HARD
+      // error, not a transient offline state — callers must NOT fall back to
+      // cached (decrypted) data, so this is deliberately not a NetworkFailure.
+      return const TlsFailure();
 
     case DioExceptionType.badResponse:
       final status = e.response?.statusCode;
@@ -84,6 +93,11 @@ Failure mapDioException(DioException e) {
 
       if (status == 401) return const AuthFailure();
       if (status == 404) return const NotFoundFailure();
+      if (status == 409) {
+        final detail = _problemDetail(data) ?? _problemTitle(data);
+        return detail != null ? ConflictFailure(detail) : const ConflictFailure();
+      }
+      if (status == 429) return const RateLimitFailure();
       if (status != null && status >= 500 && status < 600) {
         return const ServerFailure();
       }

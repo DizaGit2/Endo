@@ -229,7 +229,7 @@ class _UserCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initials = _initials(me.displayName);
+    final initials = avatarInitials(me.displayName);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -287,12 +287,18 @@ class _UserCard extends StatelessWidget {
     );
   }
 
-  String _initials(String? name) {
-    if (name == null || name.isEmpty) return '?';
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.length == 1) return parts[0][0].toUpperCase();
-    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-  }
+}
+
+/// Computes 1–2 uppercase initials for the profile avatar from a (possibly
+/// null, empty, or whitespace-only) display name. Returns `'?'` when there is
+/// no usable name — guarding against a `RangeError` on a blank server value.
+@visibleForTesting
+String avatarInitials(String? name) {
+  final trimmed = (name ?? '').trim();
+  if (trimmed.isEmpty) return '?';
+  final parts = trimmed.split(RegExp(r'\s+'));
+  if (parts.length == 1) return parts[0][0].toUpperCase();
+  return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
 }
 
 // ---------------------------------------------------------------------------

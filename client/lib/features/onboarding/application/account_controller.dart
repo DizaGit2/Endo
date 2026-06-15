@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
+import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/features/onboarding/data/onboarding_repository.dart';
 
 // ---------------------------------------------------------------------------
@@ -31,7 +32,12 @@ class AccountController extends AsyncNotifier<void> {
   /// 1. Calls [OnboardingRepository.startOnboarding] with the supplied fields.
   /// 2. On success, calls [AuthController.login] so a Keycloak session is
   ///    established and the router guard redirects to /profile.
-  /// 3. On any failure, surfaces the [Failure] as [AsyncError] (no navigation).
+  /// 3. If the account already exists ([ConflictFailure] / HTTP 409 — e.g. a
+  ///    prior attempt created it but the interactive login was cancelled),
+  ///    registration is treated as already-done and the flow proceeds to login
+  ///    rather than dead-ending on a generic error.
+  /// 4. On any other failure, surfaces the [Failure] as [AsyncError] (no
+  ///    navigation).
   Future<void> register({
     required String email,
     required String password,
@@ -39,14 +45,20 @@ class AccountController extends AsyncNotifier<void> {
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await ref
-          .read(onboardingRepositoryProvider)
-          .startOnboarding(
-            email: email,
-            password: password,
-            displayName: displayName,
-          );
-      // Registration succeeded — start the interactive OIDC session.
+      try {
+        await ref
+            .read(onboardingRepositoryProvider)
+            .startOnboarding(
+              email: email,
+              password: password,
+              displayName: displayName,
+            );
+      } on ConflictFailure {
+        // The account already exists — recover by signing in with these
+        // credentials instead of trapping the user on a 409.
+      }
+      // Registration succeeded (or the account already existed) — start the
+      // interactive OIDC session.
       await ref.read(authStatusProvider.notifier).login();
     });
   }

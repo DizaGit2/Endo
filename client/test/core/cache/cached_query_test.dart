@@ -20,6 +20,8 @@ import 'package:mocktail/mocktail.dart';
 
 class MockFlutterSecureStorage extends Mock implements FlutterSecureStorage {}
 
+class MockCacheStore extends Mock implements CacheStore {}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -53,6 +55,11 @@ Future<CacheStore> _buildStore(Directory dir, Clock clock) async {
 void main() {
   late Directory tempDir;
   final baseTime = DateTime.utc(2026, 6, 14, 12, 0, 0);
+
+  setUpAll(() {
+    registerFallbackValue(<String, dynamic>{});
+    registerFallbackValue(const Duration(minutes: 5));
+  });
 
   setUp(() {
     tempDir = Directory.systemTemp.createTempSync('cached_query_test_');
@@ -183,6 +190,37 @@ void main() {
       // When fresh, fetch should NOT have been called (stale-while-revalidate
       // short-circuit behavior)
       expect(fetchCalled, isFalse);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // cachedRead — (e) cache-write failure must not mask a successful fetch
+  // -------------------------------------------------------------------------
+
+  group('cachedRead — cache-write failure', () {
+    test('returns Fresh(value) when fetch succeeds but putJson throws',
+        () async {
+      final store = MockCacheStore();
+      when(() => store.isFresh(any())).thenReturn(false);
+      when(() => store.getJson(any())).thenReturn(null);
+      // The encrypted Hive box can throw a raw error (e.g. box closed after a
+      // logout-purge, disk full) — NOT a DioException or Failure.
+      when(() => store.putJson(any(), any(), ttl: any(named: 'ttl')))
+          .thenThrow(StateError('Box has already been closed.'));
+
+      final result = await cachedRead<Map<String, dynamic>>(
+        key: 'GET:/me:',
+        store: store,
+        fetch: () async => {'id': '1', 'name': 'Alice'},
+        toJson: (v) => v,
+        fromJson: (m) => m,
+        ttl: const Duration(minutes: 5),
+      );
+
+      // The network fetch SUCCEEDED, so the live value must be returned as Fresh
+      // even though the best-effort cache write failed.
+      expect(result, isA<Fresh<Map<String, dynamic>>>());
+      expect((result as Fresh<Map<String, dynamic>>).value['id'], '1');
     });
   });
 

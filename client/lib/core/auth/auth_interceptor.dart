@@ -130,15 +130,15 @@ class AuthInterceptor extends Interceptor {
     }
 
     try {
-      final tokens = await _doRefresh();
+      await _doRefresh();
 
-      // Retry the original request marked as retried (to prevent loops).
+      // Retry the original request, marked as retried (to prevent loops). We do
+      // NOT set the Authorization header here: the retry re-enters the
+      // interceptor chain, so onRequest re-reads the freshly-persisted access
+      // token from the store and attaches it — the store is the single source
+      // of truth for the bearer.
       final retryOptions = options.copyWith(
         extra: {...options.extra, _kRetried: true},
-        headers: {
-          ...options.headers,
-          'Authorization': 'Bearer ${tokens.accessToken}',
-        },
       );
 
       final retryDio = dio ??

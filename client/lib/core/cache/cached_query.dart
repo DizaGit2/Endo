@@ -80,8 +80,14 @@ Future<CacheResult<T>> cachedRead<T>({
   // ── Attempt network ─────────────────────────────────────────────────────
   try {
     final value = await fetch();
-    // Write-through
-    await store.putJson(key, toJson(value), ttl: ttl);
+    // Write-through is best-effort: a cache-write hiccup (e.g. the box was
+    // closed by a concurrent logout-purge, disk full) must NOT mask a
+    // successful network fetch — the live value is still returned as Fresh.
+    try {
+      await store.putJson(key, toJson(value), ttl: ttl);
+    } catch (_) {
+      // Swallow cache-write errors; the fetched value is authoritative.
+    }
     return Fresh(value);
   } on DioException catch (e) {
     final failure = mapDioException(e);

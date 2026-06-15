@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -106,16 +108,28 @@ final dioProvider = Provider<Dio>((ref) {
   final tokenStore = ref.read(tokenStoreProvider);
   final oidcClient = ref.read(oidcClientProvider);
 
+  // Explicit timeouts are required: a pre-built Dio is handed to the generated
+  // client, so the generator's default timeouts are bypassed. Without these a
+  // server that accepts the connection but never responds would hang forever,
+  // and the online-only SWR fallback (which depends on a Dio timeout becoming a
+  // NetworkFailure) would never fire.
   final dio = Dio(
-    BaseOptions(baseUrl: _kApiBase),
+    BaseOptions(
+      baseUrl: _kApiBase,
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 20),
+      sendTimeout: const Duration(seconds: 15),
+    ),
   );
 
   final authInterceptor = AuthInterceptor(
     tokenStore: tokenStore,
     refresh: (refreshToken) => oidcClient.refresh(refreshToken),
     onAuthLost: () {
-      // Notify the auth controller so the router redirects to login.
-      ref.read(authStatusProvider.notifier).logout();
+      // Notify the auth controller so the router redirects to login. logout()
+      // is fully guarded (never throws), so fire-and-forget is safe; mark it
+      // unawaited to make the intent explicit and avoid a dropped-Future lint.
+      unawaited(ref.read(authStatusProvider.notifier).logout());
     },
   );
 

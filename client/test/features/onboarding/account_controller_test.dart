@@ -160,6 +160,40 @@ void main() {
         expect((state as AsyncError<void>).error, equals(failure));
       },
     );
+
+    test(
+      'account already exists (409 → ConflictFailure): falls through to login '
+      'instead of dead-ending on an error',
+      () async {
+        // e.g. a prior attempt created the Keycloak account but the interactive
+        // login was cancelled; re-tapping Continue re-POSTs and gets a 409.
+        when(
+          () => repo.startOnboarding(
+            email: any(named: 'email'),
+            password: any(named: 'password'),
+            displayName: any(named: 'displayName'),
+          ),
+        ).thenThrow(const ConflictFailure());
+
+        final (:container, :fakeAuth) = makeContainer(repo: repo);
+        addTearDown(container.dispose);
+
+        await container
+            .read(accountControllerProvider.notifier)
+            .register(
+              email: 'existing@example.com',
+              password: 'secret123',
+              displayName: 'Maya',
+            );
+
+        // Must proceed to login (recovery), not surface a generic error.
+        expect(fakeAuth.loginCalled, isTrue);
+        expect(
+          container.read(accountControllerProvider),
+          isA<AsyncData<void>>(),
+        );
+      },
+    );
   });
 
   // -------------------------------------------------------------------------

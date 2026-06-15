@@ -87,6 +87,54 @@ void main() {
     });
 
     // -----------------------------------------------------------------------
+    // Conflict (409) — duplicate resource / state conflict
+    // -----------------------------------------------------------------------
+
+    test('409 → ConflictFailure', () {
+      final f = mapDioException(
+        _dioError(type: DioExceptionType.badResponse, statusCode: 409),
+      );
+      expect(f, isA<ConflictFailure>());
+    });
+
+    test('409 with problem+json detail → ConflictFailure carries the detail',
+        () {
+      final f = mapDioException(
+        _dioError(
+          type: DioExceptionType.badResponse,
+          statusCode: 409,
+          data: {'detail': 'An account with that email already exists.'},
+        ),
+      );
+      expect(f, isA<ConflictFailure>());
+      expect(f.message, 'An account with that email already exists.');
+    });
+
+    // -----------------------------------------------------------------------
+    // Rate limit (429)
+    // -----------------------------------------------------------------------
+
+    test('429 → RateLimitFailure', () {
+      final f = mapDioException(
+        _dioError(type: DioExceptionType.badResponse, statusCode: 429),
+      );
+      expect(f, isA<RateLimitFailure>());
+    });
+
+    // -----------------------------------------------------------------------
+    // TLS / certificate validation — a HARD failure, never transient-offline
+    // -----------------------------------------------------------------------
+
+    test('badCertificate → TlsFailure (NOT NetworkFailure, so no stale cache)',
+        () {
+      final f = mapDioException(
+        _dioError(type: DioExceptionType.badCertificate),
+      );
+      expect(f, isA<TlsFailure>());
+      expect(f, isNot(isA<NetworkFailure>()));
+    });
+
+    // -----------------------------------------------------------------------
     // Server errors
     // -----------------------------------------------------------------------
 

@@ -19,6 +19,7 @@ import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/api/model/update_me_request.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
+import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/network/api_client.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -173,6 +174,33 @@ void main() {
       final result = await repo.getMe();
 
       expect(result, isA<NetworkRequired<MeResponse>>());
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // (c2) getMe — 200 with empty/null body → typed failure, not a raw TypeError
+  // -------------------------------------------------------------------------
+
+  group('getMe — empty 200 body', () {
+    test('maps a null response body to a typed ServerFailure (NetworkRequired)',
+        () async {
+      when(() => mockApi.meGet()).thenAnswer((_) async => Response<MeResponse>(
+            requestOptions: RequestOptions(path: '/me'),
+            data: null,
+            statusCode: 200,
+          ));
+
+      final repo = MeRepository(api: mockApi, store: store);
+
+      // Must NOT throw a raw TypeError (null-check on null) that escapes the
+      // SWR layer — an empty body is mapped to a typed failure; with no cache
+      // it surfaces as NetworkRequired.
+      final result = await repo.getMe();
+      expect(result, isA<NetworkRequired<MeResponse>>());
+      expect(
+        (result as NetworkRequired<MeResponse>).failure,
+        isA<ServerFailure>(),
+      );
     });
   });
 

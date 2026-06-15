@@ -104,6 +104,23 @@ void main() {
 
       expect(container.read(authStatusProvider), AuthStatus.unauthenticated);
     });
+
+    test('falls back to unauthenticated when hasValidSession throws', () async {
+      // e.g. an Android keystore / iOS keychain read failure. flutter_secure_storage
+      // rejects its Future asynchronously, so model the error that way. The app
+      // must NOT be stranded at AuthStatus.unknown (which pins every route to
+      // /splash with no recovery).
+      when(() => store.hasValidSession())
+          .thenAnswer((_) async => throw Exception('keystore unavailable'));
+
+      final container = makeContainer(oidc: oidc, store: store);
+      addTearDown(container.dispose);
+
+      // initialized must complete normally (not rethrow).
+      await container.read(authStatusProvider.notifier).initialized;
+
+      expect(container.read(authStatusProvider), AuthStatus.unauthenticated);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -236,6 +253,44 @@ void main() {
 
       verify(() => store.clear()).called(1);
       // State is still unauthenticated even though purge threw.
+      expect(container.read(authStatusProvider), AuthStatus.unauthenticated);
+    });
+
+    test('completes and reaches unauthenticated even if readIdToken throws',
+        () async {
+      when(() => store.hasValidSession()).thenAnswer((_) async => true);
+      when(() => store.readIdToken())
+          .thenThrow(Exception('keystore read failed'));
+      when(() => store.clear()).thenAnswer((_) async {});
+      when(() => cache.purge()).thenAnswer((_) async => 0);
+
+      final container = makeContainer(oidc: oidc, store: store, cache: cache);
+      addTearDown(container.dispose);
+
+      await container.read(authStatusProvider.notifier).initialized;
+      // Must NOT throw even though reading the id token failed.
+      await container.read(authStatusProvider.notifier).logout();
+
+      verify(() => store.clear()).called(1);
+      expect(container.read(authStatusProvider), AuthStatus.unauthenticated);
+    });
+
+    test('completes and reaches unauthenticated even if clear() throws',
+        () async {
+      when(() => store.hasValidSession()).thenAnswer((_) async => true);
+      when(() => store.readIdToken()).thenAnswer((_) async => 'id-tok');
+      when(() => oidc.endSession(idToken: any(named: 'idToken')))
+          .thenAnswer((_) async {});
+      when(() => store.clear()).thenThrow(Exception('keystore delete failed'));
+      when(() => cache.purge()).thenAnswer((_) async => 0);
+
+      final container = makeContainer(oidc: oidc, store: store, cache: cache);
+      addTearDown(container.dispose);
+
+      await container.read(authStatusProvider.notifier).initialized;
+      // Must NOT throw even though clear() failed.
+      await container.read(authStatusProvider.notifier).logout();
+
       expect(container.read(authStatusProvider), AuthStatus.unauthenticated);
     });
   });

@@ -49,6 +49,25 @@ final class NotFoundFailure extends Failure {
   const NotFoundFailure([super.message = 'The requested resource was not found.']);
 }
 
+/// The request conflicts with existing state (409) — e.g. registering with an
+/// email that already has an account. [message] carries the server's
+/// problem+json `detail`/`title` when present.
+final class ConflictFailure extends Failure {
+  const ConflictFailure([super.message = 'That request conflicts with existing data.']);
+}
+
+/// The client is being rate-limited (429).
+final class RateLimitFailure extends Failure {
+  const RateLimitFailure([super.message = 'Too many attempts. Please wait a moment and try again.']);
+}
+
+/// The server's TLS certificate could not be validated (possible MITM or
+/// tampering). This is a HARD failure: it must NEVER be treated as a transient
+/// offline state, so cached (decrypted) data is never served in its place.
+final class TlsFailure extends Failure {
+  const TlsFailure([super.message = 'A secure connection to the server could not be verified.']);
+}
+
 /// An unexpected server-side error (5xx).
 final class ServerFailure extends Failure {
   const ServerFailure([super.message = 'A server error occurred. Please try again later.']);

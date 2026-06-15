@@ -7,6 +7,7 @@ import 'package:lumen/api/model/update_me_request.dart';
 import 'package:lumen/api/serializers.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
+import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/network/api_client.dart';
 
 // ---------------------------------------------------------------------------
@@ -46,7 +47,14 @@ class MeRepository {
       store: _store,
       fetch: () async {
         final response = await _api.meGet();
-        return response.data!;
+        final body = response.data;
+        if (body == null) {
+          // A 200 with an empty/null body is a server fault — map it to a typed
+          // failure instead of force-unwrapping into a raw TypeError that would
+          // escape the SWR layer.
+          throw const ServerFailure('The server returned an empty profile.');
+        }
+        return body;
       },
       toJson: _toJson,
       fromJson: _fromJson,

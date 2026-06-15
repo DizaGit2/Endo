@@ -345,6 +345,40 @@ void main() {
         ),
       ).called(1);
     });
+
+    test('retry sends the bearer read from the store (single source of truth)',
+        () async {
+      var readCount = 0;
+      final env = buildDio(
+        responses: [unauthorized(), ok()],
+        // refresh() returns a DIFFERENT token than what the store yields on
+        // retry — proving the retry's bearer comes from the store (which
+        // _performRefresh persists), not from this return value.
+        refreshFn: (_) async => freshTokens(accessToken: 'returned-at'),
+        onAuthLost: () {},
+      );
+
+      when(() => env.store.readAccessTokenExpiry())
+          .thenAnswer((_) async => DateTime.utc(2099));
+      when(() => env.store.readAccessToken()).thenAnswer((_) async {
+        readCount++;
+        return readCount == 1 ? 'old-at' : 'persisted-at';
+      });
+      when(() => env.store.readRefreshToken()).thenAnswer((_) async => 'rt');
+      when(
+        () => env.store.saveTokens(
+          accessToken: any(named: 'accessToken'),
+          refreshToken: any(named: 'refreshToken'),
+          idToken: any(named: 'idToken'),
+          accessTokenExpiry: any(named: 'accessTokenExpiry'),
+        ),
+      ).thenAnswer((_) async {});
+
+      await env.dio.get('/api/data');
+
+      // The retry carries the store's current token, NOT refresh()'s return.
+      expect(env.capture.captured.last, 'Bearer persisted-at');
+    });
   });
 
   // -------------------------------------------------------------------------

@@ -47,8 +47,17 @@ class AuthController extends Notifier<AuthStatus> {
   // ---------------------------------------------------------------------------
 
   Future<void> _init() async {
-    final hasSession = await _store.hasValidSession();
-    state = hasSession ? AuthStatus.authenticated : AuthStatus.unauthenticated;
+    try {
+      final hasSession = await _store.hasValidSession();
+      state =
+          hasSession ? AuthStatus.authenticated : AuthStatus.unauthenticated;
+    } catch (_) {
+      // A secure-storage read failure (e.g. Android keystore corruption, iOS
+      // keychain locked before first unlock) must NOT leave state at
+      // AuthStatus.unknown — that pins every route to /splash with no recovery.
+      // Treat it as "no session" so the router sends the user to login.
+      state = AuthStatus.unauthenticated;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -90,15 +99,23 @@ class AuthController extends Notifier<AuthStatus> {
   ///      (best-effort: a purge failure does not block sign-out).
   ///   4. Transition to [AuthStatus.unauthenticated].
   Future<void> logout() async {
-    final idToken = await _store.readIdToken();
-    if (idToken != null && idToken.isNotEmpty) {
-      try {
+    // Every teardown step is best-effort and individually guarded: a throw in
+    // any step (e.g. a keystore read/delete failure) must never block local
+    // sign-out or leak as an unhandled async error from the fire-and-forget
+    // caller (see dioProvider.onAuthLost).
+    try {
+      final idToken = await _store.readIdToken();
+      if (idToken != null && idToken.isNotEmpty) {
         await _oidc.endSession(idToken: idToken);
-      } catch (_) {
-        // Best-effort: a failed end-session must not block local sign-out.
       }
+    } catch (_) {
+      // Best-effort: reading the id token / end-session must not block sign-out.
     }
-    await _store.clear();
+    try {
+      await _store.clear();
+    } catch (_) {
+      // Best-effort: a failed token clear must not block sign-out.
+    }
     try {
       await ref.read(cacheStoreProvider).purge();
     } catch (_) {
