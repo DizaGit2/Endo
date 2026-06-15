@@ -83,7 +83,13 @@ class ProfileController
 // ---------------------------------------------------------------------------
 
 /// Provides [ProfileController] as an [AsyncNotifier].
+///
+/// `autoDispose`: the profile holds decrypted, per-user PII, so its in-memory
+/// state must NOT outlive the screen that shows it. When the user signs out the
+/// ProfileScreen unmounts and this provider is disposed, so a subsequent login
+/// (potentially a different account on a shared device) rebuilds and fetches
+/// its own profile rather than reusing the previous session's data.
 final profileControllerProvider =
-    AsyncNotifierProvider<ProfileController, CacheResult<MeResponse>>(
+    AsyncNotifierProvider.autoDispose<ProfileController, CacheResult<MeResponse>>(
   ProfileController.new,
 );

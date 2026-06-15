@@ -215,5 +215,48 @@ void main() {
       );
     });
   });
+
+  // -------------------------------------------------------------------------
+  // (e) cross-account isolation — no stale profile across sessions
+  // -------------------------------------------------------------------------
+
+  group('ProfileController cross-account isolation', () {
+    test(
+        'does NOT retain the previous session profile after the screen '
+        'unsubscribes (re-login fetches the new user)', () async {
+      final userA = _sampleMe(displayName: 'Maya');
+      final userB = _sampleMe(displayName: 'Verify');
+      var call = 0;
+      when(() => mockRepo.getMe()).thenAnswer((_) async {
+        call++;
+        return Fresh(call == 1 ? userA : userB);
+      });
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+
+      // Session 1: the ProfileScreen mounts (subscribes), loads user A, then
+      // the user logs out and the screen unmounts (subscription closes).
+      final sub1 = container.listen(
+        profileControllerProvider,
+        (_, _) {},
+      );
+      final first = await container.read(profileControllerProvider.future);
+      expect((first as Fresh<MeResponse>).value.displayName, 'Maya');
+      sub1.close();
+      await Future<void>.delayed(Duration.zero); // allow tear-down
+
+      // Session 2: a different user logs in → the screen remounts. It MUST
+      // fetch its own profile, not reuse the previous session's data.
+      container.listen(profileControllerProvider, (_, _) {});
+      final second = await container.read(profileControllerProvider.future);
+      expect(
+        (second as Fresh<MeResponse>).value.displayName,
+        'Verify',
+        reason: 'A new authenticated session must not see the prior user\'s '
+            'profile (cross-account PII leak).',
+      );
+    });
+  });
 }
 
