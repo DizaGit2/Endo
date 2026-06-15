@@ -84,7 +84,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = true,
+            // In Development the issuer is NOT pinned: native/emulator clients reach Keycloak
+            // on a different host (e.g. the Android emulator's 10.0.2.2:8080) than the API
+            // does over the compose network, so the token's `iss` legitimately differs from
+            // this Authority. The token SIGNATURE is still validated against Keycloak's JWKS.
+            // Production pins the issuer (single public Caddy host). TODO(P11): with a fixed
+            // prod hostname this is always true.
+            ValidateIssuer = !builder.Environment.IsDevelopment(),
             ValidIssuer = keycloakOptions.Authority,
             ValidateAudience = false, // TODO(P11): add a Keycloak audience mapper (aud=lumen-api), then validate
             ValidateLifetime = true,

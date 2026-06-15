@@ -25,10 +25,24 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: "Development"   # dev stack uses dev sentinel secrets; prod (P11) sets Production + real secrets
       ASPNETCORE_URLS: "http://+:8080"
-      POSTGRES_HOST: postgres
+      POSTGRES_HOST: postgres   # used by /health/ready TCP probe
       POSTGRES_PORT: "5432"
-      VAULT_HOST: vault
+      VAULT_HOST: vault         # used by /health/ready TCP probe
       VAULT_PORT: "8200"
+      # The real EF + Hangfire + Vault clients read these (NOT POSTGRES_HOST/VAULT_HOST,
+      # whose defaults point at host loopback 55432/8200 for host-run dev). Without these
+      # the containerised API can't reach Postgres/Vault — it only ever served /health before.
+      ConnectionStrings__Lumen: "Host=postgres;Port=5432;Database=lumen;Username=postgres;Password=postgres"
+      Vault__Address: "http://vault:8200"
+      # The containerised API reaches Keycloak over the compose network (NOT the
+      # default localhost:8080, which would be the API itself). JWKS + admin REST
+      # both use this. Android-emulator tokens carry iss=http://10.0.2.2:8080/...
+      # (the host the emulator used); in Development the API validates the token
+      # SIGNATURE via this Keycloak's JWKS but does not pin the issuer string
+      # (see Program.cs — issuer validation is on in Production). P3b-T10.
+      Keycloak__BaseUrl: "http://keycloak:8080"
+    ports:
+      - "127.0.0.1:8085:8080"   # direct API access for the Android emulator (10.0.2.2:8085)
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,7 +87,7 @@ services:
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8080:8080"   # host loopback; the Android emulator reaches this via 10.0.2.2:8080
     depends_on:
       postgres:
         condition: service_healthy

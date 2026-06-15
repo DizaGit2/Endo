@@ -10,8 +10,10 @@ import 'package:lumen/core/auth/token_store.dart';
 // API base URL
 // ---------------------------------------------------------------------------
 
-// TODO(P3b-T10): finalize API base (Caddy https vs 10.0.2.2)
-const _kApiBase = 'http://10.0.2.2:8080';
+// Dev: the Android emulator reaches the host-published API on 10.0.2.2:8085
+// (compose maps 127.0.0.1:8085 -> api:8080). Keycloak is separately on :8080.
+// TODO(P11): production base = the public https Caddy host.
+const _kApiBase = 'http://10.0.2.2:8085';
 
 // ---------------------------------------------------------------------------
 // PII-safe path set
