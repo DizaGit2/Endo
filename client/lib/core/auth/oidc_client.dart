@@ -125,6 +125,12 @@ class AppAuthOidcClient implements IOidcClient {
         scopes: _config.scopes,
         // PKCE is handled automatically by flutter_appauth.
         allowInsecureConnections: _config.allowInsecureConnections,
+        // Always show the Keycloak login form rather than silently reusing an
+        // existing SSO session. For a health app this is the safer default (no
+        // silent session reuse on a shared device); it also avoids an AppAuth
+        // race where an instant SSO redirect returns before the request state
+        // is persisted ("No stored state").
+        promptValues: const ['login'],
       ),
     );
     return _tokensFromResponse(response);
