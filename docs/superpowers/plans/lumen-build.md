@@ -37,8 +37,8 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 
 ## §1 Status ledger  (the ONLY authority for "done")
 
-**NEXT PHASE TO RUN: P3b (IN_PROGRESS, started 2026-06-14).**  (P0a, P1, P2, P3a DONE. Two P3a post-merge fixes also on main+origin: Android `appAuthRedirectScheme` build fix `57f3a03`, full-bleed static screens `662ded4`. **P3b** = client OIDC (flutter_appauth PKCE, realm `lumen`) + online-only encrypted Hive cache + screens 2 (account→`POST /onboarding/start`) & 31 (profile→`GET /me`), on branch `phase/03b-client-spine`. T1–T10 detailed in §3. Final exit = real PKCE login → decrypted `GET /me` on screen 31 (needs the live compose stack + emulator).)
-**Plan revision:** r11   **Repo HEAD when ledger last updated:** `phase/03b-client-spine` (P3b IN_PROGRESS; main+origin at `662ded4`)
+**NEXT PHASE TO RUN: P3b is NEEDS_REVIEW (awaiting human acceptance); after acceptance NEXT = P4a.**  (P0a, P1, P2, P3a DONE. **P3b DONE pending review** — client OIDC (flutter_appauth PKCE, realm `lumen`) + online-only encrypted Hive cache + screens 2 (account→`POST /onboarding/start`) & 31 (profile→`GET /me`), branch `phase/03b-client-spine`. T1–T10 complete. **Walking skeleton proven end-to-end on the Android emulator**: welcome → "I already have an account" → Keycloak PKCE login → OIDC redirect resumes app → token exchange → `GET /me` 200 → screen 31 renders decrypted profile (Maya / es-ES / Europe/Madrid). For reviewer steps see P3b STATUS.)
+**Plan revision:** r12   **Repo HEAD when ledger last updated:** `phase/03b-client-spine` (P3b NEEDS_REVIEW; main+origin at `662ded4`)
 
 | Phase | Name | Status | Branch | PR | Verified by | Notes |
 |---|---|---|---|---|---|---|
@@ -47,7 +47,7 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 | P1 ⚠ | Auth + envelope-encryption spine | DONE | phase/01-spine | tag `phase-01` | 2026-06-02 | merged to main; 23 tests; security review + /code-review high both clean |
 | P2 ⚠ | Crypto-shred + Hangfire | DONE | phase/02-shred | [#1](https://github.com/DizaGit2/Endo/pull/1) | 2026-06-14 | merged to main, tag `phase-02`; 57 tests; multi-agent /review + all fixes applied |
 | P3a | Flutter foundation + theming + OpenAPI pipeline | DONE | phase/03a-client-foundation | tag `phase-03a` | 2026-06-14 | merged to main (merge `39acac4`); 106 client + 3 OpenAPI tests; cov 97.60% |
-| P3b | Client OIDC + cache + screens 2/31 | IN_PROGRESS | phase/03b-client-spine | — | — | started 2026-06-14; T1–T10 |
+| P3b | Client OIDC + cache + screens 2/31 | NEEDS_REVIEW | phase/03b-client-spine | — | — | T1–T10 done 2026-06-14; 203 tests, cov 81.02%, OpenAPI no-drift; live on-device login → screen 31 decrypted /me proven |
 | P4a | Backend Onboarding-rest + Cycle + Symptoms | TODO | — | — | — | needs definitions + D-08..D-14 |
 | P4b | Flutter screens 3–14, 32 | TODO | — | — | — | |
 | P5 | Body + Activity + Treatment | TODO | — | — | — | needs D-15/D-16 |
@@ -359,7 +359,7 @@ subagent-driven-development; strict TDD; .NET 10. Branch phase/02-shred. Deep re
   - [ ] **T10 — Live walking-skeleton proof + wrap**. Bring up the compose stack; run on the emulator (host `10.0.2.2`); complete a real Keycloak PKCE login → `POST /onboarding/start` → screen 31 renders decrypted `GET /me` (screenshot proof; full CI automation of the browser login is out of scope — document if manual). Confirm no OpenAPI drift (P3b adds no backend endpoints). Coverage ≥60% (generated excluded); fill STATUS; ledger NEEDS_REVIEW.
 
 **STATUS**
-- **State:** IN_PROGRESS — **T1–T9 DONE; T10 (live proof) pending** · **Branch:** `phase/03b-client-spine` · executing via `subagent-driven-development` (per-task implementer + spec + quality review, fixes applied). **203 tests green · `flutter analyze` clean.**
+- **State:** NEEDS_REVIEW — **T1–T10 DONE** · **Branch:** `phase/03b-client-spine` · executing via `subagent-driven-development` (per-task implementer + spec + quality review, fixes applied). **203 tests green · `flutter analyze` clean · coverage 81.02% · OpenAPI no-drift (3/3) · live on-device login proven.**
 - **Tasks done (each = feat/test commit + a review-fix commit where the two-stage review found issues):**
   - **T1** `TokenStore` over flutter_secure_storage (access/refresh/id + expiry; `clear()` deletes the 4 keys individually, never `deleteAll`).
   - **T2** `IOidcClient`/`AppAuthOidcClient` (PKCE realm `lumen`, redirect `com.lumen.app:/oauth2redirect`) + `AuthController` (`authStatusProvider`). Native wrapper untested (behind the interface); controller fully tested. `allowInsecureConnections` gated on `kDebugMode`.
@@ -370,11 +370,14 @@ subagent-driven-development; strict TDD; .NET 10. Branch phase/02-shred. Deep re
   - **T7** Account screen (screen 2) full-bleed: register → `POST /onboarding/start` → appauth login; idle/loading/error states; goldens. **D-01 social-login buttons omitted.**
   - **T8** Profile screen (screen 31) full-bleed: `GET /me` decrypted via `CachedQuery` (Fresh/Stale/NetworkRequired states) + `PATCH /me` edit; **L-03 v0 trust copy** replaces the inaccurate "stays on your device"; goldens. (Review fix: failed edit keeps the profile on screen + inline error; dialog controller disposed.)
   - **T9** Logout teardown purges the encrypted cache (best-effort) so no decrypted PII survives sign-out; repo-level writes-never-queue tests.
+  - **T10** Live walking-skeleton proof (on the Android emulator, host `10.0.2.2`) + wrap. **Two on-device OIDC redirect fixes found and committed (`45b81cc`):** (1) removed Flutter's default `android:taskAffinity=""` from `MainActivity` — it placed AppAuth's redirect/management activities in a different task than the one that started the request, so the redirect could not resume it (AppAuth logged "No stored state - unable to handle response" on every login); (2) added `promptValues: ['login']` to force the Keycloak login form (health-app safety + avoids an instant-redirect race). Also: containerised-API reachability fixes (`245ad33`) and DEBUG cleartext (`8e16410`) from earlier in T10.
 - **Verification (pasted, 2026-06-14):**
   ```
   client (PUB_CACHE=C:\pub_cache):  flutter test -> 203 passed   ·   flutter analyze -> No issues found!
+  coverage gate: 862/1064 = 81.02% (>= 60%; 19 generated files skipped)   GATE PASS
+  OpenAPI drift: dotnet test --filter ~OpenApi -> Passed! 3/3, 0 failed (P3b adds no backend endpoints)
   ```
-- **T10 — REMAINING (the walking-skeleton proof; needs the live environment):** bring up the compose stack + emulator (host `10.0.2.2`), complete a real Keycloak PKCE login → `POST /onboarding/start` → screen 31 renders decrypted `GET /me` (screenshot). The interactive Keycloak login is not fully CI-automatable. Also: confirm no OpenAPI drift (P3b adds no backend endpoints), run the coverage gate (≥60%, generated excluded), then fill STATUS + flip ledger to NEEDS_REVIEW.
+- **T10 live proof (on-device, emulator-5554, 2026-06-14):** welcome → "I already have an account" → `login()` opens Keycloak in a Chrome Custom Tab → sign-in (`live2@lumen.test`) → **OIDC redirect resumes the app task** (`AuthorizationManagementActivity LAUNCH_SINGLE_TASK result code=3`, **no "No stored state"**) → PKCE token exchange → app log `[Dio ▶] GET /me` then `[Dio ◀] 200 GET /me` → **screen 31 renders decrypted profile** (display name **Maya**, locale **es-ES**, timezone **Europe/Madrid**, subject `d0acf58f-…`, L-03 trust copy). The interactive Keycloak login is not CI-automatable (driven manually via adb; screenshots `C:\tmp\t10-6x.png`).
 - **Tracked minor cleanups (non-blocking, deferred):** global `cacheStore` holder test-isolation (`setCacheStore`); MeRepository round-trip test asserts presence vs equality (round-trip is exercised via the Stale path); account screen lacks client-side empty-field validation (server 422 surfaces inline).
 - **Deviations (anti-drift):** `OidcConfig.issuer` dev default `http://10.0.2.2:8080/realms/lumen` + `allowInsecureConnections=kDebugMode` — **P11 must use the https Caddy issuer** (release builds already force TLS). API base in `dio_provider` is a `10.0.2.2` dev default (TODO P3b-T10/finalize).
 
