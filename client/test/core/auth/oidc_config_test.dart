@@ -48,4 +48,18 @@ void main() {
       expect(config.postLogoutRedirectUrl, 'com.lumen.app:/oauth2redirect');
     });
   });
+
+  group('OidcConfig.issuer', () {
+    test('comes from the LUMEN_OIDC_ISSUER dart-define (emulator default)', () {
+      // Equal with no --dart-define (both the emulator default), and equal under
+      // an override ONLY if OidcConfig actually reads the key. Run with
+      //   flutter test --dart-define=LUMEN_OIDC_ISSUER=https://host/realms/lumen
+      // to prove the override propagates.
+      const expected = String.fromEnvironment(
+        'LUMEN_OIDC_ISSUER',
+        defaultValue: 'http://10.0.2.2:8080/realms/lumen',
+      );
+      expect(const OidcConfig().issuer, expected);
+    });
+  });
 }

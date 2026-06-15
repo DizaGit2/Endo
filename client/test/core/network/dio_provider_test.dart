@@ -24,4 +24,21 @@ void main() {
     expect(dio.options.connectTimeout! > Duration.zero, isTrue);
     expect(dio.options.receiveTimeout! > Duration.zero, isTrue);
   });
+
+  test('base URL comes from the LUMEN_API_BASE dart-define (emulator default)',
+      () {
+    // Same key + default as production: equal with no --dart-define (both the
+    // emulator default), and equal under a --dart-define override ONLY if the
+    // shared Dio actually reads the key. Run with
+    //   flutter test --dart-define=LUMEN_API_BASE=http://host:port
+    // to prove the override propagates.
+    const expected = String.fromEnvironment(
+      'LUMEN_API_BASE',
+      defaultValue: 'http://10.0.2.2:8085',
+    );
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    expect(container.read(dioProvider).options.baseUrl, expected);
+  });
 }

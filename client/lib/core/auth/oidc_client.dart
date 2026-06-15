@@ -50,12 +50,21 @@ class OidcTokens {
 /// so HTTP / cert-bypass is permitted ONLY in debug/dev builds (required for the
 /// emulator→host http run at T10); release builds force TLS and cannot ship an
 /// insecure OIDC connection.
-// TODO(P3b-T10): point issuer at the live host for the emulator run.
 // TODO(P11): production must use the https Caddy issuer (allowInsecureConnections
 //   is kDebugMode-gated, so release builds are already safe).
+
+/// OIDC issuer. Override at build/run time with
+///   `--dart-define=LUMEN_OIDC_ISSUER=http://<host>:<port>/realms/lumen`
+/// The default targets the Android emulator's host alias; for a real device pass
+/// the host LAN IP, for production the https Caddy host.
+const _kDefaultIssuer = String.fromEnvironment(
+  'LUMEN_OIDC_ISSUER',
+  defaultValue: 'http://10.0.2.2:8080/realms/lumen',
+);
+
 class OidcConfig {
   const OidcConfig({
-    this.issuer = 'http://10.0.2.2:8080/realms/lumen',
+    this.issuer = _kDefaultIssuer,
     this.clientId = 'mobile',
     this.redirectUrl = 'com.lumen.app:/oauth2redirect',
     this.postLogoutRedirectUrl = 'com.lumen.app:/oauth2redirect',
