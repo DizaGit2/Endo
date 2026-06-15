@@ -70,6 +70,22 @@ class OidcConfig {
   /// Allow plain-HTTP / cert-bypass OIDC endpoints. Defaults to [kDebugMode]
   /// (dev only); never true in release builds.
   final bool allowInsecureConnections;
+
+  /// The Keycloak OIDC endpoints derived from [issuer].
+  ///
+  /// Passed to AppAuth EXPLICITLY (instead of an issuer) so the native layer
+  /// does NOT fetch the discovery document. That fetch ignores
+  /// [allowInsecureConnections] for `endSession` on Android and crashes the app
+  /// over cleartext ("only https connections are permitted").
+  AuthorizationServiceConfiguration get serviceConfiguration {
+    final base =
+        issuer.endsWith('/') ? issuer.substring(0, issuer.length - 1) : issuer;
+    return AuthorizationServiceConfiguration(
+      authorizationEndpoint: '$base/protocol/openid-connect/auth',
+      tokenEndpoint: '$base/protocol/openid-connect/token',
+      endSessionEndpoint: '$base/protocol/openid-connect/logout',
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +173,10 @@ class AppAuthOidcClient implements IOidcClient {
     await _appAuth.endSession(
       EndSessionRequest(
         idTokenHint: idToken,
-        issuer: _config.issuer,
+        // Use explicit endpoints (NOT `issuer`) so AppAuth does not fetch the
+        // discovery document: that fetch ignores allowInsecureConnections for
+        // endSession on Android and crashes over cleartext. See OidcConfig.
+        serviceConfiguration: _config.serviceConfiguration,
         allowInsecureConnections: _config.allowInsecureConnections,
       ),
     );
