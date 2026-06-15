@@ -47,7 +47,7 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 | P1 ⚠ | Auth + envelope-encryption spine | DONE | phase/01-spine | tag `phase-01` | 2026-06-02 | merged to main; 23 tests; security review + /code-review high both clean |
 | P2 ⚠ | Crypto-shred + Hangfire | DONE | phase/02-shred | [#1](https://github.com/DizaGit2/Endo/pull/1) | 2026-06-14 | merged to main, tag `phase-02`; 57 tests; multi-agent /review + all fixes applied |
 | P3a | Flutter foundation + theming + OpenAPI pipeline | DONE | phase/03a-client-foundation | tag `phase-03a` | 2026-06-14 | merged to main (merge `39acac4`); 106 client + 3 OpenAPI tests; cov 97.60% |
-| P3b | Client OIDC + cache + screens 2/31 | NEEDS_REVIEW | phase/03b-client-spine | — | — | T1–T10 done 2026-06-14; 203 tests, cov 81.02%, OpenAPI no-drift; live on-device login → screen 31 decrypted /me proven |
+| P3b | Client OIDC + cache + screens 2/31 | NEEDS_REVIEW | phase/03b-client-spine | [#2](https://github.com/DizaGit2/Endo/pull/2) | — | T1–T10 done 2026-06-14; 203 tests, cov 81.02%, OpenAPI no-drift; live on-device login → screen 31 decrypted /me proven |
 | P4a | Backend Onboarding-rest + Cycle + Symptoms | TODO | — | — | — | needs definitions + D-08..D-14 |
 | P4b | Flutter screens 3–14, 32 | TODO | — | — | — | |
 | P5 | Body + Activity + Treatment | TODO | — | — | — | needs D-15/D-16 |
