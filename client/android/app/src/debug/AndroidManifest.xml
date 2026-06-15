@@ -4,4 +4,11 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- DEBUG-ONLY: the Android emulator reaches the host backend over cleartext
+         http (Keycloak at 10.0.2.2:8080, API at 10.0.2.2:8085). Native AppAuth
+         (okhttp) enforces Android's cleartext-traffic policy, so permit it here.
+         Release builds do NOT include this overlay and keep cleartext disabled
+         (production uses the https Caddy host). -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>
