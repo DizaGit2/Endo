@@ -40,4 +40,12 @@ void main() {
       );
     });
   });
+
+  group('OidcConfig.postLogoutRedirectUrl', () {
+    test('defaults to the app redirect scheme so logout returns to the app',
+        () {
+      const config = OidcConfig();
+      expect(config.postLogoutRedirectUrl, 'com.lumen.app:/oauth2redirect');
+    });
+  });
 }

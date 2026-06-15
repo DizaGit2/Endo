@@ -58,6 +58,7 @@ class OidcConfig {
     this.issuer = 'http://10.0.2.2:8080/realms/lumen',
     this.clientId = 'mobile',
     this.redirectUrl = 'com.lumen.app:/oauth2redirect',
+    this.postLogoutRedirectUrl = 'com.lumen.app:/oauth2redirect',
     this.scopes = const ['openid', 'profile', 'offline_access'],
     this.allowInsecureConnections = kDebugMode,
   });
@@ -65,6 +66,13 @@ class OidcConfig {
   final String issuer;
   final String clientId;
   final String redirectUrl;
+
+  /// Where Keycloak redirects after RP-initiated logout. Must be registered in
+  /// the realm's `post.logout.redirect.uris`. Reuses the app redirect scheme so
+  /// the end-session browser tab returns to the app (which then lands on the
+  /// welcome screen) instead of stranding the user on Keycloak's logout page.
+  final String postLogoutRedirectUrl;
+
   final List<String> scopes;
 
   /// Allow plain-HTTP / cert-bypass OIDC endpoints. Defaults to [kDebugMode]
@@ -173,6 +181,10 @@ class AppAuthOidcClient implements IOidcClient {
     await _appAuth.endSession(
       EndSessionRequest(
         idTokenHint: idToken,
+        // Redirect back into the app after logout so the end-session browser tab
+        // closes and the app resumes (then lands on welcome). Must be in the
+        // realm's post.logout.redirect.uris.
+        postLogoutRedirectUrl: _config.postLogoutRedirectUrl,
         // Use explicit endpoints (NOT `issuer`) so AppAuth does not fetch the
         // discovery document: that fetch ignores allowInsecureConnections for
         // endSession on Android and crashes over cleartext. See OidcConfig.

@@ -37,7 +37,10 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "redirectUris": ["com.lumen.app:/oauth2redirect"],
-      "attributes": { "pkce.code.challenge.method": "S256" }
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "com.lumen.app:/oauth2redirect"
+      }
     }
   ],
   "users": [
