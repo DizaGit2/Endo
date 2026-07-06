@@ -98,7 +98,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAlgorithms = ["RS256"],
             ClockSkew = TimeSpan.FromSeconds(30),
         };
-        // Interim token-confusion guard until the audience mapper lands: only realm clients we issue.
+        // Permanent guard (not interim — the audience mapper landed in T1): rejects service-account
+        // and foreign-client tokens. aud=lumen-api alone can't distinguish them from a real end-user
+        // token, since the mapper also lives on the api client, so its own service-account tokens
+        // carry that same audience — azp + preferred_username is what actually tells them apart.
         options.Events = new JwtBearerEvents
         {
             OnTokenValidated = context =>
@@ -121,6 +124,9 @@ builder.Services.AddScoped<OnboardingService>();
 
 // Global per-user (else per-IP) rate limit — protects costly endpoints like POST /onboarding/start.
 var permitPerMinute = builder.Configuration.GetValue<int?>("RateLimit:PermitPerMinute") ?? 60;
+// Named per-IP policy layered on top of the global limiter, just for the anonymous onboarding
+// endpoint (always-anonymous, so partitioned purely by IP — there is no "sub" to key on).
+var onboardingStartPermitPerMinute = builder.Configuration.GetValue<int?>("RateLimit:OnboardingStartPermitPerMinute") ?? 5;
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -136,6 +142,14 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0,
         });
     });
+    options.AddPolicy("onboarding-start", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = onboardingStartPermitPerMinute,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
 });
 
 builder.Services.AddExceptionHandler<ProblemExceptionHandler>();
@@ -158,8 +172,11 @@ forwardedHeaders.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("192.168.0.0/16"
 app.UseForwardedHeaders(forwardedHeaders);
 
 app.UseSerilogRequestLogging();
-app.UseSwagger();
-app.UseSwaggerUI();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
@@ -206,6 +223,7 @@ app.MapPost("/onboarding/start", async (
     };
 })
 .AllowAnonymous()
+.RequireRateLimiting("onboarding-start")
 .Produces<object>(StatusCodes.Status200OK)
 .ProducesProblem(StatusCodes.Status400BadRequest);
 
