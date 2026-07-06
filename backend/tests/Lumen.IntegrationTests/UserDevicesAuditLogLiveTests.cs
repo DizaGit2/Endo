@@ -50,8 +50,8 @@ public class UserDevicesAuditLogLiveTests
             {
                 Id = Guid.NewGuid(),
                 ActorId = null,             // system actor — no FK to User
-                Action = "crypto_shred",
-                EntityType = "User",
+                Action = AdminAuditLog.Actions.CryptoShred,
+                EntityType = AdminAuditLog.EntityTypes.User,
                 EntityId = userId.ToString(),
                 BeforeJson = null,
                 AfterJson = """{"shredded":true}""",
@@ -67,7 +67,7 @@ public class UserDevicesAuditLogLiveTests
 
             var logBack = await read.AdminAuditLogs.AsNoTracking().SingleAsync(l => l.Id == log.Id);
             logBack.ActorId.ShouldBeNull();
-            logBack.Action.ShouldBe("crypto_shred");
+            logBack.Action.ShouldBe(AdminAuditLog.Actions.CryptoShred);
             logBack.AfterJson.ShouldNotBeNull();
             logBack.AfterJson!.ShouldContain("shredded");
         }
@@ -122,8 +122,8 @@ public class UserDevicesAuditLogLiveTests
             {
                 Id = logId,
                 ActorId = null,
-                Action = "system_job",
-                EntityType = "UserKey",
+                Action = AdminAuditLog.Actions.SystemJob,
+                EntityType = AdminAuditLog.EntityTypes.UserKey,
                 EntityId = Guid.NewGuid().ToString(),
                 At = DateTimeOffset.UtcNow,
             });
@@ -132,7 +132,7 @@ public class UserDevicesAuditLogLiveTests
             await using var read = TestFixtures.NewDb();
             var back = await read.AdminAuditLogs.AsNoTracking().SingleAsync(l => l.Id == logId);
             back.ActorId.ShouldBeNull();
-            back.Action.ShouldBe("system_job");
+            back.Action.ShouldBe(AdminAuditLog.Actions.SystemJob);
         }
         finally
         {

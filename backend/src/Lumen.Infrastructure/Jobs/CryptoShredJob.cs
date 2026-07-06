@@ -94,8 +94,8 @@ public sealed class CryptoShredJob(
         {
             Id = Guid.NewGuid(),
             ActorId = null, // system/job actor
-            Action = "crypto_shred",
-            EntityType = "user",
+            Action = AdminAuditLog.Actions.CryptoShred,
+            EntityType = AdminAuditLog.EntityTypes.User,
             EntityId = userId.ToString(),
             BeforeJson = null,
             AfterJson = null,

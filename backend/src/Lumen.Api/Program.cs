@@ -67,7 +67,6 @@ if (!builder.Environment.IsDevelopment() &&
 builder.Services.AddSingleton<IFieldCipher, AesGcmFieldCipher>();
 builder.Services.AddSingleton<IKeyWrapper, VaultTransitKeyWrapper>();
 builder.Services.AddHttpClient<IEmailHasher, VaultTransitEmailHasher>();
-builder.Services.AddScoped<IDekProvisioner, DekProvisioner>();
 builder.Services.AddScoped<IUserCryptoContext, UserCryptoContext>();
 builder.Services.AddScoped<IJobCryptoContextFactory, JobCryptoContextFactory>();
 

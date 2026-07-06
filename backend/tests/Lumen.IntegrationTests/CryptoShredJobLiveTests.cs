@@ -35,7 +35,7 @@ public class CryptoShredJobLiveTests
             db.Users.Add(TestFixtures.NewUser(userId));
             await db.SaveChangesAsync();
 
-            await new DekProvisioner(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), TestFixtures.Vault(), TimeProvider.System).ProvisionAsync(userId);
+            await TestFixtures.ProvisionDekForTestAsync(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), userId);
 
             // Seed an encrypted profile row so we can prove it becomes undecryptable after the shred.
             byte[] enc;
@@ -87,10 +87,10 @@ public class CryptoShredJobLiveTests
 
             // Exactly one audit row, system actor, bare user GUID as EntityId, no PII in Before/After.
             var logs = await read.AdminAuditLogs.AsNoTracking()
-                .Where(l => l.EntityId == userId.ToString() && l.Action == "crypto_shred")
+                .Where(l => l.EntityId == userId.ToString() && l.Action == AdminAuditLog.Actions.CryptoShred)
                 .ToListAsync();
             logs.Count.ShouldBe(1);
-            logs[0].EntityType.ShouldBe("user");
+            logs[0].EntityType.ShouldBe(AdminAuditLog.EntityTypes.User);
             logs[0].ActorId.ShouldBeNull();
             logs[0].BeforeJson.ShouldBeNull();
             logs[0].AfterJson.ShouldBeNull();
@@ -120,7 +120,7 @@ public class CryptoShredJobLiveTests
         {
             db.Users.Add(TestFixtures.NewUser(userId));
             await db.SaveChangesAsync();
-            await new DekProvisioner(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), TestFixtures.Vault(), TimeProvider.System).ProvisionAsync(userId);
+            await TestFixtures.ProvisionDekForTestAsync(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), userId);
 
             // First shred.
             await NewJob(db).ExecuteAsync(userId);
@@ -137,7 +137,7 @@ public class CryptoShredJobLiveTests
 
             // Still exactly ONE crypto_shred audit row — the DeletedAt sentinel suppresses a second entry.
             var count = await read.AdminAuditLogs.AsNoTracking()
-                .CountAsync(l => l.EntityId == userId.ToString() && l.Action == "crypto_shred");
+                .CountAsync(l => l.EntityId == userId.ToString() && l.Action == AdminAuditLog.Actions.CryptoShred);
             count.ShouldBe(1);
         }
         finally
@@ -157,7 +157,7 @@ public class CryptoShredJobLiveTests
 
             await using var read = TestFixtures.NewDb();
             var count = await read.AdminAuditLogs.AsNoTracking()
-                .CountAsync(l => l.EntityId == userId.ToString() && l.Action == "crypto_shred");
+                .CountAsync(l => l.EntityId == userId.ToString() && l.Action == AdminAuditLog.Actions.CryptoShred);
             count.ShouldBe(0);
         }
         finally

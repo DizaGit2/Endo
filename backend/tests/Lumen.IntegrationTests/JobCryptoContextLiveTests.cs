@@ -33,7 +33,7 @@ public class JobCryptoContextLiveTests
             db.Users.Add(TestFixtures.NewUser(userId));
             await db.SaveChangesAsync();
 
-            await new DekProvisioner(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), TestFixtures.Vault(), TimeProvider.System).ProvisionAsync(userId);
+            await TestFixtures.ProvisionDekForTestAsync(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), userId);
 
             const string displayName = "María José";
             var factory = NewFactory(db);
@@ -83,9 +83,9 @@ public class JobCryptoContextLiveTests
             db.Users.Add(TestFixtures.NewUser(userBId));
             await db.SaveChangesAsync();
 
-            var provisioner = new DekProvisioner(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), TestFixtures.Vault(), TimeProvider.System);
-            await provisioner.ProvisionAsync(userAId);
-            await provisioner.ProvisionAsync(userBId);
+            var wrapper = new VaultTransitKeyWrapper(TestFixtures.Vault());
+            await TestFixtures.ProvisionDekForTestAsync(db, wrapper, userAId);
+            await TestFixtures.ProvisionDekForTestAsync(db, wrapper, userBId);
 
             const string plaintext = "shared plaintext";
             var factory = NewFactory(db);
@@ -120,7 +120,7 @@ public class JobCryptoContextLiveTests
             db.Users.Add(TestFixtures.NewUser(userId));
             await db.SaveChangesAsync();
 
-            await new DekProvisioner(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), TestFixtures.Vault(), TimeProvider.System).ProvisionAsync(userId);
+            await TestFixtures.ProvisionDekForTestAsync(db, new VaultTransitKeyWrapper(TestFixtures.Vault()), userId);
 
             byte[] enc;
             var factory = NewFactory(db);

@@ -43,12 +43,7 @@ public class CryptoShredConcurrencyAndHangfireLiveTests
         seed.Users.Add(TestFixtures.NewUser(userId));
         await seed.SaveChangesAsync();
 
-        await new DekProvisioner(
-            seed,
-            new VaultTransitKeyWrapper(TestFixtures.Vault()),
-            TestFixtures.Vault(),
-            TimeProvider.System
-        ).ProvisionAsync(userId);
+        await TestFixtures.ProvisionDekForTestAsync(seed, new VaultTransitKeyWrapper(TestFixtures.Vault()), userId);
 
         // Gate: both tasks wait here before executing so they truly race to the DB.
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -84,7 +79,7 @@ public class CryptoShredConcurrencyAndHangfireLiveTests
 
             // EXACTLY ONE audit row — the claimed==0 branch silenced the loser.
             var count = await read.AdminAuditLogs.AsNoTracking()
-                .CountAsync(l => l.EntityId == userId.ToString() && l.Action == "crypto_shred");
+                .CountAsync(l => l.EntityId == userId.ToString() && l.Action == AdminAuditLog.Actions.CryptoShred);
             count.ShouldBe(1, "concurrent shred must produce exactly one audit row regardless of which task wins");
         }
         finally
@@ -123,12 +118,7 @@ public class CryptoShredConcurrencyAndHangfireLiveTests
         seed.Users.Add(TestFixtures.NewUser(userId));
         await seed.SaveChangesAsync();
 
-        await new DekProvisioner(
-            seed,
-            new VaultTransitKeyWrapper(TestFixtures.Vault()),
-            TestFixtures.Vault(),
-            TimeProvider.System
-        ).ProvisionAsync(userId);
+        await TestFixtures.ProvisionDekForTestAsync(seed, new VaultTransitKeyWrapper(TestFixtures.Vault()), userId);
 
         try
         {
@@ -162,7 +152,7 @@ public class CryptoShredConcurrencyAndHangfireLiveTests
             user.DeletedAt.ShouldNotBeNull("user must be tombstoned after Hangfire shred");
 
             var auditCount = await read.AdminAuditLogs.AsNoTracking()
-                .CountAsync(l => l.EntityId == userId.ToString() && l.Action == "crypto_shred");
+                .CountAsync(l => l.EntityId == userId.ToString() && l.Action == AdminAuditLog.Actions.CryptoShred);
             auditCount.ShouldBe(1, "Hangfire shred must write exactly one audit row");
         }
         finally

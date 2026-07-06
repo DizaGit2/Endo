@@ -44,12 +44,8 @@ public class GdprErasureBaselineTests
         db.Users.Add(SecurityTestFixtures.NewUser(userId));
         await db.SaveChangesAsync();
 
-        var provisioner = new DekProvisioner(
-            db,
-            new VaultTransitKeyWrapper(SecurityTestFixtures.Vault()),
-            SecurityTestFixtures.Vault(),
-            TimeProvider.System);
-        await provisioner.ProvisionAsync(userId);
+        await SecurityTestFixtures.ProvisionDekForTestAsync(
+            db, new VaultTransitKeyWrapper(SecurityTestFixtures.Vault()), userId);
 
         await using var ctx = NewCryptoContext(db, userId);
         var enc = await ctx.EncryptStringAsync("María José");
@@ -168,7 +164,7 @@ public class GdprErasureBaselineTests
             // Assert exactly ONE crypto_shred audit row for this user.
             await using var read = SecurityTestFixtures.NewDb();
             var count = await read.AdminAuditLogs.AsNoTracking()
-                .CountAsync(l => l.EntityId == userId.ToString() && l.Action == "crypto_shred");
+                .CountAsync(l => l.EntityId == userId.ToString() && l.Action == AdminAuditLog.Actions.CryptoShred);
             count.ShouldBe(1, "idempotent re-run must not produce a second audit entry");
         }
         finally
@@ -204,12 +200,8 @@ public class GdprErasureBaselineTests
             db.Users.Add(u);
             await db.SaveChangesAsync();
 
-            var provisioner = new DekProvisioner(
-                db,
-                new VaultTransitKeyWrapper(SecurityTestFixtures.Vault()),
-                SecurityTestFixtures.Vault(),
-                TimeProvider.System);
-            await provisioner.ProvisionAsync(userId);
+            await SecurityTestFixtures.ProvisionDekForTestAsync(
+                db, new VaultTransitKeyWrapper(SecurityTestFixtures.Vault()), userId);
 
             // Capture the wrapped DEK BEFORE the job runs so we know what to search for.
             var keyRow = await db.UserKeys.AsNoTracking().SingleAsync(k => k.UserId == userId);
