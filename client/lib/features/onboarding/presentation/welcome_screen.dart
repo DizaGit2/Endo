@@ -6,8 +6,8 @@ import 'package:lumen/shared/widgets/lumen_section_label.dart';
 
 /// Screen 1 — Welcome (onboarding step 1 of 7).
 ///
-/// Static layout with no API or state. CTA callbacks are no-ops until
-/// routing is wired in P3b (TODO P3b).
+/// Static layout with no API or state. Both CTAs navigate to the account
+/// creation screen (Routes.account).
 ///
 /// The HTML mockup draws this inside a 300px "phone frame" so it can be shown
 /// in a browser; in the real app that frame IS the device, so it is dropped and

@@ -91,8 +91,12 @@ class TokenStore {
 
   /// Returns true if a non-empty refresh token is stored.
   ///
-  /// The access token may be expired; the refresh token is used to obtain
-  /// a new one. Callers should not rely on the access token being valid.
+  /// Checking for refresh-token presence is deliberate. A revoked refresh
+  /// token will surface on first use (401 → refresh fail → logout path). We
+  /// do not eagerly refresh at cold start because offline cold starts must
+  /// not trigger logout; users expect to stay logged in when launching the
+  /// app offline. The access token may be expired; callers should not rely
+  /// on it being valid.
   Future<bool> hasValidSession() async {
     final token = await _storage.read(key: _kRefreshToken);
     return token != null && token.isNotEmpty;
