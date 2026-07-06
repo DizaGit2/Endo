@@ -13,9 +13,14 @@ on:
       - "backend/contract/openapi.json"
       - ".github/workflows/ci-client.yml"
 
+concurrency:
+  group: ci-client-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   flutter:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +34,7 @@ jobs:
         with:
           flutter-version: "3.44.1"
           channel: stable
+          cache: true
 
       - name: pub get
         working-directory: client
@@ -67,3 +73,13 @@ jobs:
       - name: Coverage gate (>=60%, generated client excluded)
         working-directory: client
         run: dart run tool/check_coverage.dart
+
+      - name: Upload failure artifacts (coverage + golden diffs)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-failure-artifacts
+          path: |
+            client/coverage/lcov.info
+            client/test/**/failures/**
+          if-no-files-found: ignore
