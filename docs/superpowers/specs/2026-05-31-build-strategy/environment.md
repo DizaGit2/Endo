@@ -74,9 +74,10 @@ dotnet ef migrations add <Name> --project backend/src/Lumen.Infrastructure --sta
 dotnet ef database update --project backend/src/Lumen.Infrastructure --startup-project backend/src/Lumen.Api
 ```
 
-**Tests (Testcontainers spins its own throwaway Postgres/Vault — needs the Docker daemon, not the dev compose stack):**
+**Tests (compose LiveStack — bring up the dev compose stack first; r13: the Testcontainers plan was cancelled, see plan §4):**
 ```powershell
-dotnet test backend/Lumen.sln
+docker compose -f deploy/docker-compose.yml up -d postgres vault vault-init keycloak
+dotnet test backend/Lumen.slnx
 ```
 
 **OpenAPI doc** is served by Swashbuckle at `https://localhost/swagger/v1/swagger.json` (via Caddy) or directly at the API's HTTP port; it is the input to the Dart generator later.
@@ -159,7 +160,7 @@ The first client session may not write Dart until `flutter doctor` shows green c
 | Swashbuckle.AspNetCore | **Yes** | `docs §A` mandates "REST + OpenAPI (Swashbuckle) + generated Dart client." It produces the `swagger.json` the Dart generator consumes. Note: .NET 9/10 ship `Microsoft.AspNetCore.OpenApi` built-in, but the doc names Swashbuckle explicitly — use **Swashbuckle** as the source of truth and keep the Swagger UI for manual probing during the dev loop. Do not substitute it without amending `docs §A`. |
 | `Microsoft.EntityFrameworkCore.Design` | Yes (package, not tool) | Required by `dotnet ef` at design time. |
 | `dotnet format` | Yes (manifest tool) | Enforce style in CI; `docs` favors clean repo conventions. |
-| `Testcontainers` (NuGet) | Yes | `docs §G/§H` mandate Testcontainers-Postgres and a real Vault container for the crypto round-trip tests. Needs the Docker daemon (present). |
+| `Testcontainers` (NuGet) | ~~Yes~~ **No (r13)** | Cancelled — integration tests run against the compose LiveStack locally and in CI (plan §4, 2026-07-06); the real Postgres/Vault/Keycloak come from `deploy/docker-compose.yml`. |
 | `sops` + `age` | Defer | Only for the encrypted `.env` (`docs §G`). Not needed for dev-mode skeleton; install at the secrets-introducing phase via `winget install FiloSottile.age` and the sops release binary. |
 
 ### 3.2 OpenAPI → Dart client generator — choice and rationale

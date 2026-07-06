@@ -75,7 +75,7 @@ Do all of these. They take a few minutes.
 - [ ] **Re-run the phase's verification commands yourself** (they're listed in the phase's "Verification commands" block). At minimum:
   ```powershell
   docker compose -f deploy/docker-compose.yml ps        # services for this phase healthy
-  dotnet test backend/Lumen.sln --nologo                # 0 failed, 0 unexplained skips
+  dotnet test backend/Lumen.slnx --nologo                # 0 failed, 0 unexplained skips
   ```
   plus the phase-specific probe (a `curl`/`Invoke-RestMethod`, an encrypted-row check, etc.).
 - [ ] **Confirm every exit-criterion checkbox** in the phase is genuinely ticked and you saw the proof.
@@ -137,13 +137,18 @@ A subagent runs to completion and can't pause to click a wizard or accept a lice
 
 ---
 
-## 8. Approve & merge a phase
+## 8. Approve & merge a phase (atomic ritual — all five steps or none)
 
 When the review passes:
-1. **Flip the ledger:** set the phase's row in plan §1 to `DONE`, fill `Verified by` with today's date, and advance `NEXT PHASE TO RUN` to the next phase. Update the `Repo HEAD` SHA stamp.
-2. **Merge the phase PR** into your build branch (`main` or `design/build-strategy`). Use a merge commit (keep the per-task history) and **tag it `phase-NN`** for an easy rollback point.
-3. **Confirm CI is green** on the merge.
-4. Move to the next phase (§3).
+1. **On the phase branch**, flip the plan: §1 row → `DONE` (+ today in `Verified by`), advance `NEXT PHASE TO RUN`, bump the plan revision, update the `Repo HEAD` stamp, mark the STATUS block done. Commit `docs(plan): PNN accepted — ledger DONE (rXX)`. Flipping on the branch means the merge itself carries the ledger — it cannot be forgotten separately.
+2. **Merge locally with a merge commit — never the GitHub merge button** (it fast-forwards/squashes and skips this ritual):
+   `git checkout main; git pull; git merge --no-ff phase/NN-<slug> -m "Merge phase/NN-<slug>: PNN <name>"`
+3. **Tag and push together:** `git tag phase-NN; git push origin main --tags`
+4. **Confirm CI is green** on the merge commit.
+5. **Verify the ritual completed** — if either check fails, finish the missing step now (a half-done ritual is how P3b's tag + ledger flip went missing for three weeks):
+   `git log -1 --format="%d" main` → must show `tag: phase-NN` · `Select-String docs/superpowers/plans/lumen-build.md -Pattern "NEXT PHASE TO RUN"` → must name the next phase.
+
+**Post-merge follow-up fixes:** small non-safety fixes MAY land directly on main (solo-dev pragmatism), but each must (a) append itself to the phase's STATUS "Post-merge follow-ups" list in the same push, and (b) get `/code-review low` minimum. **Anything touching crypto, auth, erasure, or the JWT perimeter always goes through a branch + review — no exceptions.** More than two follow-ups pending → stop and open a consolidation branch (see P3c for the precedent).
 
 ---
 
@@ -176,7 +181,7 @@ docker compose -f deploy/docker-compose.yml ps
 
 # backend dev loop
 dotnet watch --project backend/src/Lumen.Api run
-dotnet test backend/Lumen.sln --nologo
+dotnet test backend/Lumen.slnx --nologo
 
 # review a phase diff
 git diff main...phase/NN-<slug> --stat
@@ -198,8 +203,8 @@ git diff main...phase/NN-<slug> --stat
 | Infra / compose | `deploy/` |
 
 **Phase order**
-`P0a → P0b → P1⚠ → P2⚠ → P3a → P3b → P4a → P4b → P5 → P6⚠ → P7a → P7b⚠ → P8 → P9a → P9b → P10 → P11 → P12a → P12b`
-(⚠ = deeper review per §5. Note P4b/P5/P6 can follow P4a in any order; P5+P6 gate P7a.)
+`P0a → P0b → P1⚠ → P2⚠ → P3a → P3b → P3c⚠* → P4a → P4b → P5 → P6⚠ → P7a → P7b⚠ → P8 → P9a → P9b → P10 → P11 → P12a → P12b`
+(⚠ = deeper review per §5; ⚠* = P3c's deep review is scoped to its crypto/JWT/EmailHash commits. Note P4b/P5/P6 can follow P4a in any order; P5+P6 gate P7a.)
 
 ---
 

@@ -5,6 +5,8 @@
 
 # Lumen — Testing & Verification Strategy
 
+> **Reality note (r13, 2026-07-06):** the integration strategy as built is the **compose LiveStack** — tests target the dev compose stack locally, and CI brings up the same compose services — not Testcontainers (migration cancelled, plan §4). Test projects were consolidated as `Lumen.UnitTests` / `Lumen.IntegrationTests` / `Lumen.SecurityTests`. Where this document says "Testcontainers", read "compose LiveStack".
+
 This document defines the **phase-aware** testing and verification strategy for the Lumen backend (.NET 10) and Flutter client. It is faithful to `docs/ARCHITECTURE.md` and the locked build decisions: walking-skeleton sequencing, incremental infra bring-up, plan-driven fresh sessions, online-only client cache, Keycloak OIDC, Vault Transit envelope encryption, crypto-shred erasure.
 
 It is structured so a fresh Claude session executing one phase knows **exactly** what "tests pass" means before its checkpoint can be approved.
