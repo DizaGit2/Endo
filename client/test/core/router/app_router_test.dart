@@ -62,17 +62,58 @@ void main() {
       expect(lumenRedirect(AuthStatus.authenticated, '/profile'), isNull);
     });
 
-    test('authenticated on other paths returns null (allow through)', () {
-      expect(
-        lumenRedirect(AuthStatus.authenticated, '/onboarding'),
-        isNull,
-      );
-    });
-
     test('authenticated on "/splash" redirects to "/profile"', () {
       expect(
         lumenRedirect(AuthStatus.authenticated, '/splash'),
         equals('/profile'),
+      );
+    });
+  });
+
+  group('lumenRedirect — unknown-route fallback (unregistered paths)', () {
+    // "/nope" and "/onboarding" are not registered GoRoutes (Routes.onboarding
+    // is a reserved constant for P4 — see the TODO(P4) doc comment on
+    // lumenRedirect). Both must be routed by auth status instead of falling
+    // through to GoRouter's built-in "page not found" error screen — this
+    // used to be a bug for authenticated users (see the removed "allow
+    // through" test above), who would hit that error page directly.
+
+    test('authenticated + "/nope" redirects to "/profile"', () {
+      expect(
+        lumenRedirect(AuthStatus.authenticated, '/nope'),
+        equals('/profile'),
+      );
+    });
+
+    test(
+      'authenticated + "/onboarding" redirects to "/profile" (not yet registered)',
+      () {
+        expect(
+          lumenRedirect(AuthStatus.authenticated, '/onboarding'),
+          equals('/profile'),
+        );
+      },
+    );
+
+    test('unauthenticated + "/nope" redirects to "/"', () {
+      expect(lumenRedirect(AuthStatus.unauthenticated, '/nope'), equals('/'));
+    });
+
+    test('unauthenticated + "/onboarding" redirects to "/"', () {
+      expect(
+        lumenRedirect(AuthStatus.unauthenticated, '/onboarding'),
+        equals('/'),
+      );
+    });
+
+    test('unknown auth + "/nope" redirects to "/splash"', () {
+      expect(lumenRedirect(AuthStatus.unknown, '/nope'), equals('/splash'));
+    });
+
+    test('unknown auth + "/onboarding" redirects to "/splash"', () {
+      expect(
+        lumenRedirect(AuthStatus.unknown, '/onboarding'),
+        equals('/splash'),
       );
     });
   });

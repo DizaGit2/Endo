@@ -50,20 +50,31 @@ class ProfileScreen extends ConsumerWidget {
 // Error body
 // ---------------------------------------------------------------------------
 
-class _ErrorBody extends StatelessWidget {
+class _ErrorBody extends ConsumerWidget {
   const _ErrorBody({required this.error});
   final Object error;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = Theme.of(context).extension<LumenColors>()!;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Text(
-          'Something went wrong. Please try again.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, color: c.muted),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Something went wrong. Please try again.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: c.muted),
+            ),
+            const SizedBox(height: 16),
+            _RetryButton(
+              label: 'Try again',
+              c: c,
+              onPressed: () => ref.invalidate(profileControllerProvider),
+            ),
+          ],
         ),
       ),
     );
@@ -83,7 +94,7 @@ class _ProfileBody extends ConsumerWidget {
     final c = Theme.of(context).extension<LumenColors>()!;
 
     if (result is NetworkRequired<MeResponse>) {
-      return _NetworkRequiredBody(c: c);
+      return const _NetworkRequiredBody();
     }
 
     final me = result is Fresh<MeResponse>
@@ -91,82 +102,93 @@ class _ProfileBody extends ConsumerWidget {
         : (result as Stale<MeResponse>).value;
     final isStale = result is Stale<MeResponse>;
 
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 44, 22, 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Back affordance row (icon + section tag)
-            Row(
-              children: [
-                Icon(Icons.chevron_left, color: c.muted, size: 22),
-                const SizedBox(width: 2),
-                const LumenSectionLabel(
-                  'Settings',
-                  fontSize: 11,
-                  letterSpacing: 1.5,
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 4),
-
-            // Screen title
-            Text(
-              'Profile & health',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w500,
-                color: c.ink,
+    // Pull-to-refresh: re-reads the profile (never queues a write — the
+    // online-only invariant applies to reads too, there is no offline mutation
+    // here). AlwaysScrollableScrollPhysics lets the gesture trigger even when
+    // the content is shorter than the viewport.
+    return RefreshIndicator(
+      onRefresh: () {
+        ref.invalidate(profileControllerProvider);
+        return ref.read(profileControllerProvider.future);
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 44, 22, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Back affordance row (icon + section tag)
+              Row(
+                children: [
+                  Icon(Icons.chevron_left, color: c.muted, size: 22),
+                  const SizedBox(width: 2),
+                  const LumenSectionLabel(
+                    'Settings',
+                    fontSize: 11,
+                    letterSpacing: 1.5,
+                  ),
+                ],
               ),
-            ),
 
-            const SizedBox(height: 14),
+              const SizedBox(height: 4),
 
-            // Stale notice
-            if (isStale) ...[
-              _StaleNotice(c: c),
-              const SizedBox(height: 10),
+              // Screen title
+              Text(
+                'Profile & health',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w500,
+                  color: c.ink,
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              // Stale notice
+              if (isStale) ...[
+                _StaleNotice(c: c),
+                const SizedBox(height: 10),
+              ],
+
+              // --- User card ---
+              _UserCard(me: me, c: c, ref: ref),
+
+              const SizedBox(height: 14),
+
+              // --- ACCOUNT section ---
+              const LumenSectionLabel('Account'),
+              const SizedBox(height: 6),
+              _InfoRow(
+                label: 'Display name',
+                value: me.displayName ?? '—',
+                c: c,
+                trailing: _EditButton(me: me, c: c),
+              ),
+              const SizedBox(height: 5),
+              _InfoRow(
+                label: 'Locale',
+                value: me.locale ?? '—',
+                c: c,
+              ),
+              const SizedBox(height: 5),
+              _InfoRow(
+                label: 'Timezone',
+                value: me.timezone ?? '—',
+                c: c,
+              ),
+
+              const SizedBox(height: 14),
+
+              // --- SIGN OUT ---
+              _SignOutRow(c: c),
+
+              const SizedBox(height: 14),
+
+              // --- L-03 trust copy (approved legal text) ---
+              _TrustNotice(c: c),
             ],
-
-            // --- User card ---
-            _UserCard(me: me, c: c, ref: ref),
-
-            const SizedBox(height: 14),
-
-            // --- ACCOUNT section ---
-            const LumenSectionLabel('Account'),
-            const SizedBox(height: 6),
-            _InfoRow(
-              label: 'Display name',
-              value: me.displayName ?? '—',
-              c: c,
-              trailing: _EditButton(me: me, c: c),
-            ),
-            const SizedBox(height: 5),
-            _InfoRow(
-              label: 'Locale',
-              value: me.locale ?? '—',
-              c: c,
-            ),
-            const SizedBox(height: 5),
-            _InfoRow(
-              label: 'Timezone',
-              value: me.timezone ?? '—',
-              c: c,
-            ),
-
-            const SizedBox(height: 14),
-
-            // --- SIGN OUT ---
-            _SignOutRow(c: c),
-
-            const SizedBox(height: 14),
-
-            // --- L-03 trust copy (approved legal text) ---
-            _TrustNotice(c: c),
-          ],
+          ),
         ),
       ),
     );
@@ -177,12 +199,12 @@ class _ProfileBody extends ConsumerWidget {
 // Network-required body
 // ---------------------------------------------------------------------------
 
-class _NetworkRequiredBody extends StatelessWidget {
-  const _NetworkRequiredBody({required this.c});
-  final LumenColors c;
+class _NetworkRequiredBody extends ConsumerWidget {
+  const _NetworkRequiredBody();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = Theme.of(context).extension<LumenColors>()!;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -206,9 +228,50 @@ class _NetworkRequiredBody extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: c.muted),
             ),
+            const SizedBox(height: 16),
+            _RetryButton(
+              label: 'Retry',
+              c: c,
+              onPressed: () => ref.invalidate(profileControllerProvider),
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Retry button — shared outlined affordance for _ErrorBody/_NetworkRequiredBody
+// ---------------------------------------------------------------------------
+
+/// A secondary (outlined) retry affordance that calls back into
+/// [profileControllerProvider] via [onPressed] (`ref.invalidate` at the call
+/// site — this widget stays a dumb [StatelessWidget] so it has no Riverpod
+/// dependency of its own). Token colors only: [LumenColors.accent] for the
+/// label, [LumenColors.border] for the outline.
+class _RetryButton extends StatelessWidget {
+  const _RetryButton({
+    required this.label,
+    required this.c,
+    required this.onPressed,
+  });
+  final String label;
+  final LumenColors c;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: c.accent,
+        side: BorderSide(color: c.border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+      ),
+      child: Text(label),
     );
   }
 }
@@ -286,7 +349,6 @@ class _UserCard extends StatelessWidget {
       ),
     );
   }
-
 }
 
 /// Computes 1–2 uppercase initials for the profile avatar from a (possibly
