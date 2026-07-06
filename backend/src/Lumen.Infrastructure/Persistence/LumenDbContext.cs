@@ -24,7 +24,7 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
         {
             e.ToTable("users");
             e.HasKey(x => x.Id);
-            e.Property(x => x.EmailHash).IsRequired().HasMaxLength(64); // SHA-256 hex
+            e.Property(x => x.EmailHash).IsRequired().HasMaxLength(64); // Vault Transit HMAC ("vault:v1:<b64>"); ≤64 chars
             e.HasIndex(x => x.EmailHash).IsUnique();
             e.Property(x => x.Locale).IsRequired().HasMaxLength(35);    // BCP-47
             e.Property(x => x.Timezone).IsRequired().HasMaxLength(64);  // IANA tz id

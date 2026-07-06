@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using Lumen.Api.Onboarding;
 using Lumen.Application.Auth;
@@ -24,6 +25,7 @@ public sealed class OnboardingServiceTests : IDisposable
     private readonly LumenDbContext _db;
     private readonly FakeKeycloakAdmin _keycloak = new();
     private readonly FakeKeyWrapper _keyWrapper = new();
+    private readonly FakeEmailHasher _emailHasher = new();
     private readonly VaultOptions _vaultOptions = new() { KeyName = "test-kek" };
 
     public OnboardingServiceTests()
@@ -44,7 +46,7 @@ public sealed class OnboardingServiceTests : IDisposable
     // --- helpers ------------------------------------------------------------
 
     private OnboardingService CreateSut() =>
-        new(_db, _keycloak, _keyWrapper, new AesGcmFieldCipher(), _vaultOptions, TimeProvider.System);
+        new(_db, _keycloak, _keyWrapper, _emailHasher, new AesGcmFieldCipher(), _vaultOptions, TimeProvider.System);
 
     private static OnboardingStartRequest ValidRequest(
         string? email = "user@example.com",
@@ -204,6 +206,25 @@ public sealed class OnboardingServiceTests : IDisposable
 
         _keycloak.CreateCalls.ShouldHaveSingleItem();
         _keycloak.DeleteCalls.ShouldBeEmpty(); // no compensation needed on the happy path
+    }
+
+    // --- email hash: Vault Transit HMAC, not raw SHA-256 (P3c-T3) --------------------
+
+    [Fact]
+    public async Task Persisted_email_hash_comes_from_the_email_hasher_not_a_raw_sha256_digest()
+    {
+        const string email = "user@example.com";
+
+        var result = await CreateSut().StartAsync(ValidRequest(email: email), CancellationToken.None);
+
+        var success = result.ShouldBeOfType<OnboardingStartResult.Success>();
+        var user = await _db.Users.SingleAsync(u => u.Id == success.UserId);
+
+        user.EmailHash.ShouldBe(FakeEmailHasher.FakeHmac);
+        _emailHasher.HashCalls.ShouldBe([email]);
+
+        // Negative control: proves there is no raw-SHA fallback left in the production code path.
+        user.EmailHash.ShouldNotBe(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(email))));
     }
 
     // --- compensation --------------------------------------------------------------

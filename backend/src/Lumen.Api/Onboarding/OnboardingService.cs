@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 using Lumen.Application.Auth;
 using Lumen.Application.Crypto;
 using Lumen.Domain.Entities;
@@ -18,6 +17,7 @@ public sealed class OnboardingService(
     LumenDbContext db,
     IKeycloakAdmin keycloak,
     IKeyWrapper keyWrapper,
+    IEmailHasher emailHasher,
     IFieldCipher cipher,
     VaultOptions vaultOptions,
     TimeProvider clock)
@@ -42,7 +42,7 @@ public sealed class OnboardingService(
         try
         {
             var now = clock.GetUtcNow();
-            var emailHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(email)));
+            var emailHash = await emailHasher.HashEmailAsync(email, ct);
             var locale = string.IsNullOrWhiteSpace(request.Locale) ? "es-ES" : request.Locale;
             var timezone = string.IsNullOrWhiteSpace(request.Timezone) ? "Europe/Madrid" : request.Timezone;
 

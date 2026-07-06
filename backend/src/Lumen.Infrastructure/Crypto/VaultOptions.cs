@@ -9,4 +9,5 @@ public sealed class VaultOptions
     public string Token { get; set; } = "root";
     public string TransitMount { get; set; } = "transit";
     public string KeyName { get; set; } = "lumen-dev-kek";
+    public string EmailHmacKeyName { get; set; } = "lumen-dev-email-hmac";
 }
