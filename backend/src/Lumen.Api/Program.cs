@@ -38,6 +38,13 @@ builder.Services.AddSingleton(keycloakOptions);
 builder.Services.AddSingleton(TimeProvider.System);
 
 // --- persistence ---
+// Fail closed: outside Development, every security-sensitive setting must be explicit — this runs
+// BEFORE the hardcoded fallback below, so a non-Development config that simply omits the
+// connection string throws here instead of silently picking up the dev default.
+StartupGuards.EnsureNonDevelopmentSecrets(
+    builder.Environment.IsDevelopment(), builder.Configuration.GetConnectionString("Lumen"), vaultOptions, keycloakOptions);
+
+// Reachable only in Development: StartupGuards above already rejected a missing string anywhere else.
 var connectionString = builder.Configuration.GetConnectionString("Lumen")
     ?? "Host=localhost;Port=55432;Database=lumen;Username=postgres;Password=postgres";
 builder.Services.AddDbContext<LumenDbContext>(o => o.UseNpgsql(connectionString));
@@ -52,16 +59,6 @@ if (builder.Configuration.GetValue("Hangfire:EnableServer", true))
     builder.Services.AddHangfireServer();
 // Resolvable from a job scope by Hangfire's activator (e.g. the GDPR crypto-shred erasure job).
 builder.Services.AddScoped<CryptoShredJob>();
-
-// Fail closed: never start outside Development with the dev sentinel secrets (prod hardening is P11).
-if (!builder.Environment.IsDevelopment() &&
-    (vaultOptions.Token is "root" or "" ||
-     keycloakOptions.AdminClientSecret is "dev-api-secret" or "" ||
-     connectionString.Contains("Password=postgres", StringComparison.Ordinal)))
-{
-    throw new InvalidOperationException(
-        "Refusing to start outside Development with dev sentinel secrets. Configure real Vault/Keycloak/DB secrets.");
-}
 
 // --- crypto ---
 builder.Services.AddSingleton<IFieldCipher, AesGcmFieldCipher>();
