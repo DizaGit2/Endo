@@ -48,7 +48,7 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 | P2 ⚠ | Crypto-shred + Hangfire | DONE | phase/02-shred | [#1](https://github.com/DizaGit2/Endo/pull/1) | 2026-06-14 | merged to main, tag `phase-02`; 57 tests; multi-agent /review + all fixes applied |
 | P3a | Flutter foundation + theming + OpenAPI pipeline | DONE | phase/03a-client-foundation | tag `phase-03a` | 2026-06-14 | merged to main (merge `39acac4`); 106 client + 3 OpenAPI tests; cov 97.60% |
 | P3b | Client OIDC + cache + screens 2/31 | DONE | phase/03b-client-spine | [#2](https://github.com/DizaGit2/Endo/pull/2) | 2026-07-06 | merged 2026-06-15 (ff, PR #2); tag `phase-03b` @ `6d122d4` cut retroactively r13; +4 post-merge fixes on main (see STATUS); iOS-redirect + screen-31-retry corrections → P3c, onboarding-gate → P4b |
-| P3c ⚠* | Consolidation & hardening (perimeter, crypto dedup, client/CI debt) | TODO | phase/03c-hardening | — | — | new r13; ⚠* = deep review scoped to crypto/JWT/EmailHash commits; gates P4a |
+| P3c ⚠* | Consolidation & hardening (perimeter, crypto dedup, client/CI debt) | NEEDS_REVIEW | phase/03c-hardening | — | — | T1–T14 done; 17 commits; per-task two-stage review + whole-branch /code-review high; gates P4a |
 | P4a | Backend Onboarding-rest + Cycle + Symptoms | TODO | — | — | — | needs P3c DONE + decision session (D-02, D-08..D-14, B15/B16) + definitions |
 | P4b | Flutter screens 3–14, 32 | TODO | — | — | — | |
 | P5 | Body + Activity + Treatment | TODO | — | — | — | needs D-15/D-16 |
@@ -432,7 +432,48 @@ cd client; $env:PUB_CACHE='C:\pub_cache'; flutter analyze; flutter test; dart ru
 
 **Tasks (T1–T14; bite-sized TDD, one commit each; detailed in the approved r13 review plan):** T1 JWT audience + realm hardening ⚠ → T2 `OnboardingService` extraction ⚠ → T3 EmailHash→Vault HMAC ⚠ → T4 delete `DekProvisioner` + audit constants ⚠ → T5 crypto-context dedup ⚠ → T6 ambient-clock ban → T7 onboarding limiter + `PATCH /me` tests + Swagger gate → T8 startup-guard hardening → T9 PII name-based redaction → T10 iOS redirect + hygiene → T11 profile retry + route fallback → T12 cache DI seam + test backfill → T13 a11y + dingbats → T14 CI.
 
-**STATUS** _(empty)_
+**STATUS**
+- **State:** NEEDS_REVIEW · **Branch:** `phase/03c-hardening` (17 commits, HEAD `c90322e`; branched off `main` @ `6e8cd7c` after the r13 docs merge) · executed via `subagent-driven-development` (per-task implementer + spec + quality review, fixes applied) + a final whole-branch `/code-review high`.
+- **Tasks done (T1–T14, each = one feat/fix/refactor commit + review-fix commits where the two-stage review found issues):**
+  - **T1** `feat(auth)` `64908fa` — Keycloak `oidc-audience-mapper` (`aud=lumen-api`) on both clients + `ValidateAudience=true`/`ValidAudiences`; realm `passwordPolicy` → `length(12) and maxLength(128) and notUsername and notEmail`; `AuthPerimeterLiveTests` (aud present · garbage · tampered · service-account → 401). ⚠ review clean.
+  - **Fix** `dfbca61` — pinned `Microsoft.OpenApi` 2.7.5 (NU1903 GHSA-v5pm-xwqc-g5wc appeared in the audit feed mid-phase; contract byte-unchanged) to restore the `-warnaserror` gate.
+  - **T2** `refactor(api)` `2437fa8` — `POST /onboarding/start` extracted to `OnboardingService` (behavior byte-identical; reviewer verified all 90 moved lines) + 18 validation/compensation unit tests (Sqlite in-memory + hand-rolled fakes). ⚠ diff-parity review clean.
+  - **T3** `feat(crypto)` `b9551f4` — `users.EmailHash` = Vault Transit HMAC (`transit/hmac/lumen-dev-email-hmac`, key_version 1); vault-init rewired to the mounted `deploy/vault/init.sh` (single init path, both keys) + `.gitattributes` LF; negative-control + LiveStack tests prove no SHA-256 fallback; **no migration** (53≤64 chars). ⚠ deep review clean.
+  - **T4** `refactor(crypto)` `2551727` — deleted unused `DekProvisioner`/`IDekProvisioner` (one DEK-provisioning path; tests seed via `ProvisionDekForTestAsync`, zeroing preserved) + `AdminAuditLog.Actions/EntityTypes` constants (canonical lowercase). ⚠ mechanical review clean.
+  - **T5** `refactor(crypto)` `b0030a6` — `UserCryptoContext`/`JobCryptoContext` hoisted into `DekCryptoContextBase` (+76/−99, three files); verbatim custody core (unwrap-once, `volatile`, zero-on-dispose), lazy user-id throw preserved; all suites unchanged. ⚠ deep review clean.
+  - **T6** `chore(build)` `8244d72` — ambient-clock ban via BannedApiAnalyzers RS0030 over `backend/src` (`DateTime.UtcNow/.Now/.Today`, `DateTimeOffset.UtcNow/.Now`); §2 determinism claim now build-enforced; RED proof captured.
+  - **T7** `feat(api)` `938217c` — per-IP `onboarding-start` limiter (default 5/min, config-overridable) + abuse/429 test (closes the P1 T10 gap) + `MePatchLiveTests` (204 + ciphertext rotation + 401 + create-branch) + Swagger UI gated to Development.
+  - **T8** `feat(api)` `eaedfb3` + review-fix `c90322e` — `StartupGuards.EnsureNonDevelopmentSecrets` requires explicit non-Development config (no dev fallbacks); the review-fix extends it to also require explicit prod `Vault:Address`/`Keycloak:BaseUrl` (closes the CONFIRMED whole-branch finding). 14+6 unit cases.
+  - **T9** `feat(logging)` `946af73` — name-based PII redaction (`password/email/displayName/pushToken/dob/bio/phone/…`) at every walker level + the in-memory PII negative-control test moved off the LiveStack trait.
+  - **T10** `fix(client)` `b3b3510` — iOS `CFBundleURLTypes` for `com.lumen.app` (runtime proof deferred to first iOS build); junk root dir + empty `lib/shared/formatters/` deleted; stale comments fixed; `hasValidSession` rationale documented.
+  - **T11** `feat(client)` `75ff65c` — retry affordances on profile error/`NetworkRequired` bodies (`ref.invalidate`) + `RefreshIndicator`; `lumenRedirect` unknown-route fallback + 6 truth-table cases.
+  - **T12** `refactor(client)` `ff07887` — `cacheStoreProvider` via root `ProviderScope` override (module-global `setCacheStore` deleted) + MeRepository round-trip, `_PiiSafeLogInterceptor`, and onAuthLost→logout test backfill.
+  - **T13** `feat(client)` `f50a8ba` + review-fix `91a902d` — a11y `Semantics` pattern (buttons/labels/liveRegion/spinner labels/`MergeSemantics`) over the 5 screens + dingbat→Icon swap + no-dingbat guard; the review-fix restores the assistive-tech tap action stripped by `excludeSemantics` (CRITICAL — verified against the Flutter SDK). Establishes the P4b a11y norm.
+  - **T14** `ci` `8d09906` — NuGet/pub caching, `timeout-minutes`, per-ref concurrency-cancel, TRX/coverage/failed-golden artifacts; Vault readiness poll also checks the email-hmac key.
+- **Verification (pasted, 2026-07-06):**
+  ```
+  backend (compose stack up):
+    dotnet build backend/Lumen.slnx -warnaserror  -> Build succeeded, 0 Warning(s), 0 Error(s)
+    dotnet test Lumen.UnitTests         -> Passed!  Failed: 0, Passed: 74
+    dotnet test Lumen.IntegrationTests  -> Passed!  Failed: 0, Passed: 37   (incl. AuthPerimeter/MePatch/OnboardingRateLimit/EmailHash LiveTests)
+    dotnet test Lumen.SecurityTests     -> Passed!  Failed: 0, Passed:  5
+    git diff --exit-code backend/contract/openapi.json client/openapi/lumen.openapi.json -> clean (contract byte-unchanged)
+  client (PUB_CACHE=C:\pub_cache):
+    flutter analyze          -> No issues found!
+    flutter test --coverage  -> 00:13 +274: All tests passed!
+    dart run tool/check_coverage.dart -> GATE PASS: 89.17% >= 60%
+  ```
+- **Whole-branch `/code-review high` (8 finders → verify pass → 7 findings; zero live correctness bugs — consistent with every task passing individual review + all suites green):**
+  - **FIXED (in `c90322e`):** StartupGuards did not validate prod `Vault:Address`/`Keycloak:BaseUrl` (CONFIRMED — a prod deploy omitting them would boot on the dev-localhost defaults and fail only at request time, defeating the guard's own purpose).
+  - **Deferred with a home (documented for the human + future phases, not blocking):**
+    - **JWT service-account discriminator is `preferred_username`-only** (PLAUSIBLE): after the audience mapper, both end-user and service-account tokens carry `azp=api`, so the interim guard hinges on Keycloak's implicit `profile`-scope `preferred_username` claim with no explicit config link. Test-mitigated (`Service_account_token_returns_401`). → **P11** should replace it with a proper client-role/scope distinction when the prod realm variant lands.
+    - **Divergent Vault Transit clients** (cleanup): `VaultTransitEmailHasher` hand-rolls raw `HttpClient` while `VaultTransitKeyWrapper` uses the VaultSharp SDK — they will drift on auth/retry/timeout for the same backing service. → unify in **P11** (prod Vault AppRole work).
+    - **PII enricher name set omits `token`/`refreshToken`/`idToken`/`authorization`/`secret`/`dek`** (PLAUSIBLE, defense-in-depth only — no current call site logs these by name). → extend when P4+ adds those fields.
+    - **`_knownPaths` is hand-synced with the GoRouter route table** (altitude): a route added in **P4b** without a matching `_knownPaths` entry is silently redirected away. → derive from the route table when P4b registers screens 3–14/32.
+    - **Onboarding makes two sequential Vault round-trips** (efficiency): the email HMAC and DEK wrap are independent and could run via `Task.WhenAll`. → optional perf, revisit if signup latency matters.
+    - **Keycloak `--import-realm` skips an existing realm** (dev-ops, already documented): a stale pre-P3c volume won't get the audience mapper → 401s until `docker compose down -v`. Called out in the T1 commit body and the P3c verify block. **Reviewers: run the `down -v` reset below.**
+  - Minor cleanup noted across per-task reviews (test-fixture duplication forced by project refs, sentinel consts duplicated from options defaults, CI cache block ×3, hand-rolled base64url decode, mock-class duplication) — batched for a future hygiene pass, none blocking.
+- **For reviewer:** `git checkout phase/03c-hardening`. Because T1/T3 change the realm + vault-init, reset the stack first: `docker compose -f deploy/docker-compose.yml down -v; docker compose -f deploy/docker-compose.yml up -d --build`, wait for Keycloak discovery, `dotnet ef database update --project backend/src/Lumen.Infrastructure --startup-project backend/src/Lumen.Infrastructure`. Then re-run the Verify block above (backend suites need the stack; client needs `PUB_CACHE=C:\pub_cache`). Crypto/JWT/EmailHash commits (`64908fa`, `2437fa8`, `b9551f4`, `2551727`, `b0030a6`, `c90322e`) got the ⚠ deep-review treatment. On acceptance: per RUNBOOK §8 — flip this row to DONE on the branch, `git merge --no-ff phase/03c-hardening`, `git tag phase-03c`, push main+tags, advance NEXT to **P4a** (which also needs the pre-P4a decision session — see the §1 long-lead gates).
 
 ---
 
