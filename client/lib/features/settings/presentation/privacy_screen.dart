@@ -28,93 +28,113 @@ class PrivacyScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                  // Back affordance row (icon + section tag)
-                  Row(
-                    children: [
-                      Icon(Icons.chevron_left, color: c.muted, size: 22),
-                      const SizedBox(width: 2),
-                      const LumenSectionLabel('Settings', fontSize: 11, letterSpacing: 1.5),
-                    ],
+                // Back affordance row (icon + section tag)
+                Row(
+                  children: [
+                    Icon(Icons.chevron_left, color: c.muted, size: 22),
+                    const SizedBox(width: 2),
+                    const LumenSectionLabel(
+                      'Settings',
+                      fontSize: 11,
+                      letterSpacing: 1.5,
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 4),
+
+                // Screen title
+                Text(
+                  'Privacy & security',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w500,
+                    color: c.ink,
                   ),
+                ),
 
-                  const SizedBox(height: 4),
+                const SizedBox(height: 14),
 
-                  // Screen title
-                  Text(
-                    'Privacy & security',
+                // --- APP LOCK section ---
+                const LumenSectionLabel('App lock'),
+                const SizedBox(height: 6),
+                const _SettingsToggleRow(
+                  label: 'Face ID',
+                  subtitle: 'Required to open',
+                  enabled: true,
+                ),
+                const SizedBox(height: 5),
+                const _SettingsToggleRow(
+                  label: 'Hide content in app switcher',
+                  subtitle: 'Show blank screen',
+                  enabled: true,
+                ),
+                const SizedBox(height: 5),
+                const _SettingsToggleRow(
+                  label: 'Disguised app icon',
+                  subtitle: 'Show as "Notes"',
+                  enabled: false,
+                ),
+
+                const SizedBox(height: 14),
+
+                // --- DATA section ---
+                const LumenSectionLabel('Data'),
+                const SizedBox(height: 6),
+                _SettingsInfoRow(
+                  label: 'Encryption status',
+                  value: 'AES-256',
+                  valueColor: c.sage,
+                  trailingIcon: Icon(Icons.check, size: 14, color: c.sage),
+                ),
+
+                // NOTE: D-07 — "Anonymous analytics" toggle omitted (no analytics in v1).
+                const SizedBox(height: 14),
+
+                // --- DANGER ZONE section ---
+                const LumenSectionLabel('Danger zone'),
+                const SizedBox(height: 6),
+                _SettingsNavRow(label: 'Delete all data', labelColor: c.accent),
+
+                const SizedBox(height: 14),
+
+                // Warrant-canary notice (reproduced from mockup as-is,
+                // '✦' dingbat replaced by an inline Icons.auto_awesome via
+                // WidgetSpan so it wraps as part of the same paragraph).
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: c.sageSoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: Icon(
+                            Icons.auto_awesome,
+                            size: 12,
+                            color: c.sage,
+                          ),
+                        ),
+                        const TextSpan(
+                          text: '  Lumen has never received a data request',
+                        ),
+                      ],
+                    ),
                     style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500,
-                      color: c.ink,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w400,
+                      color: c.sage,
                     ),
                   ),
-
-                  const SizedBox(height: 14),
-
-                  // --- APP LOCK section ---
-                  const LumenSectionLabel('App lock'),
-                  const SizedBox(height: 6),
-                  const _SettingsToggleRow(
-                    label: 'Face ID',
-                    subtitle: 'Required to open',
-                    enabled: true,
-                  ),
-                  const SizedBox(height: 5),
-                  const _SettingsToggleRow(
-                    label: 'Hide content in app switcher',
-                    subtitle: 'Show blank screen',
-                    enabled: true,
-                  ),
-                  const SizedBox(height: 5),
-                  const _SettingsToggleRow(
-                    label: 'Disguised app icon',
-                    subtitle: 'Show as "Notes"',
-                    enabled: false,
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  // --- DATA section ---
-                  const LumenSectionLabel('Data'),
-                  const SizedBox(height: 6),
-                  _SettingsInfoRow(
-                    label: 'Encryption status',
-                    value: 'AES-256 ✓',
-                    valueColor: c.sage,
-                  ),
-                  // NOTE: D-07 — "Anonymous analytics" toggle omitted (no analytics in v1).
-
-                  const SizedBox(height: 14),
-
-                  // --- DANGER ZONE section ---
-                  const LumenSectionLabel('Danger zone'),
-                  const SizedBox(height: 6),
-                  _SettingsNavRow(
-                    label: 'Delete all data',
-                    labelColor: c.accent,
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  // Warrant-canary notice (reproduced from mockup as-is)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: c.sageSoft,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '✦ Lumen has never received a data request',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w400,
-                        color: c.sage,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
+              ],
             ),
           ),
         ),
@@ -142,92 +162,109 @@ class _SettingsToggleRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: c.input,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: c.border),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
-                    color: c.ink,
-                  ),
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 2),
+    // MergeSemantics: label + subtitle read as one unit. _MiniToggle is
+    // documented visual-only (no onTap anywhere on this row today), so it is
+    // safe to merge in too — unlike profile_screen.dart's _InfoRow, there is
+    // no independently-actionable descendant here to protect.
+    return MergeSemantics(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: c.input,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: c.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Text(
-                    subtitle!,
+                    label,
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 12,
                       fontWeight: FontWeight.w400,
-                      color: c.muted,
+                      color: c.ink,
                     ),
                   ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w400,
+                        color: c.muted,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          _MiniToggle(enabled: enabled),
-        ],
+            _MiniToggle(enabled: enabled),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// A settings row showing a label and a static value string on the right.
+/// A settings row showing a label and a static value string on the right,
+/// with an optional trailing icon beside the value (e.g. a check mark).
 class _SettingsInfoRow extends StatelessWidget {
   const _SettingsInfoRow({
     required this.label,
     required this.value,
     required this.valueColor,
+    this.trailingIcon,
   });
 
   final String label;
   final String value;
   final Color valueColor;
+  final Widget? trailingIcon;
 
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: c.input,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: c.border),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
+    // MergeSemantics: label + value (+ decorative icon, silent by default)
+    // read as one unit, e.g. "Encryption status, AES-256".
+    return MergeSemantics(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: c.input,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: c.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  color: c.ink,
+                ),
+              ),
+            ),
+            Text(
+              value,
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w400,
-                color: c.ink,
+                color: valueColor,
               ),
             ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-              color: valueColor,
-            ),
-          ),
-        ],
+            if (trailingIcon != null) ...[
+              const SizedBox(width: 4),
+              trailingIcon!,
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -235,10 +272,7 @@ class _SettingsInfoRow extends StatelessWidget {
 
 /// A settings row with a label and a right-chevron (navigation intent).
 class _SettingsNavRow extends StatelessWidget {
-  const _SettingsNavRow({
-    required this.label,
-    this.labelColor,
-  });
+  const _SettingsNavRow({required this.label, this.labelColor});
 
   final String label;
   final Color? labelColor;
@@ -247,34 +281,32 @@ class _SettingsNavRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
     final textColor = labelColor ?? c.ink;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: c.input,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: c.border),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
-                color: textColor,
+    // MergeSemantics + a decorative (silent) chevron Icon: this row has no
+    // destination screen wired up yet (see privacy_screen_semantics_test.dart)
+    // so it stays informational rather than a fabricated button.
+    return MergeSemantics(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: c.input,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: c.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  color: textColor,
+                ),
               ),
             ),
-          ),
-          Text(
-            '›',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w400,
-              color: textColor,
-            ),
-          ),
-        ],
+            Icon(Icons.chevron_right, size: 16, color: textColor),
+          ],
+        ),
       ),
     );
   }
@@ -290,8 +322,7 @@ class _MiniToggle extends StatelessWidget {
     final c = Theme.of(context).extension<LumenColors>()!;
     // OFF track: a low-opacity muted tint — visible in both light and dark themes
     // without referencing hard-coded brand hex. ON track: full accent colour.
-    final trackColor =
-        enabled ? c.accent : c.muted.withValues(alpha: 0.35);
+    final trackColor = enabled ? c.accent : c.muted.withValues(alpha: 0.35);
     // Thumb: surface colour — contrasts clearly against both accent (ON) and the
     // muted tint (OFF) in light AND dark themes.
     final thumbColor = c.surface;

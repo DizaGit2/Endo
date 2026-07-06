@@ -124,22 +124,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       return lumenRedirect(authStatus, state.uri.path);
     },
     routes: [
-      GoRoute(
-        path: Routes.splash,
-        builder: (_, _) => const _SplashScreen(),
-      ),
-      GoRoute(
-        path: Routes.welcome,
-        builder: (_, _) => const WelcomeScreen(),
-      ),
-      GoRoute(
-        path: Routes.account,
-        builder: (_, _) => const AccountScreen(),
-      ),
-      GoRoute(
-        path: Routes.profile,
-        builder: (_, _) => const ProfileScreen(),
-      ),
+      GoRoute(path: Routes.splash, builder: (_, _) => const _SplashScreen()),
+      GoRoute(path: Routes.welcome, builder: (_, _) => const WelcomeScreen()),
+      GoRoute(path: Routes.account, builder: (_, _) => const AccountScreen()),
+      GoRoute(path: Routes.profile, builder: (_, _) => const ProfileScreen()),
     ],
   );
 });
@@ -160,7 +148,10 @@ class _SplashScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       body: Center(
-        child: CircularProgressIndicator(color: scheme.primary),
+        child: CircularProgressIndicator(
+          color: scheme.primary,
+          semanticsLabel: 'Loading',
+        ),
       ),
     );
   }

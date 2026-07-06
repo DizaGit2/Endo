@@ -27,120 +27,135 @@ class HelpAboutScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                  // Back affordance row (icon + section tag)
-                  Row(
+                // Back affordance row (icon + section tag)
+                Row(
+                  children: [
+                    Icon(Icons.chevron_left, color: c.muted, size: 22),
+                    const SizedBox(width: 2),
+                    const LumenSectionLabel(
+                      'Settings',
+                      fontSize: 11,
+                      letterSpacing: 1.5,
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 4),
+
+                // Screen title
+                Text(
+                  'Help & about',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w500,
+                    color: c.ink,
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                // App identity card
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: c.input,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: c.border),
+                  ),
+                  child: Column(
                     children: [
-                      Icon(Icons.chevron_left, color: c.muted, size: 22),
-                      const SizedBox(width: 2),
-                      const LumenSectionLabel(
-                          'Settings',
+                      // Lumen icon — decorative brand mark (no semantics
+                      // label; the "Lumen" wordmark text below carries the
+                      // card's accessible name).
+                      Icon(Icons.auto_awesome, size: 32, color: c.accent),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Lumen',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                          color: c.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Version 1.0 · build 142',
+                        style: TextStyle(
                           fontSize: 11,
-                          letterSpacing: 1.5),
+                          fontWeight: FontWeight.w400,
+                          color: c.muted,
+                        ),
+                      ),
                     ],
                   ),
+                ),
 
-                  const SizedBox(height: 4),
+                const SizedBox(height: 14),
 
-                  // Screen title
-                  Text(
-                    'Help & about',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500,
-                      color: c.ink,
-                    ),
+                // --- SUPPORT section ---
+                const LumenSectionLabel('Support'),
+                const SizedBox(height: 6),
+                const _NavRow(label: 'Quick start guide'),
+                const SizedBox(height: 5),
+                const _NavRow(label: 'How predictions work'),
+                const SizedBox(height: 5),
+                const _NavRow(label: 'Endo resources'),
+                const SizedBox(height: 5),
+                const _NavRow(label: 'Contact support'),
+
+                const SizedBox(height: 14),
+
+                // --- LEGAL section ---
+                const LumenSectionLabel('Legal'),
+                const SizedBox(height: 6),
+                const _NavRow(label: 'Privacy policy'),
+                const SizedBox(height: 5),
+                const _NavRow(label: 'Terms of service'),
+                const SizedBox(height: 5),
+                const _NavRow(label: 'Open source licenses'),
+
+                const SizedBox(height: 14),
+
+                // Footer notice (reproduced from mockup as-is, '✦' dingbat
+                // replaced by an inline Icons.auto_awesome via WidgetSpan so
+                // it stays inline with the centered, wrapping sentence).
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
                   ),
-
-                  const SizedBox(height: 14),
-
-                  // App identity card
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: c.input,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: c.border),
-                    ),
-                    child: Column(
+                  decoration: BoxDecoration(
+                    color: c.sageSoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text.rich(
+                    TextSpan(
                       children: [
-                        // Lumen icon — asterism glyph in accent
-                        Text(
-                          '✦',
-                          style: TextStyle(
-                            fontSize: 32,
-                            color: c.accent,
-                            height: 1,
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: Icon(
+                            Icons.auto_awesome,
+                            size: 12,
+                            color: c.sage,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Lumen',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                            color: c.ink,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Version 1.0 · build 142',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w400,
-                            color: c.muted,
-                          ),
+                        const TextSpan(
+                          text:
+                              '  Made with care for everyone who\'s been told it\'s just cramps',
                         ),
                       ],
                     ),
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  // --- SUPPORT section ---
-                  const LumenSectionLabel('Support'),
-                  const SizedBox(height: 6),
-                  const _NavRow(label: 'Quick start guide'),
-                  const SizedBox(height: 5),
-                  const _NavRow(label: 'How predictions work'),
-                  const SizedBox(height: 5),
-                  const _NavRow(label: 'Endo resources'),
-                  const SizedBox(height: 5),
-                  const _NavRow(label: 'Contact support'),
-
-                  const SizedBox(height: 14),
-
-                  // --- LEGAL section ---
-                  const LumenSectionLabel('Legal'),
-                  const SizedBox(height: 6),
-                  const _NavRow(label: 'Privacy policy'),
-                  const SizedBox(height: 5),
-                  const _NavRow(label: 'Terms of service'),
-                  const SizedBox(height: 5),
-                  const _NavRow(label: 'Open source licenses'),
-
-                  const SizedBox(height: 14),
-
-                  // Footer notice (reproduced from mockup as-is)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: c.sageSoft,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '✦ Made with care for everyone who\'s been told it\'s just cramps',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w400,
-                        color: c.sage,
-                      ),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w400,
+                      color: c.sage,
                     ),
                   ),
-                ],
+                ),
+              ],
             ),
           ),
         ),
@@ -153,7 +168,8 @@ class HelpAboutScreen extends StatelessWidget {
 // Private helper widget
 // ---------------------------------------------------------------------------
 
-/// A simple navigation list row with label on left and '›' chevron on right.
+/// A simple navigation list row with a label on the left and a decorative
+/// chevron Icon on the right.
 class _NavRow extends StatelessWidget {
   const _NavRow({required this.label});
   final String label;
@@ -161,34 +177,32 @@ class _NavRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: c.input,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: c.border),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
-                color: c.ink,
+    // MergeSemantics + a silent chevron Icon: none of these rows has a
+    // destination screen wired up yet (see help_about_screen_semantics_test.dart)
+    // so they stay informational rather than fabricated buttons.
+    return MergeSemantics(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: c.input,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: c.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  color: c.ink,
+                ),
               ),
             ),
-          ),
-          Text(
-            '›',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w400,
-              color: c.muted,
-            ),
-          ),
-        ],
+            Icon(Icons.chevron_right, size: 16, color: c.muted),
+          ],
+        ),
       ),
     );
   }
