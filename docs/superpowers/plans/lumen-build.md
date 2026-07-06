@@ -81,7 +81,7 @@ Safety-critical (deep review): **P1, P2, P6, P7b**. P3c's crypto/JWT/EmailHash c
 - **DEK is server-held, NOT password-derived** (background jobs decrypt while the user is offline). Lab PDFs are encrypted **server-side** (decision D5). The client never holds the DEK.
 - **Erasure = crypto-shred:** deleting `user_keys` makes all the user's ciphertext permanently unreadable; object-storage objects under `{user_id}/` are also physically deleted **once the labs store exists (the `CryptoShredJob` MinIO branch is a tracked `TODO(P7a)` no-op until then)**.
 - **.NET 10** (pinned via `global.json`). **Online-only client** (reads cache in Hive, writes never queue). Keycloak realm **`lumen`**.
-- **Determinism:** `TimeProvider` everywhere (build-enforced ban on ambient clocks via BannedApiAnalyzers — **lands in P3c**; remove this parenthetical when it does); no live LLM in CI (record-replay); no `DateTime.UtcNow` in domain/app code.
+- **Determinism:** `TimeProvider` everywhere (build-enforced: BannedApiAnalyzers RS0030 over backend/src); no live LLM in CI (record-replay); no `DateTime.UtcNow` in domain/app code.
 - **Reference data** (`ref_hormone_range`, `ref_medication`, `ref_insight_rule`) is seeded via migration with `valid_from` + provenance, and is the single source of truth; the inference engine reads `ref_insight_rule` params, never hard-coded magic numbers.
 
 ---
