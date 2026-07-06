@@ -13,9 +13,15 @@ Future<void> main() async {
   await initializeDateFormatting('en_US');
 
   // Online-only encrypted cache: init Hive at the Flutter default path, open the
-  // encrypted box, and expose it via cacheStoreProvider before any /me read.
+  // encrypted box, and expose it via a root ProviderScope override of
+  // cacheStoreProvider before any /me read.
   await Hive.initFlutter();
-  setCacheStore(await initHive());
+  final store = await initHive();
 
-  runApp(const ProviderScope(child: LumenApp()));
+  runApp(
+    ProviderScope(
+      overrides: [cacheStoreProvider.overrideWithValue(store)],
+      child: const LumenApp(),
+    ),
+  );
 }
