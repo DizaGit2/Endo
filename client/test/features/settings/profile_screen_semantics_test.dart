@@ -16,15 +16,19 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
+import 'package:lumen/core/auth/token_store.dart';
 import 'package:lumen/core/cache/cached_query.dart';
+import 'package:lumen/core/cache/hive_boot.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/theme/lumen_theme.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
+import 'package:mocktail/mocktail.dart';
 
 // ---------------------------------------------------------------------------
 // Sample data + fakes
@@ -75,6 +79,10 @@ class _NetworkRequiredProfileController extends ProfileController {
       const NetworkRequired<MeResponse>(NetworkFailure());
 }
 
+class _MockTokenStore extends Mock implements TokenStore {}
+
+class _MockCacheStore extends Mock implements CacheStore {}
+
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
@@ -115,6 +123,39 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets(
+    'Edit button carries a tap action assistive tech can actually invoke '
+    '(excludeSemantics:true on the wrapping Semantics node hides the '
+    "GestureDetector's onTap from the tree unless Semantics itself is given "
+    'one)',
+    (tester) async {
+      final handle = tester.ensureSemantics();
+
+      await tester.pumpWidget(_wrap(_FreshProfileController.new));
+      await tester.pumpAndSettle();
+
+      final node = tester.getSemantics(find.bySemanticsLabel('Edit'));
+      expect(
+        node.getSemanticsData().hasAction(SemanticsAction.tap),
+        isTrue,
+        reason:
+            'The button-flagged, labeled node has no tap action — a screen '
+            'reader\'s "activate" gesture has nothing to invoke.',
+      );
+
+      // Drive it exactly as assistive tech would: dispatch
+      // SemanticsAction.tap through the semantics tree (NOT a raw pointer
+      // tap on the GestureDetector underneath). This throws a StateError if
+      // the node doesn't support the action, which is precisely the bug
+      // this test guards against.
+      tester.semantics.tap(find.semantics.byLabel('Edit'));
+      await tester.pump();
+
+      expect(find.text('Edit display name'), findsOneWidget);
+      handle.dispose();
+    },
+  );
+
   testWidgets('Sign out row exposes button semantics with label "Sign out"', (
     tester,
   ) async {
@@ -128,6 +169,67 @@ void main() {
     expect(data.flagsCollection.isButton, isTrue);
     handle.dispose();
   });
+
+  testWidgets(
+    'Sign out row carries a tap action that actually invokes logout() '
+    '(excludeSemantics:true on the wrapping Semantics node hides the '
+    "GestureDetector's onTap from the tree unless Semantics itself is given "
+    'one)',
+    (tester) async {
+      final handle = tester.ensureSemantics();
+
+      // Real AuthController.logout() (only build() is faked above) reads
+      // TokenStore/CacheStore via ref — stub them with trivial mocks so the
+      // async chain resolves deterministically in one microtask hop each,
+      // instead of depending on platform-channel/MissingPluginException
+      // timing from the real FlutterSecureStorage-backed TokenStore.
+      final store = _MockTokenStore();
+      final cache = _MockCacheStore();
+      when(() => store.readIdToken()).thenAnswer((_) async => null);
+      when(() => store.clear()).thenAnswer((_) async {});
+      when(() => cache.purge()).thenAnswer((_) async => 0);
+
+      final container = ProviderContainer(
+        overrides: [
+          authStatusProvider.overrideWith(() => _FakeAuthController()),
+          profileControllerProvider.overrideWith(_FreshProfileController.new),
+          tokenStoreProvider.overrideWithValue(store),
+          cacheStoreProvider.overrideWithValue(cache),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: lumenTheme(Brightness.light),
+            home: const ProfileScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final node = tester.getSemantics(find.bySemanticsLabel('Sign out'));
+      expect(
+        node.getSemanticsData().hasAction(SemanticsAction.tap),
+        isTrue,
+        reason:
+            'The button-flagged, labeled node has no tap action — a screen '
+            'reader\'s "activate" gesture has nothing to invoke.',
+      );
+
+      // Drive it for real: dispatch SemanticsAction.tap (assistive tech),
+      // not a raw pointer tap, and confirm logout() actually ran by
+      // observing the resulting AuthStatus transition.
+      tester.semantics.tap(find.semantics.byLabel('Sign out'));
+      await tester.pumpAndSettle();
+
+      expect(container.read(authStatusProvider), AuthStatus.unauthenticated);
+      verify(() => store.clear()).called(1);
+      handle.dispose();
+    },
+  );
 
   testWidgets(
     'Display name row merges label + value into one unit; Edit stays a '

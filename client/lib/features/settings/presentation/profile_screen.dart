@@ -444,13 +444,20 @@ class _EditButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Shared callback reference: excludeSemantics:true drops the descendant
+    // GestureDetector's SemanticsAction.tap from the tree entirely, so
+    // Semantics itself needs its own onTap — wired to the SAME callback (not
+    // a second closure) so pointer taps and assistive-tech activation always
+    // do the same thing.
+    void onTap() => _showEditDialog(context, ref);
     return Semantics(
       button: true,
       label: 'Edit',
       container: true,
       excludeSemantics: true,
+      onTap: onTap,
       child: GestureDetector(
-        onTap: () => _showEditDialog(context, ref),
+        onTap: onTap,
         child: Text(
           'Edit',
           style: TextStyle(
@@ -500,6 +507,10 @@ class _EditButton extends ConsumerWidget {
               SnackBar(
                 // liveRegion: true — same reasoning as _ErrorBanner/_ErrorBody:
                 // announce the failure as it appears.
+                // TODO(P4b): cover this liveRegion with a widget test —
+                // driving the edit dialog crashes the harness on a
+                // pre-existing AlertDialog/TextField teardown bug
+                // (reproduces on unmodified code, plain Cancel tap).
                 content: Semantics(
                   liveRegion: true,
                   child: const Text(
@@ -527,13 +538,20 @@ class _SignOutRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Shared callback reference: excludeSemantics:true drops the descendant
+    // GestureDetector's SemanticsAction.tap from the tree entirely, so
+    // Semantics itself needs its own onTap — wired to the SAME callback (not
+    // a second closure) so pointer taps and assistive-tech activation always
+    // do the same thing.
+    void onTap() => ref.read(authStatusProvider.notifier).logout();
     return Semantics(
       button: true,
       label: 'Sign out',
       container: true,
       excludeSemantics: true,
+      onTap: onTap,
       child: GestureDetector(
-        onTap: () => ref.read(authStatusProvider.notifier).logout(),
+        onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(

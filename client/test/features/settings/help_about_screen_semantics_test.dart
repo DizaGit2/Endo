@@ -31,7 +31,7 @@ void main() {
     },
   );
 
-  testWidgets('App identity card icon is decorative (no semantics label)', (
+  testWidgets('App identity card exposes the wordmark label', (
     tester,
   ) async {
     final handle = tester.ensureSemantics();
