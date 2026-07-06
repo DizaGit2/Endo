@@ -48,7 +48,7 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 | P2 ⚠ | Crypto-shred + Hangfire | DONE | phase/02-shred | [#1](https://github.com/DizaGit2/Endo/pull/1) | 2026-06-14 | merged to main, tag `phase-02`; 57 tests; multi-agent /review + all fixes applied |
 | P3a | Flutter foundation + theming + OpenAPI pipeline | DONE | phase/03a-client-foundation | tag `phase-03a` | 2026-06-14 | merged to main (merge `39acac4`); 106 client + 3 OpenAPI tests; cov 97.60% |
 | P3b | Client OIDC + cache + screens 2/31 | DONE | phase/03b-client-spine | [#2](https://github.com/DizaGit2/Endo/pull/2) | 2026-07-06 | merged 2026-06-15 (ff, PR #2); tag `phase-03b` @ `6d122d4` cut retroactively r13; +4 post-merge fixes on main (see STATUS); iOS-redirect + screen-31-retry corrections → P3c, onboarding-gate → P4b |
-| P3c ⚠* | Consolidation & hardening (perimeter, crypto dedup, client/CI debt) | NEEDS_REVIEW | phase/03c-hardening | — | — | T1–T14 done; 17 commits; per-task two-stage review + whole-branch /code-review high; gates P4a |
+| P3c ⚠* | Consolidation & hardening (perimeter, crypto dedup, client/CI debt) | NEEDS_REVIEW | phase/03c-hardening | [#3](https://github.com/DizaGit2/Endo/pull/3) | — | T1–T14 done; 17 commits; per-task two-stage review + whole-branch /code-review high; gates P4a |
 | P4a | Backend Onboarding-rest + Cycle + Symptoms | TODO | — | — | — | needs P3c DONE + decision session (D-02, D-08..D-14, B15/B16) + definitions |
 | P4b | Flutter screens 3–14, 32 | TODO | — | — | — | |
 | P5 | Body + Activity + Treatment | TODO | — | — | — | needs D-15/D-16 |
