@@ -367,7 +367,7 @@ grafana.lumen.example {
 ### CI/CD
 
 - GitHub Actions workflow: build `api` image → push to GHCR → SSH to main VPS → `docker compose pull && docker compose up -d`.
-- A second workflow runs backend unit + integration tests (Testcontainers-Postgres, mocked Vault) on every PR.
+- A second workflow runs backend unit + integration tests on every PR (compose LiveStack: CI brings up the real Postgres/Keycloak/Vault services from `deploy/docker-compose.yml` — the canonical strategy per plan §4, 2026-07-06; not Testcontainers, and Vault is real, not mocked).
 
 ### Observability sidecar
 

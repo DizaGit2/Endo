@@ -4,7 +4,7 @@
 >
 > Legend: 🔴 blocks the phase · 🟠 strong default, low risk to accept.
 >
-> **Adopted 2026-06-01 (defaults, to unblock P1):** **D-01** password policy, **D-02** consent capture, **D-03** default locale = their recommended defaults below. Implemented as versioned/nullable so legal can tighten without a migration.
+> **Adopted 2026-06-01 (defaults, to unblock P1):** password policy, consent capture, and default locale (**D-03**) = their recommended defaults. The first two predate the current numbering and are recorded as **D-24/D-25** at the end of this sheet — the plan's old "D-01/D-02" labels for them were renumbered in r13 (this sheet's D-01/D-02 are social-login and onboarding-complete). Implemented as versioned/nullable so legal can tighten without a migration.
 
 ---
 
@@ -142,5 +142,17 @@
 
 ---
 
+## Adopted pre-P1 (recorded r13 — these predate the numbering above)
+
+### D-24 🔴 Password policy (end users)
+**Recommended default:** min 12 / max 128 chars, any Unicode, block breached passwords, no forced rotation. Keycloak enforces what it can natively; server-side validation mirrors the 12–128 bounds.
+**Decision:** ✅ adopted 2026-06-01 (implemented in P1: server-side 12–128 validation + realm policy; realm raised to `length(12) and maxLength(128) and notUsername and notEmail` in P3c; breached-password blocking = P11, needs a Keycloak provider).
+
+### D-25 🔴 Consent capture at onboarding
+**Recommended default:** `POST /onboarding/start` persists a versioned consent record (policy version string + timestamp); text/version can be a placeholder until legal L-01/L-02 land, but the field exists from day one.
+**Decision:** ✅ adopted 2026-06-01 (implemented in P1: `consent_records` row written at onboarding; FK survives crypto-shred as legal proof).
+
+---
+
 ### How to use
-Fill each **Decision** line (or just `✅` to accept the default). I'll then (1) update `ARCHITECTURE.md §A` + the gap register status, and (2) make sure each phase's plan tasks reflect the resolved value. Anything left blank stays a blocker for its phase.
+Fill each **Decision** line (or just `✅` to accept the default). I'll then (1) update `ARCHITECTURE.md §A` + the gap register status, and (2) make sure each phase's plan tasks reflect the resolved value. Anything left blank stays a blocker for its phase. **IDs are append-only — never renumber existing decisions** (cross-references live in the plan, STATUS blocks, and `ARCHITECTURE.md §A`).
