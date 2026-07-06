@@ -20,9 +20,17 @@ public class StartupGuardsTests
     private const string RealConnectionString =
         "Host=prod-db.internal;Port=5432;Database=lumen;Username=lumen_app;Password=Tr0ub4dor&3-Correct-Horse";
 
-    private static VaultOptions RealVault() => new() { Token = "s.9f8e7d6c5b4a3210-real-vault-token" };
+    private static VaultOptions RealVault() => new()
+    {
+        Address = "https://vault.prod.example",
+        Token = "s.9f8e7d6c5b4a3210-real-vault-token",
+    };
 
-    private static KeycloakOptions RealKeycloak() => new() { AdminClientSecret = "8f14e45f-real-keycloak-secret" };
+    private static KeycloakOptions RealKeycloak() => new()
+    {
+        BaseUrl = "https://auth.prod.example",
+        AdminClientSecret = "8f14e45f-real-keycloak-secret",
+    };
 
     // --- connection string ----------------------------------------------------------
 
@@ -58,6 +66,23 @@ public class StartupGuardsTests
         ex.Message.ShouldNotContain("Password=postgres"); // names the key, never the value
     }
 
+    // --- Vault address ----------------------------------------------------------
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("http://127.0.0.1:8200")]
+    public void NonDevelopment_missing_or_sentinel_vault_address_throws_naming_it(string? address)
+    {
+        var act = () => StartupGuards.EnsureNonDevelopmentSecrets(
+            isDevelopment: false,
+            connectionString: RealConnectionString,
+            vault: new VaultOptions { Address = address!, Token = RealVault().Token },
+            keycloak: RealKeycloak());
+
+        Should.Throw<InvalidOperationException>(act).Message.ShouldContain("Vault:Address");
+    }
+
     // --- Vault token ----------------------------------------------------------
 
     [Theory]
@@ -69,7 +94,7 @@ public class StartupGuardsTests
         var act = () => StartupGuards.EnsureNonDevelopmentSecrets(
             isDevelopment: false,
             connectionString: RealConnectionString,
-            vault: new VaultOptions { Token = token! },
+            vault: new VaultOptions { Address = RealVault().Address, Token = token! },
             keycloak: RealKeycloak());
 
         Should.Throw<InvalidOperationException>(act).Message.ShouldContain("Vault:Token");
@@ -81,10 +106,27 @@ public class StartupGuardsTests
         var act = () => StartupGuards.EnsureNonDevelopmentSecrets(
             isDevelopment: false,
             connectionString: RealConnectionString,
-            vault: new VaultOptions { Token = "root" },
+            vault: new VaultOptions { Address = RealVault().Address, Token = "root" },
             keycloak: RealKeycloak());
 
         Should.Throw<InvalidOperationException>(act).Message.ShouldNotContain("root");
+    }
+
+    // --- Keycloak base URL ----------------------------------------------------------
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("http://localhost:8080")]
+    public void NonDevelopment_missing_or_sentinel_keycloak_base_url_throws_naming_it(string? baseUrl)
+    {
+        var act = () => StartupGuards.EnsureNonDevelopmentSecrets(
+            isDevelopment: false,
+            connectionString: RealConnectionString,
+            vault: RealVault(),
+            keycloak: new KeycloakOptions { BaseUrl = baseUrl!, AdminClientSecret = RealKeycloak().AdminClientSecret });
+
+        Should.Throw<InvalidOperationException>(act).Message.ShouldContain("Keycloak:BaseUrl");
     }
 
     // --- Keycloak admin client secret ----------------------------------------------------------
@@ -99,7 +141,7 @@ public class StartupGuardsTests
             isDevelopment: false,
             connectionString: RealConnectionString,
             vault: RealVault(),
-            keycloak: new KeycloakOptions { AdminClientSecret = secret! });
+            keycloak: new KeycloakOptions { BaseUrl = RealKeycloak().BaseUrl, AdminClientSecret = secret! });
 
         Should.Throw<InvalidOperationException>(act).Message.ShouldContain("Keycloak:AdminClientSecret");
     }
@@ -111,7 +153,7 @@ public class StartupGuardsTests
             isDevelopment: false,
             connectionString: RealConnectionString,
             vault: RealVault(),
-            keycloak: new KeycloakOptions { AdminClientSecret = "dev-api-secret" });
+            keycloak: new KeycloakOptions { BaseUrl = RealKeycloak().BaseUrl, AdminClientSecret = "dev-api-secret" });
 
         Should.Throw<InvalidOperationException>(act).Message.ShouldNotContain("dev-api-secret");
     }

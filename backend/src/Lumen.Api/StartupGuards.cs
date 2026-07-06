@@ -15,7 +15,9 @@ public static class StartupGuards
 {
     // Mirrors the dev defaults on VaultOptions/KeycloakOptions and Program.cs's hardcoded
     // connection-string fallback — the exact values a non-Development environment must never carry.
+    private const string DevVaultAddress = "http://127.0.0.1:8200";
     private const string DevVaultToken = "root";
+    private const string DevKeycloakBaseUrl = "http://localhost:8080";
     private const string DevKeycloakAdminClientSecret = "dev-api-secret";
     private const string DevConnectionStringSentinel = "Password=postgres";
 
@@ -39,8 +41,14 @@ public static class StartupGuards
         if (connectionString.Contains(DevConnectionStringSentinel, StringComparison.Ordinal))
             throw Fail("ConnectionStrings:Lumen is still set to its dev sentinel value");
 
+        if (string.IsNullOrWhiteSpace(vault.Address) || vault.Address == DevVaultAddress)
+            throw Fail("Vault:Address is not configured (missing or still the dev sentinel value)");
+
         if (string.IsNullOrWhiteSpace(vault.Token) || vault.Token == DevVaultToken)
             throw Fail("Vault:Token is not configured (missing or still the dev sentinel value)");
+
+        if (string.IsNullOrWhiteSpace(keycloak.BaseUrl) || keycloak.BaseUrl == DevKeycloakBaseUrl)
+            throw Fail("Keycloak:BaseUrl is not configured (missing or still the dev sentinel value)");
 
         if (string.IsNullOrWhiteSpace(keycloak.AdminClientSecret) || keycloak.AdminClientSecret == DevKeycloakAdminClientSecret)
             throw Fail("Keycloak:AdminClientSecret is not configured (missing or still the dev sentinel value)");
