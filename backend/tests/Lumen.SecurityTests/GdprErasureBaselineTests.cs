@@ -18,19 +18,15 @@ namespace Lumen.SecurityTests;
 /// is deleted the ciphertext is permanently unreadable, the erasure is idempotent (exactly one
 /// audit row), and the job never emits userId, email, or DEK material in its log output.
 /// Require the dev compose stack (Postgres :55432, Vault :8200).
+///
+/// The pure in-memory negative control for the PII-scan mechanism lives in
+/// <see cref="PiiLogScanNegativeControlTests"/> below (same file) — it needs no compose stack, so
+/// it deliberately does NOT carry the LiveStack trait. Both classes share capture plumbing via
+/// <see cref="PiiLogScanCapture"/>.
 /// </summary>
 [Trait("Category", "LiveStack")]
 public class GdprErasureBaselineTests
 {
-    // ── in-memory Serilog sink used by the PII-scrub test ────────────────────────────────────
-
-    private sealed class CapturingSink : ILogEventSink
-    {
-        private readonly System.Collections.Concurrent.ConcurrentBag<LogEvent> _events = [];
-        public IReadOnlyCollection<LogEvent> Events => _events;
-        public void Emit(LogEvent logEvent) => _events.Add(logEvent);
-    }
-
     // ── helpers ───────────────────────────────────────────────────────────────────────────────
 
     private static CryptoShredJob NewJob(LumenDbContext db, ILogger<CryptoShredJob>? logger = null)
@@ -207,7 +203,7 @@ public class GdprErasureBaselineTests
             var keyRow = await db.UserKeys.AsNoTracking().SingleAsync(k => k.UserId == userId);
             var wrappedDekStr = System.Text.Encoding.ASCII.GetString(keyRow.WrappedDek);
 
-            var (msLogger, sink) = NewRawCapturingLogger<CryptoShredJob>();
+            var (msLogger, sink) = PiiLogScanCapture.NewRawCapturingLogger<CryptoShredJob>();
 
             // Act — run the job with the raw (un-enriched) capturing logger.
             await NewJob(db, msLogger).ExecuteAsync(userId);
@@ -215,7 +211,7 @@ public class GdprErasureBaselineTests
             sink.Events.ShouldNotBeEmpty("job must emit at least one log event (outcome message)");
 
             // Assert: scan every raw event for the userId, email, and wrapped-DEK material.
-            EventsContainAny(sink.Events, userId.ToString(), userEmail, wrappedDekStr)
+            PiiLogScanCapture.EventsContainAny(sink.Events, userId.ToString(), userEmail, wrappedDekStr)
                 .ShouldBeFalse("job log output must contain no userId, email, or wrapped-DEK material");
         }
         finally
@@ -223,7 +219,16 @@ public class GdprErasureBaselineTests
             await CleanupAsync(userId);
         }
     }
+}
 
+/// <summary>
+/// Pure in-memory negative control for the PII-scan mechanism used by
+/// <see cref="GdprErasureBaselineTests.Job_logs_contain_no_userId_email_or_dek_material"/>. No DB, no
+/// Vault — deliberately NOT tagged <c>[Trait("Category","LiveStack")]</c> so it runs without the dev
+/// compose stack.
+/// </summary>
+public class PiiLogScanNegativeControlTests
+{
     // ── Test 4b (negative control): the capture+scan mechanism can actually detect a leak ────────
 
     [Fact]
@@ -236,23 +241,36 @@ public class GdprErasureBaselineTests
         var userId = Guid.NewGuid();
         const string userEmail = "leak@example.com";
 
-        var (logger, sink) = NewRawCapturingLogger<GdprErasureBaselineTests>();
+        var (logger, sink) = PiiLogScanCapture.NewRawCapturingLogger<PiiLogScanNegativeControlTests>();
 
         // Interpolated leak (in the rendered message) AND structured leak (a {UserId} property).
         logger.LogInformation("leaking userId={UserId} and {Email}", userId, userEmail);
 
         sink.Events.ShouldNotBeEmpty();
-        EventsContainAny(sink.Events, userId.ToString(), userEmail, wrappedDek: "n/a")
+        PiiLogScanCapture.EventsContainAny(sink.Events, userId.ToString(), userEmail, wrappedDek: "n/a")
             .ShouldBeTrue("the capture+scan mechanism must detect a deliberate userId/email leak");
     }
+}
 
-    // ── PII-scan plumbing shared by Test 4 and its negative control ──────────────────────────────
+/// <summary>
+/// PII-scan capture plumbing shared by <see cref="GdprErasureBaselineTests"/>'s Test 4 (LiveStack)
+/// and <see cref="PiiLogScanNegativeControlTests"/>'s negative control (stackless) — extracted here,
+/// outside both classes, so the stackless test does not need to inherit the LiveStack-tagged class.
+/// </summary>
+internal static class PiiLogScanCapture
+{
+    public sealed class CapturingSink : ILogEventSink
+    {
+        private readonly System.Collections.Concurrent.ConcurrentBag<LogEvent> _events = [];
+        public IReadOnlyCollection<LogEvent> Events => _events;
+        public void Emit(LogEvent logEvent) => _events.Add(logEvent);
+    }
 
     /// <summary>
     /// Builds an <see cref="ILogger{T}"/> writing to a fresh <see cref="CapturingSink"/> with NO
     /// PiiRedactionEnricher in the pipeline, so captured events are the RAW events the caller emitted.
     /// </summary>
-    private static (ILogger<T> logger, CapturingSink sink) NewRawCapturingLogger<T>()
+    public static (ILogger<T> logger, CapturingSink sink) NewRawCapturingLogger<T>()
     {
         var sink = new CapturingSink();
         Serilog.ILogger serilogLogger = new LoggerConfiguration()
@@ -266,7 +284,7 @@ public class GdprErasureBaselineTests
     /// True if ANY captured event's rendered message OR any structured property value contains the
     /// userId, email, or wrapped-DEK material. Catches both interpolated and structured-property leaks.
     /// </summary>
-    private static bool EventsContainAny(
+    public static bool EventsContainAny(
         IReadOnlyCollection<LogEvent> events, string userId, string email, string wrappedDek)
     {
         foreach (var ev in events)
