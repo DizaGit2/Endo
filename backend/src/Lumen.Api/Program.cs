@@ -1,12 +1,11 @@
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
-using System.Text;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Lumen.Api;
 using Lumen.Api.Auth;
 using Lumen.Api.Hangfire;
+using Lumen.Api.Onboarding;
 using Lumen.Application.Auth;
 using Lumen.Application.Crypto;
 using Lumen.Domain.Entities;
@@ -116,6 +115,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+// --- onboarding ---
+// Extracted from the /onboarding/start handler (P3c-T2) so validation/compensation are unit-testable.
+builder.Services.AddScoped<OnboardingService>();
+
 // Global per-user (else per-IP) rate limit — protects costly endpoints like POST /onboarding/start.
 var permitPerMinute = builder.Configuration.GetValue<int?>("RateLimit:PermitPerMinute") ?? 60;
 builder.Services.AddRateLimiter(options =>
@@ -191,101 +194,16 @@ app.MapGet("/health/ready", async (IConfiguration cfg) =>
 // Creates the Keycloak user, provisions the Vault-wrapped DEK, writes the encrypted profile + consent.
 app.MapPost("/onboarding/start", async (
     OnboardingStartRequest request,
-    LumenDbContext db,
-    IKeycloakAdmin keycloak,
-    IKeyWrapper keyWrapper,
-    IFieldCipher cipher,
-    VaultOptions vaultOptions,
-    TimeProvider clock,
+    OnboardingService onboarding,
     CancellationToken ct) =>
 {
-    if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
-        return Results.BadRequest(new { error = "email and password are required" });
-
-    // One canonical email form used for BOTH Keycloak (username/email) and the lookup hash.
-    var email = request.Email.Trim().ToLowerInvariant();
-    if (!System.Net.Mail.MailAddress.TryCreate(email, out var parsed) || parsed.Address != email)
-        return Results.BadRequest(new { error = "invalid email format" });
-    if (request.Password.Length is < 12 or > 128) // D-01 minimum; defense-in-depth with the realm policy
-        return Results.BadRequest(new { error = "password must be between 12 and 128 characters" });
-    if ((request.DisplayName?.Length ?? 0) > 200 || (request.Locale?.Length ?? 0) > 35 ||
-        (request.Timezone?.Length ?? 0) > 64 || (request.PolicyVersion?.Length ?? 0) > 64)
-        return Results.BadRequest(new { error = "a field exceeds its maximum length" });
-
-    var userId = await keycloak.CreateUserAsync(email, request.Password, ct);
-
-    try
+    var result = await onboarding.StartAsync(request, ct);
+    return result switch
     {
-        var now = clock.GetUtcNow();
-        var emailHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(email)));
-        var locale = string.IsNullOrWhiteSpace(request.Locale) ? "es-ES" : request.Locale;
-        var timezone = string.IsNullOrWhiteSpace(request.Timezone) ? "Europe/Madrid" : request.Timezone;
-
-        // Vault wrap + field encryption BEFORE the transaction, so we never hold a pooled DB connection
-        // across external HTTP round-trips. The plaintext DEK is zeroed before any DB work.
-        var dek = RandomNumberGenerator.GetBytes(32);
-        byte[] wrappedDek;
-        byte[]? displayNameEnc = null;
-        try
-        {
-            wrappedDek = await keyWrapper.WrapAsync(dek, ct);
-            if (!string.IsNullOrWhiteSpace(request.DisplayName))
-                displayNameEnc = cipher.EncryptString(request.DisplayName, dek);
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(dek);
-        }
-
-        // Atomic Lumen-side state — all rows commit together or not at all.
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-
-        db.Users.Add(new User
-        {
-            Id = userId,
-            EmailHash = emailHash,
-            Locale = locale,
-            Timezone = timezone,
-            CreatedAt = now,
-            UpdatedAt = now,
-        });
-        db.ConsentRecords.Add(new ConsentRecord
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            PolicyVersion = string.IsNullOrWhiteSpace(request.PolicyVersion) ? "v1-draft" : request.PolicyVersion,
-            Locale = locale,
-            ConsentedAt = now,
-        });
-        db.UserKeys.Add(new UserKey
-        {
-            UserId = userId,
-            WrappedDek = wrappedDek,
-            KeyVersion = 1,
-            VaultKeyName = vaultOptions.KeyName,
-            CreatedAt = now,
-        });
-        if (displayNameEnc is not null)
-        {
-            db.UserProfiles.Add(new UserProfileEnc
-            {
-                UserId = userId,
-                DisplayNameEnc = displayNameEnc,
-                CreatedAt = now,
-                UpdatedAt = now,
-            });
-        }
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return Results.Ok(new { userId });
-    }
-    catch
-    {
-        // The Keycloak identity was created but Lumen-side state failed — remove the orphan (best effort)
-        // so the email is not permanently bricked for sign-up.
-        try { await keycloak.DeleteUserAsync(userId, ct); } catch { /* compensation is best-effort */ }
-        throw;
-    }
+        OnboardingStartResult.Success success => Results.Ok(new { userId = success.UserId }),
+        OnboardingStartResult.Invalid invalid => Results.BadRequest(new { error = invalid.Error }),
+        _ => throw new System.Diagnostics.UnreachableException($"Unhandled {nameof(OnboardingStartResult)}: {result.GetType()}"),
+    };
 })
 .AllowAnonymous()
 .Produces<object>(StatusCodes.Status200OK)
