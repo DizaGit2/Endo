@@ -44,7 +44,7 @@ var connectionString = builder.Configuration.GetConnectionString("Lumen")
 builder.Services.AddDbContext<LumenDbContext>(o => o.UseNpgsql(connectionString));
 
 // --- background jobs (Hangfire) ---
-// Job classes land in later tasks; this only registers the runtime and secures the dashboard.
+// CryptoShredJob (GDPR erasure, §F) ships since P2; this registers the runtime and secures the dashboard.
 builder.Services.AddHangfire(cfg => cfg
     .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(connectionString)));
 // The background server is disabled in integration tests (Hangfire:EnableServer=false) so enqueued
@@ -92,7 +92,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             // prod hostname this is always true.
             ValidateIssuer = !builder.Environment.IsDevelopment(),
             ValidIssuer = keycloakOptions.Authority,
-            ValidateAudience = false, // TODO(P11): add a Keycloak audience mapper (aud=lumen-api), then validate
+            ValidateAudience = true,
+            ValidAudiences = [keycloakOptions.Audience],
             ValidateLifetime = true,
             NameClaimType = "sub",
             ValidAlgorithms = ["RS256"],

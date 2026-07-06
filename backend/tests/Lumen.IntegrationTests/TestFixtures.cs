@@ -71,4 +71,23 @@ internal static class TestFixtures
         var response = await http.PostAsync(KeycloakTokenUrl, form);
         return response.StatusCode;
     }
+
+    /// <summary>
+    /// Client-credentials grant on the <c>api</c> client — a service-account token (no end user), used to
+    /// prove the API rejects non-end-user tokens even though they now carry the same <c>aud=lumen-api</c>.
+    /// </summary>
+    public static async Task<string> GetServiceAccountTokenAsync()
+    {
+        using var http = new HttpClient();
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "client_credentials",
+            ["client_id"] = ApiClientId,
+            ["client_secret"] = ApiClientSecret,
+        });
+        var response = await http.PostAsync(KeycloakTokenUrl, form);
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return doc.RootElement.GetProperty("access_token").GetString()!;
+    }
 }
