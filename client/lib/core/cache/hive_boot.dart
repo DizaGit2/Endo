@@ -184,29 +184,23 @@ class CacheStore {
 // Riverpod provider
 // ---------------------------------------------------------------------------
 
-/// Holds the [CacheStore] singleton after boot.
-///
-/// Usage: set this during app startup (after [initHive]) via a
-/// [ProviderContainer] override or by calling
-/// `_cacheStoreHolder = store` before runApp.
-///
-/// The provider throws [StateError] if accessed before [setCacheStore] is
-/// called, which surfaces clearly in tests that forget to bootstrap.
-CacheStore? _cacheStoreHolder;
-
-/// Call this once in main() after [initHive] returns.
-void setCacheStore(CacheStore store) {
-  _cacheStoreHolder = store;
-}
-
 /// Provides the [CacheStore] singleton.
-final cacheStoreProvider = Provider<CacheStore>((ref) {
-  final store = _cacheStoreHolder;
-  if (store == null) {
-    throw StateError(
-      'CacheStore has not been initialised. '
-      'Call setCacheStore(await initHive(...)) before reading cacheStoreProvider.',
-    );
-  }
-  return store;
-});
+///
+/// This provider has no real default: the [CacheStore] can only be produced
+/// asynchronously (via [initHive]), so app startup MUST override it at the
+/// root [ProviderScope] once [initHive] resolves — see `main.dart`:
+/// ```dart
+/// final store = await initHive();
+/// runApp(ProviderScope(
+///   overrides: [cacheStoreProvider.overrideWithValue(store)],
+///   child: const LumenApp(),
+/// ));
+/// ```
+/// Tests override it the same way, per-container/per-ProviderScope, which
+/// keeps each test's cache fully isolated (no shared module-global state).
+/// Reading it un-overridden is a programmer error and fails loudly.
+final cacheStoreProvider = Provider<CacheStore>(
+  (_) => throw UnimplementedError(
+    'cacheStoreProvider must be overridden at the root ProviderScope',
+  ),
+);

@@ -44,7 +44,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   // ---------------------------------------------------------------------------
 
   Future<void> _register() async {
-    await ref.read(accountControllerProvider.notifier).register(
+    await ref
+        .read(accountControllerProvider.notifier)
+        .register(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text,
           displayName: _nameCtrl.text.trim(),
@@ -175,8 +177,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
                               textStyle: const TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w500,
@@ -190,6 +191,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
                                       color: c.surface,
+                                      semanticsLabel: 'Signing in',
                                     ),
                                   )
                                 : const Text('Continue'),
@@ -266,11 +268,7 @@ class _FieldLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w500,
-        color: color,
-      ),
+      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: color),
     );
   }
 }
@@ -309,8 +307,10 @@ class _InputField extends StatelessWidget {
         ),
         filled: true,
         fillColor: colors.input,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 13,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: colors.border),
@@ -339,21 +339,27 @@ class _ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: colors.accentSoft,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.accent.withValues(alpha: 0.3)),
-      ),
-      child: Text(
-        message,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w400,
-          color: colors.accent,
-          height: 1.4,
+    // liveRegion: true — a screen reader announces this banner as soon as it
+    // appears, rather than staying silent about a failed registration/sign-in
+    // attempt until the user happens to swipe onto it.
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: colors.accentSoft,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: colors.accent.withValues(alpha: 0.3)),
+        ),
+        child: Text(
+          message,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w400,
+            color: colors.accent,
+            height: 1.4,
+          ),
         ),
       ),
     );

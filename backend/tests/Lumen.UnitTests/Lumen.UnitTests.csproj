@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="NetArchTest.Rules" Version="1.3.2" />
     <PackageReference Include="Shouldly" Version="4.3.0" />
@@ -18,6 +19,20 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      EFCore.Sqlite 10.0.4 pulls SQLitePCLRaw.bundle_e_sqlite3/core/lib.e_sqlite3/provider.e_sqlite3
+      2.1.11 (NU1903, GHSA-2m69-gcr7-jv3q: bundled SQLite < 3.50.2 has a memory-corruption bug with
+      excess aggregate-query terms). No same-major patched release exists yet — SQLitePCLRaw 3.x
+      restructures the whole native-binary package family (new SourceGear.sqlite3 dependency, etc.),
+      which is too invasive to force here. Accepted risk: Sqlite is a test-only, in-memory,
+      dev-machine dependency (never shipped/used in production, which runs on Npgsql/Postgres), and
+      every SQL statement it executes is EF-generated from this test suite's own fixed LINQ — no
+      attacker-controlled SQL ever reaches it. Revisit when SQLitePCLRaw ships a compatible fix.
+    -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-2m69-gcr7-jv3q" />
   </ItemGroup>
 
   <ItemGroup>

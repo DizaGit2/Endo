@@ -11,6 +11,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.8" />
     <!-- Override transitive Newtonsoft.Json 11.0.1 pulled by Hangfire.Core (NU1903 high vuln). -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <!-- Override transitive Microsoft.OpenApi 2.4.1 pulled by Swashbuckle.AspNetCore (NU1903 high vuln, GHSA-v5pm-xwqc-g5wc). -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.0" />
   </ItemGroup>

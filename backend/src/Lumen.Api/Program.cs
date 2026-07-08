@@ -1,12 +1,11 @@
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
-using System.Text;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Lumen.Api;
 using Lumen.Api.Auth;
 using Lumen.Api.Hangfire;
+using Lumen.Api.Onboarding;
 using Lumen.Application.Auth;
 using Lumen.Application.Crypto;
 using Lumen.Domain.Entities;
@@ -39,12 +38,19 @@ builder.Services.AddSingleton(keycloakOptions);
 builder.Services.AddSingleton(TimeProvider.System);
 
 // --- persistence ---
+// Fail closed: outside Development, every security-sensitive setting must be explicit — this runs
+// BEFORE the hardcoded fallback below, so a non-Development config that simply omits the
+// connection string throws here instead of silently picking up the dev default.
+StartupGuards.EnsureNonDevelopmentSecrets(
+    builder.Environment.IsDevelopment(), builder.Configuration.GetConnectionString("Lumen"), vaultOptions, keycloakOptions);
+
+// Reachable only in Development: StartupGuards above already rejected a missing string anywhere else.
 var connectionString = builder.Configuration.GetConnectionString("Lumen")
     ?? "Host=localhost;Port=55432;Database=lumen;Username=postgres;Password=postgres";
 builder.Services.AddDbContext<LumenDbContext>(o => o.UseNpgsql(connectionString));
 
 // --- background jobs (Hangfire) ---
-// Job classes land in later tasks; this only registers the runtime and secures the dashboard.
+// CryptoShredJob (GDPR erasure, §F) ships since P2; this registers the runtime and secures the dashboard.
 builder.Services.AddHangfire(cfg => cfg
     .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(connectionString)));
 // The background server is disabled in integration tests (Hangfire:EnableServer=false) so enqueued
@@ -54,20 +60,10 @@ if (builder.Configuration.GetValue("Hangfire:EnableServer", true))
 // Resolvable from a job scope by Hangfire's activator (e.g. the GDPR crypto-shred erasure job).
 builder.Services.AddScoped<CryptoShredJob>();
 
-// Fail closed: never start outside Development with the dev sentinel secrets (prod hardening is P11).
-if (!builder.Environment.IsDevelopment() &&
-    (vaultOptions.Token is "root" or "" ||
-     keycloakOptions.AdminClientSecret is "dev-api-secret" or "" ||
-     connectionString.Contains("Password=postgres", StringComparison.Ordinal)))
-{
-    throw new InvalidOperationException(
-        "Refusing to start outside Development with dev sentinel secrets. Configure real Vault/Keycloak/DB secrets.");
-}
-
 // --- crypto ---
 builder.Services.AddSingleton<IFieldCipher, AesGcmFieldCipher>();
 builder.Services.AddSingleton<IKeyWrapper, VaultTransitKeyWrapper>();
-builder.Services.AddScoped<IDekProvisioner, DekProvisioner>();
+builder.Services.AddHttpClient<IEmailHasher, VaultTransitEmailHasher>();
 builder.Services.AddScoped<IUserCryptoContext, UserCryptoContext>();
 builder.Services.AddScoped<IJobCryptoContextFactory, JobCryptoContextFactory>();
 
@@ -92,13 +88,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             // prod hostname this is always true.
             ValidateIssuer = !builder.Environment.IsDevelopment(),
             ValidIssuer = keycloakOptions.Authority,
-            ValidateAudience = false, // TODO(P11): add a Keycloak audience mapper (aud=lumen-api), then validate
+            ValidateAudience = true,
+            ValidAudiences = [keycloakOptions.Audience],
             ValidateLifetime = true,
             NameClaimType = "sub",
             ValidAlgorithms = ["RS256"],
             ClockSkew = TimeSpan.FromSeconds(30),
         };
-        // Interim token-confusion guard until the audience mapper lands: only realm clients we issue.
+        // Permanent guard (not interim — the audience mapper landed in T1): rejects service-account
+        // and foreign-client tokens. aud=lumen-api alone can't distinguish them from a real end-user
+        // token, since the mapper also lives on the api client, so its own service-account tokens
+        // carry that same audience — azp + preferred_username is what actually tells them apart.
         options.Events = new JwtBearerEvents
         {
             OnTokenValidated = context =>
@@ -115,8 +115,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+// --- onboarding ---
+// Extracted from the /onboarding/start handler (P3c-T2) so validation/compensation are unit-testable.
+builder.Services.AddScoped<OnboardingService>();
+
 // Global per-user (else per-IP) rate limit — protects costly endpoints like POST /onboarding/start.
 var permitPerMinute = builder.Configuration.GetValue<int?>("RateLimit:PermitPerMinute") ?? 60;
+// Named per-IP policy layered on top of the global limiter, just for the anonymous onboarding
+// endpoint (always-anonymous, so partitioned purely by IP — there is no "sub" to key on).
+var onboardingStartPermitPerMinute = builder.Configuration.GetValue<int?>("RateLimit:OnboardingStartPermitPerMinute") ?? 5;
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -132,6 +139,14 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0,
         });
     });
+    options.AddPolicy("onboarding-start", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = onboardingStartPermitPerMinute,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
 });
 
 builder.Services.AddExceptionHandler<ProblemExceptionHandler>();
@@ -154,8 +169,11 @@ forwardedHeaders.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("192.168.0.0/16"
 app.UseForwardedHeaders(forwardedHeaders);
 
 app.UseSerilogRequestLogging();
-app.UseSwagger();
-app.UseSwaggerUI();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
@@ -190,103 +208,19 @@ app.MapGet("/health/ready", async (IConfiguration cfg) =>
 // Creates the Keycloak user, provisions the Vault-wrapped DEK, writes the encrypted profile + consent.
 app.MapPost("/onboarding/start", async (
     OnboardingStartRequest request,
-    LumenDbContext db,
-    IKeycloakAdmin keycloak,
-    IKeyWrapper keyWrapper,
-    IFieldCipher cipher,
-    VaultOptions vaultOptions,
-    TimeProvider clock,
+    OnboardingService onboarding,
     CancellationToken ct) =>
 {
-    if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
-        return Results.BadRequest(new { error = "email and password are required" });
-
-    // One canonical email form used for BOTH Keycloak (username/email) and the lookup hash.
-    var email = request.Email.Trim().ToLowerInvariant();
-    if (!System.Net.Mail.MailAddress.TryCreate(email, out var parsed) || parsed.Address != email)
-        return Results.BadRequest(new { error = "invalid email format" });
-    if (request.Password.Length is < 12 or > 128) // D-01 minimum; defense-in-depth with the realm policy
-        return Results.BadRequest(new { error = "password must be between 12 and 128 characters" });
-    if ((request.DisplayName?.Length ?? 0) > 200 || (request.Locale?.Length ?? 0) > 35 ||
-        (request.Timezone?.Length ?? 0) > 64 || (request.PolicyVersion?.Length ?? 0) > 64)
-        return Results.BadRequest(new { error = "a field exceeds its maximum length" });
-
-    var userId = await keycloak.CreateUserAsync(email, request.Password, ct);
-
-    try
+    var result = await onboarding.StartAsync(request, ct);
+    return result switch
     {
-        var now = clock.GetUtcNow();
-        var emailHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(email)));
-        var locale = string.IsNullOrWhiteSpace(request.Locale) ? "es-ES" : request.Locale;
-        var timezone = string.IsNullOrWhiteSpace(request.Timezone) ? "Europe/Madrid" : request.Timezone;
-
-        // Vault wrap + field encryption BEFORE the transaction, so we never hold a pooled DB connection
-        // across external HTTP round-trips. The plaintext DEK is zeroed before any DB work.
-        var dek = RandomNumberGenerator.GetBytes(32);
-        byte[] wrappedDek;
-        byte[]? displayNameEnc = null;
-        try
-        {
-            wrappedDek = await keyWrapper.WrapAsync(dek, ct);
-            if (!string.IsNullOrWhiteSpace(request.DisplayName))
-                displayNameEnc = cipher.EncryptString(request.DisplayName, dek);
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(dek);
-        }
-
-        // Atomic Lumen-side state — all rows commit together or not at all.
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-
-        db.Users.Add(new User
-        {
-            Id = userId,
-            EmailHash = emailHash,
-            Locale = locale,
-            Timezone = timezone,
-            CreatedAt = now,
-            UpdatedAt = now,
-        });
-        db.ConsentRecords.Add(new ConsentRecord
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            PolicyVersion = string.IsNullOrWhiteSpace(request.PolicyVersion) ? "v1-draft" : request.PolicyVersion,
-            Locale = locale,
-            ConsentedAt = now,
-        });
-        db.UserKeys.Add(new UserKey
-        {
-            UserId = userId,
-            WrappedDek = wrappedDek,
-            KeyVersion = 1,
-            VaultKeyName = vaultOptions.KeyName,
-            CreatedAt = now,
-        });
-        if (displayNameEnc is not null)
-        {
-            db.UserProfiles.Add(new UserProfileEnc
-            {
-                UserId = userId,
-                DisplayNameEnc = displayNameEnc,
-                CreatedAt = now,
-                UpdatedAt = now,
-            });
-        }
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return Results.Ok(new { userId });
-    }
-    catch
-    {
-        // The Keycloak identity was created but Lumen-side state failed — remove the orphan (best effort)
-        // so the email is not permanently bricked for sign-up.
-        try { await keycloak.DeleteUserAsync(userId, ct); } catch { /* compensation is best-effort */ }
-        throw;
-    }
+        OnboardingStartResult.Success success => Results.Ok(new { userId = success.UserId }),
+        OnboardingStartResult.Invalid invalid => Results.BadRequest(new { error = invalid.Error }),
+        _ => throw new System.Diagnostics.UnreachableException($"Unhandled {nameof(OnboardingStartResult)}: {result.GetType()}"),
+    };
 })
 .AllowAnonymous()
+.RequireRateLimiting("onboarding-start")
 .Produces<object>(StatusCodes.Status200OK)
 .ProducesProblem(StatusCodes.Status400BadRequest);
 

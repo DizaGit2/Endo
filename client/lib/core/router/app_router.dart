@@ -11,25 +11,59 @@ import 'package:lumen/features/settings/presentation/profile_screen.dart';
 // Redirect logic (pure function — unit-testable without a router instance)
 // ---------------------------------------------------------------------------
 
+/// The paths actually registered as [GoRoute]s in [goRouterProvider].
+///
+/// [Routes.onboarding] is deliberately NOT included: the route has no screen
+/// yet (P4 will register it — see the TODO below), so until then it must be
+/// treated the same as any other unregistered path.
+const _knownPaths = {
+  Routes.splash,
+  Routes.welcome,
+  Routes.account,
+  Routes.profile,
+};
+
 /// Returns the path to redirect to, or null if no redirect is needed.
 ///
 /// [location] must be the path only (no query/fragment) — callers pass
 /// `state.uri.path`.
 ///
-/// Truth table:
-/// | status          | location               | result       |
-/// |-----------------|------------------------|--------------|
-/// | unknown         | "/splash"              | null         |
-/// | unknown         | other                  | "/splash"    |
-/// | unauthenticated | "/" or "/account"      | null         |
-/// | unauthenticated | other (incl. /splash)  | "/"          |
-/// | authenticated   | "/profile" (+ others)  | null         |
-/// | authenticated   | "/", "/account", "/splash" | "/profile" |
+/// [location] is first checked against [_knownPaths]. An UNKNOWN path (e.g. a
+/// stray deep link, or [Routes.onboarding] pre-P4) would otherwise reach
+/// GoRouter's built-in "page not found" error screen, so it is redirected by
+/// [status] alone, before the known-path truth table below ever runs.
+///
+/// Truth table (KNOWN paths only — unknown paths are handled above):
+/// | status          | location                   | result       |
+/// |-----------------|-----------------------------|--------------|
+/// | unknown         | UNKNOWN path (any)          | "/splash"    |
+/// | unknown         | "/splash"                   | null         |
+/// | unknown         | known, other                | "/splash"    |
+/// | unauthenticated | UNKNOWN path (any)          | "/"          |
+/// | unauthenticated | "/" or "/account"            | null         |
+/// | unauthenticated | known, other (incl. /splash) | "/"          |
+/// | authenticated   | UNKNOWN path (any)          | "/profile"   |
+/// | authenticated   | "/profile"                   | null         |
+/// | authenticated   | known, other ("/", "/account", "/splash") | "/profile" |
 ///
 /// TODO(P4): Route authenticated-but-not-onboarded users to [Routes.onboarding]
 /// instead of [Routes.profile]. This requires reading an "onboarded" flag from
-/// the user profile (loaded after login) and is deferred to P4.
+/// the user profile (loaded after login) and is deferred to P4 — until then,
+/// [Routes.onboarding] falls through the UNKNOWN-path branch above.
 String? lumenRedirect(AuthStatus status, String location) {
+  // ── Unknown-route fallback ────────────────────────────────────────────────
+  if (!_knownPaths.contains(location)) {
+    switch (status) {
+      case AuthStatus.unknown:
+        return Routes.splash;
+      case AuthStatus.unauthenticated:
+        return Routes.welcome;
+      case AuthStatus.authenticated:
+        return Routes.profile;
+    }
+  }
+
+  // ── Known-path auth gate (unchanged) ──────────────────────────────────────
   switch (status) {
     case AuthStatus.unknown:
       // Still initialising — hold on the splash so a cold start with a stored
@@ -90,22 +124,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       return lumenRedirect(authStatus, state.uri.path);
     },
     routes: [
-      GoRoute(
-        path: Routes.splash,
-        builder: (_, _) => const _SplashScreen(),
-      ),
-      GoRoute(
-        path: Routes.welcome,
-        builder: (_, _) => const WelcomeScreen(),
-      ),
-      GoRoute(
-        path: Routes.account,
-        builder: (_, _) => const AccountScreen(),
-      ),
-      GoRoute(
-        path: Routes.profile,
-        builder: (_, _) => const ProfileScreen(),
-      ),
+      GoRoute(path: Routes.splash, builder: (_, _) => const _SplashScreen()),
+      GoRoute(path: Routes.welcome, builder: (_, _) => const WelcomeScreen()),
+      GoRoute(path: Routes.account, builder: (_, _) => const AccountScreen()),
+      GoRoute(path: Routes.profile, builder: (_, _) => const ProfileScreen()),
     ],
   );
 });
@@ -126,9 +148,11 @@ class _SplashScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       body: Center(
-        child: CircularProgressIndicator(color: scheme.primary),
+        child: CircularProgressIndicator(
+          color: scheme.primary,
+          semanticsLabel: 'Loading',
+        ),
       ),
     );
   }
 }
-

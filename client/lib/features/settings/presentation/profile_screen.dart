@@ -37,7 +37,9 @@ class ProfileScreen extends ConsumerWidget {
       backgroundColor: c.surface,
       body: SafeArea(
         child: profileAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () => const Center(
+            child: CircularProgressIndicator(semanticsLabel: 'Loading profile'),
+          ),
           error: (e, _) => _ErrorBody(error: e),
           data: (result) => _ProfileBody(result: result),
         ),
@@ -50,20 +52,36 @@ class ProfileScreen extends ConsumerWidget {
 // Error body
 // ---------------------------------------------------------------------------
 
-class _ErrorBody extends StatelessWidget {
+class _ErrorBody extends ConsumerWidget {
   const _ErrorBody({required this.error});
   final Object error;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = Theme.of(context).extension<LumenColors>()!;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Text(
-          'Something went wrong. Please try again.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, color: c.muted),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // liveRegion: true — announces the failure as soon as it renders,
+            // rather than relying on the user to swipe onto it.
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                'Something went wrong. Please try again.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: c.muted),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _RetryButton(
+              label: 'Try again',
+              c: c,
+              onPressed: () => ref.invalidate(profileControllerProvider),
+            ),
+          ],
         ),
       ),
     );
@@ -83,7 +101,7 @@ class _ProfileBody extends ConsumerWidget {
     final c = Theme.of(context).extension<LumenColors>()!;
 
     if (result is NetworkRequired<MeResponse>) {
-      return _NetworkRequiredBody(c: c);
+      return const _NetworkRequiredBody();
     }
 
     final me = result is Fresh<MeResponse>
@@ -91,82 +109,82 @@ class _ProfileBody extends ConsumerWidget {
         : (result as Stale<MeResponse>).value;
     final isStale = result is Stale<MeResponse>;
 
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 44, 22, 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Back affordance row (icon + section tag)
-            Row(
-              children: [
-                Icon(Icons.chevron_left, color: c.muted, size: 22),
-                const SizedBox(width: 2),
-                const LumenSectionLabel(
-                  'Settings',
-                  fontSize: 11,
-                  letterSpacing: 1.5,
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 4),
-
-            // Screen title
-            Text(
-              'Profile & health',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w500,
-                color: c.ink,
+    // Pull-to-refresh: re-reads the profile (never queues a write — the
+    // online-only invariant applies to reads too, there is no offline mutation
+    // here). AlwaysScrollableScrollPhysics lets the gesture trigger even when
+    // the content is shorter than the viewport.
+    return RefreshIndicator(
+      onRefresh: () {
+        ref.invalidate(profileControllerProvider);
+        return ref.read(profileControllerProvider.future);
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 44, 22, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Back affordance row (icon + section tag)
+              Row(
+                children: [
+                  Icon(Icons.chevron_left, color: c.muted, size: 22),
+                  const SizedBox(width: 2),
+                  const LumenSectionLabel(
+                    'Settings',
+                    fontSize: 11,
+                    letterSpacing: 1.5,
+                  ),
+                ],
               ),
-            ),
 
-            const SizedBox(height: 14),
+              const SizedBox(height: 4),
 
-            // Stale notice
-            if (isStale) ...[
-              _StaleNotice(c: c),
-              const SizedBox(height: 10),
+              // Screen title
+              Text(
+                'Profile & health',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w500,
+                  color: c.ink,
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              // Stale notice
+              if (isStale) ...[_StaleNotice(c: c), const SizedBox(height: 10)],
+
+              // --- User card ---
+              _UserCard(me: me, c: c, ref: ref),
+
+              const SizedBox(height: 14),
+
+              // --- ACCOUNT section ---
+              const LumenSectionLabel('Account'),
+              const SizedBox(height: 6),
+              _InfoRow(
+                label: 'Display name',
+                value: me.displayName ?? '—',
+                c: c,
+                trailing: _EditButton(me: me, c: c),
+              ),
+              const SizedBox(height: 5),
+              _InfoRow(label: 'Locale', value: me.locale ?? '—', c: c),
+              const SizedBox(height: 5),
+              _InfoRow(label: 'Timezone', value: me.timezone ?? '—', c: c),
+
+              const SizedBox(height: 14),
+
+              // --- SIGN OUT ---
+              _SignOutRow(c: c),
+
+              const SizedBox(height: 14),
+
+              // --- L-03 trust copy (approved legal text) ---
+              _TrustNotice(c: c),
             ],
-
-            // --- User card ---
-            _UserCard(me: me, c: c, ref: ref),
-
-            const SizedBox(height: 14),
-
-            // --- ACCOUNT section ---
-            const LumenSectionLabel('Account'),
-            const SizedBox(height: 6),
-            _InfoRow(
-              label: 'Display name',
-              value: me.displayName ?? '—',
-              c: c,
-              trailing: _EditButton(me: me, c: c),
-            ),
-            const SizedBox(height: 5),
-            _InfoRow(
-              label: 'Locale',
-              value: me.locale ?? '—',
-              c: c,
-            ),
-            const SizedBox(height: 5),
-            _InfoRow(
-              label: 'Timezone',
-              value: me.timezone ?? '—',
-              c: c,
-            ),
-
-            const SizedBox(height: 14),
-
-            // --- SIGN OUT ---
-            _SignOutRow(c: c),
-
-            const SizedBox(height: 14),
-
-            // --- L-03 trust copy (approved legal text) ---
-            _TrustNotice(c: c),
-          ],
+          ),
         ),
       ),
     );
@@ -177,12 +195,12 @@ class _ProfileBody extends ConsumerWidget {
 // Network-required body
 // ---------------------------------------------------------------------------
 
-class _NetworkRequiredBody extends StatelessWidget {
-  const _NetworkRequiredBody({required this.c});
-  final LumenColors c;
+class _NetworkRequiredBody extends ConsumerWidget {
+  const _NetworkRequiredBody();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = Theme.of(context).extension<LumenColors>()!;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -191,13 +209,18 @@ class _NetworkRequiredBody extends StatelessWidget {
           children: [
             Icon(Icons.wifi_off, color: c.muted, size: 40),
             const SizedBox(height: 16),
-            Text(
-              'Connect to load your profile',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: c.ink,
+            // liveRegion: true — same reasoning as _ErrorBody: announce the
+            // state as it appears instead of staying silent.
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                'Connect to load your profile',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: c.ink,
+                ),
               ),
             ),
             const SizedBox(height: 8),
@@ -205,6 +228,12 @@ class _NetworkRequiredBody extends StatelessWidget {
               'Your profile requires a network connection\nand no cached data is available.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: c.muted),
+            ),
+            const SizedBox(height: 16),
+            _RetryButton(
+              label: 'Retry',
+              c: c,
+              onPressed: () => ref.invalidate(profileControllerProvider),
             ),
           ],
         ),
@@ -214,15 +243,46 @@ class _NetworkRequiredBody extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
+// Retry button — shared outlined affordance for _ErrorBody/_NetworkRequiredBody
+// ---------------------------------------------------------------------------
+
+/// A secondary (outlined) retry affordance that calls back into
+/// [profileControllerProvider] via [onPressed] (`ref.invalidate` at the call
+/// site — this widget stays a dumb [StatelessWidget] so it has no Riverpod
+/// dependency of its own). Token colors only: [LumenColors.accent] for the
+/// label, [LumenColors.border] for the outline.
+class _RetryButton extends StatelessWidget {
+  const _RetryButton({
+    required this.label,
+    required this.c,
+    required this.onPressed,
+  });
+  final String label;
+  final LumenColors c;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: c.accent,
+        side: BorderSide(color: c.border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+      ),
+      child: Text(label),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // User card
 // ---------------------------------------------------------------------------
 
 class _UserCard extends StatelessWidget {
-  const _UserCard({
-    required this.me,
-    required this.c,
-    required this.ref,
-  });
+  const _UserCard({required this.me, required this.c, required this.ref});
   final MeResponse me;
   final LumenColors c;
   final WidgetRef ref;
@@ -230,63 +290,68 @@ class _UserCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final initials = avatarInitials(me.displayName);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: c.input,
-        border: Border.all(color: c.border),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          // Avatar
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: c.accentSoft,
-              shape: BoxShape.circle,
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              initials,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: c.accent,
+    // MergeSemantics: no onTap exists on this row today (the mockup's
+    // chevron has nothing wired behind it yet) — read avatar + name + id as
+    // one informational unit rather than three disconnected fragments.
+    // NOT Semantics(button: true): that would announce "button" for a tap
+    // that does nothing, which is worse than no semantics at all.
+    return MergeSemantics(
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: c.input,
+          border: Border.all(color: c.border),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            // Avatar
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: c.accentSoft,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                initials,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: c.accent,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  me.displayName ?? '—',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: c.ink,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    me.displayName ?? '—',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: c.ink,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  me.id ?? '',
-                  style: TextStyle(fontSize: 11, color: c.muted),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    me.id ?? '',
+                    style: TextStyle(fontSize: 11, color: c.muted),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Text(
-            '›',
-            style: TextStyle(fontSize: 14, color: c.muted),
-          ),
-        ],
+            // Decorative — the row's overall meaning is carried by the merged
+            // name/id text above; a bare chevron has nothing to announce.
+            Icon(Icons.chevron_right, size: 16, color: c.muted),
+          ],
+        ),
       ),
     );
   }
-
 }
 
 /// Computes 1–2 uppercase initials for the profile avatar from a (possibly
@@ -319,6 +384,14 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // MergeSemantics is scoped to the label+value pair ONLY (wrapped in its
+    // own Expanded, not the whole row): MergeSemantics unconditionally
+    // absorbs ALL descendant semantics, including ones that set their own
+    // Semantics(container: true) boundary — so a `trailing` action widget
+    // (e.g. _EditButton) sits as a sibling OUTSIDE this MergeSemantics scope,
+    // keeping its own button identity instead of being swallowed into the
+    // row's merged label. The inner Spacer still pushes `value` flush against
+    // `trailing` — visually identical to a single un-scoped Row.
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -328,27 +401,32 @@ class _InfoRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-              color: c.muted,
+          Expanded(
+            child: MergeSemantics(
+              child: Row(
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      color: c.muted,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      color: c.ink,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          const Spacer(),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-              color: c.ink,
-            ),
-          ),
-          if (trailing != null) ...[
-            const SizedBox(width: 8),
-            trailing!,
-          ],
+          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
         ],
       ),
     );
@@ -366,14 +444,27 @@ class _EditButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return GestureDetector(
-      onTap: () => _showEditDialog(context, ref),
-      child: Text(
-        'Edit',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w500,
-          color: c.accent,
+    // Shared callback reference: excludeSemantics:true drops the descendant
+    // GestureDetector's SemanticsAction.tap from the tree entirely, so
+    // Semantics itself needs its own onTap — wired to the SAME callback (not
+    // a second closure) so pointer taps and assistive-tech activation always
+    // do the same thing.
+    void onTap() => _showEditDialog(context, ref);
+    return Semantics(
+      button: true,
+      label: 'Edit',
+      container: true,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Text(
+          'Edit',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: c.accent,
+          ),
         ),
       ),
     );
@@ -413,8 +504,19 @@ class _EditButton extends ConsumerWidget {
           // screen and tell the user to retry (no pending-write is persisted).
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Could not save your changes. Please try again.'),
+              SnackBar(
+                // liveRegion: true — same reasoning as _ErrorBanner/_ErrorBody:
+                // announce the failure as it appears.
+                // TODO(P4b): cover this liveRegion with a widget test —
+                // driving the edit dialog crashes the harness on a
+                // pre-existing AlertDialog/TextField teardown bug
+                // (reproduces on unmodified code, plain Cancel tap).
+                content: Semantics(
+                  liveRegion: true,
+                  child: const Text(
+                    'Could not save your changes. Please try again.',
+                  ),
+                ),
               ),
             );
           }
@@ -436,33 +538,44 @@ class _SignOutRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return GestureDetector(
-      onTap: () =>
-          ref.read(authStatusProvider.notifier).logout(),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: c.input,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: c.border),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Sign out',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w400,
-                  color: c.accent,
+    // Shared callback reference: excludeSemantics:true drops the descendant
+    // GestureDetector's SemanticsAction.tap from the tree entirely, so
+    // Semantics itself needs its own onTap — wired to the SAME callback (not
+    // a second closure) so pointer taps and assistive-tech activation always
+    // do the same thing.
+    void onTap() => ref.read(authStatusProvider.notifier).logout();
+    return Semantics(
+      button: true,
+      label: 'Sign out',
+      container: true,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: c.input,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: c.border),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Sign out',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    color: c.accent,
+                  ),
                 ),
               ),
-            ),
-            Text(
-              '›',
-              style: TextStyle(fontSize: 14, color: c.accent),
-            ),
-          ],
+              // Decorative — the row's Semantics(button, label: 'Sign out')
+              // above already excludes and replaces this subtree's semantics.
+              Icon(Icons.chevron_right, size: 16, color: c.accent),
+            ],
+          ),
         ),
       ),
     );

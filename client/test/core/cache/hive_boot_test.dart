@@ -9,6 +9,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
@@ -420,5 +421,66 @@ void main() {
         }
       },
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // cacheStoreProvider — DI seam (P3c-T12)
+  // -------------------------------------------------------------------------
+  //
+  // The CacheStore singleton used to be threaded through a module-global
+  // (`_cacheStoreHolder` / `setCacheStore`) instead of Riverpod — a test
+  // isolation footgun. It is now a plain Provider that MUST be overridden at
+  // the root ProviderScope (see main.dart); reading it un-overridden is a
+  // programmer error and fails loudly instead of silently reading stale
+  // global state.
+
+  group('cacheStoreProvider — DI seam', () {
+    test('reading without a root override throws UnimplementedError', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      // Riverpod re-throws a provider's create-time error wrapped in an
+      // internal (non-exported) ProviderException, so assert on the
+      // surfaced message rather than the wrapper type.
+      Object? caught;
+      try {
+        container.read(cacheStoreProvider);
+      } catch (e) {
+        caught = e;
+      }
+
+      expect(
+        caught,
+        isNotNull,
+        reason: 'reading an un-overridden cacheStoreProvider must throw',
+      );
+      expect(
+        caught.toString(),
+        contains('UnimplementedError'),
+        reason:
+            'must surface as UnimplementedError, not the old StateError',
+      );
+      expect(
+        caught.toString(),
+        contains(
+          'cacheStoreProvider must be overridden at the root ProviderScope',
+        ),
+      );
+    });
+
+    test('overriding with a value resolves to that exact CacheStore', () async {
+      final env = await buildEnv(
+        dir: tempDir,
+        storage: mockStorage,
+        clock: () => baseTime,
+      );
+
+      final container = ProviderContainer(
+        overrides: [cacheStoreProvider.overrideWithValue(env.store)],
+      );
+      addTearDown(container.dispose);
+
+      expect(container.read(cacheStoreProvider), same(env.store));
+    });
   });
 }

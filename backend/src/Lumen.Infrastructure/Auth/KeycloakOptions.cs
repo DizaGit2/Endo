@@ -10,6 +10,9 @@ public sealed class KeycloakOptions
     public string AdminClientId { get; set; } = "api";
     public string AdminClientSecret { get; set; } = "dev-api-secret";
 
+    /// <summary>Expected <c>aud</c> claim on validated access tokens (the realm's audience mapper emits this).</summary>
+    public string Audience { get; set; } = "lumen-api";
+
     /// <summary>OIDC authority/issuer for JWT validation: <c>{BaseUrl}/realms/{Realm}</c>.</summary>
     public string Authority => $"{BaseUrl}/realms/{Realm}";
 }

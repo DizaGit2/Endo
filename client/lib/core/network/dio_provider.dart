@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/auth/auth_interceptor.dart';
@@ -49,7 +49,13 @@ bool _isSensitivePath(String path) =>
 /// Authorization header, no request/response bodies for sensitive paths).
 ///
 /// Active only in [kDebugMode] — a no-op in release builds.
-class _PiiSafeLogInterceptor extends Interceptor {
+///
+/// Public (unlike the rest of this file's helpers) and [visibleForTesting]
+/// so tests can drive its onRequest/onResponse/onError hooks directly instead
+/// of reconstructing a full Dio pipeline — production code must still only
+/// reach it via [dioProvider].
+@visibleForTesting
+class PiiSafeLogInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     if (kDebugMode) {
@@ -140,7 +146,7 @@ final dioProvider = Provider<Dio>((ref) {
 
   dio.interceptors.addAll([
     authInterceptor,
-    _PiiSafeLogInterceptor(),
+    PiiSafeLogInterceptor(),
   ]);
 
   // Provide the interceptor a reference to Dio so it can retry 401 requests.

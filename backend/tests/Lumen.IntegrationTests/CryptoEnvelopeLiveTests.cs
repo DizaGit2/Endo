@@ -36,9 +36,8 @@ public class CryptoEnvelopeLiveTests
             await db.SaveChangesAsync();
 
             // T5 — provision DEK (twice, to prove idempotency)
-            var provisioner = new DekProvisioner(db, wrapper, TestFixtures.Vault(), TimeProvider.System);
-            await provisioner.ProvisionAsync(userId);
-            await provisioner.ProvisionAsync(userId);
+            await TestFixtures.ProvisionDekForTestAsync(db, wrapper, userId);
+            await TestFixtures.ProvisionDekForTestAsync(db, wrapper, userId);
 
             var keyRow = await db.UserKeys.AsNoTracking().SingleAsync(k => k.UserId == userId);
             Encoding.ASCII.GetString(keyRow.WrappedDek).ShouldStartWith("vault:v1:"); // wrapped, not raw
@@ -87,7 +86,7 @@ public class CryptoEnvelopeLiveTests
         {
             db.Users.Add(TestFixtures.NewUser(userId));
             await db.SaveChangesAsync();
-            await new DekProvisioner(db, wrapper, TestFixtures.Vault(), TimeProvider.System).ProvisionAsync(userId);
+            await TestFixtures.ProvisionDekForTestAsync(db, wrapper, userId);
 
             byte[] enc;
             await using (var crypto = new UserCryptoContext(db, wrapper, cipher, new StubUser(userId)))

@@ -111,7 +111,9 @@ services:
     environment:
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: root
-    entrypoint: ["/bin/sh", "-c", "until vault status >/dev/null 2>&1; do echo 'waiting for vault...'; sleep 1; done; vault secrets enable transit || true; vault write -f transit/keys/lumen-dev-kek || true; echo vault-init-complete"]
+    volumes:
+      - ./vault/init.sh:/init.sh:ro
+    entrypoint: ["sh", "/init.sh"]
     restart: "no"
 
 volumes:

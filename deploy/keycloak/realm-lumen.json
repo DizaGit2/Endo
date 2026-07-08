@@ -4,7 +4,7 @@
   "sslRequired": "external",
   "registrationAllowed": false,
   "bruteForceProtected": true,
-  "passwordPolicy": "length(12)",
+  "passwordPolicy": "length(12) and maxLength(128) and notUsername and notEmail",
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "accessTokenLifespan": 900,
@@ -26,7 +26,20 @@
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": true,
-      "redirectUris": []
+      "redirectUris": [],
+      "protocolMappers": [
+        {
+          "name": "lumen-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "lumen-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
     },
     {
       "clientId": "mobile",
@@ -40,7 +53,20 @@
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "com.lumen.app:/oauth2redirect"
-      }
+      },
+      "protocolMappers": [
+        {
+          "name": "lumen-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "lumen-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
     }
   ],
   "users": [
