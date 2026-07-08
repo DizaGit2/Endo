@@ -113,7 +113,10 @@ jobs:
         run: |
           dotnet tool install --global dotnet-ef --version "10.0.*"
           export PATH="$PATH:$HOME/.dotnet/tools"
-          dotnet ef database update \
+          # dotnet ef does not restore on its own; build (which restores) first so the
+          # assets file exists, then apply migrations against the already-built output.
+          dotnet build backend/src/Lumen.Infrastructure --nologo
+          dotnet ef database update --no-build \
             --project backend/src/Lumen.Infrastructure \
             --startup-project backend/src/Lumen.Infrastructure
 

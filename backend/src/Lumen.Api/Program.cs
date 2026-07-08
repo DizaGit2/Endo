@@ -53,8 +53,11 @@ builder.Services.AddDbContext<LumenDbContext>(o => o.UseNpgsql(connectionString)
 // CryptoShredJob (GDPR erasure, §F) ships since P2; this registers the runtime and secures the dashboard.
 builder.Services.AddHangfire(cfg => cfg
     .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(connectionString)));
-// The background server is disabled in integration tests (Hangfire:EnableServer=false) so enqueued
-// jobs don't execute non-deterministically; job logic is tested by invoking jobs directly.
+// The background server is disabled in tests (Hangfire:EnableServer=false). This matters beyond
+// determinism: AddHangfireServer resolves JobStorage at startup, which constructs the Postgres-backed
+// storage and connects eagerly — so with the server on and Postgres unreachable (the no-docker
+// openapi-contract job), host startup/disposal stalls. Hangfire itself stays registered, so
+// IBackgroundJobClient (injected by DELETE /me) still resolves.
 if (builder.Configuration.GetValue("Hangfire:EnableServer", true))
     builder.Services.AddHangfireServer();
 // Resolvable from a job scope by Hangfire's activator (e.g. the GDPR crypto-shred erasure job).
