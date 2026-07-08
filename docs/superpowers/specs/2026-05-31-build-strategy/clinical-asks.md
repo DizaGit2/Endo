@@ -28,10 +28,12 @@ Method (circle): back-count from predicted next period by fixed luteal length (_
 
 ### C-03 Cycle- & period-length estimators + valid bounds
 Average-cycle estimator (mean / median / other): ____ over the last ___ cycles; min history before overriding the onboarding self-report: ___ cycles. **Valid bounds** (for validation + outlier rejection): cycle length ___–___ days; period length ___–___ days. Outlier handling: ____.
+> **Interim in use (2026-07-08, PO-approved pending your sign-off) — two-tier rule:** observed events are **never** clinically validated; typed inputs get sanity bounds only (avg cycle 10–120 d, period 1–30 d). The clinical bounds — cycle 21–45 d, period 1–10 d; estimator = median of last 6 valid cycles, ≥3 cycles before overriding the self-report; out-of-bounds cycles excluded from averages — gate ONLY estimator inclusion + prediction confidence. **PO requirement: bounds must never block data entry** (endo cycles are irregular by nature — adjust the numbers, not the principle).
 **Source:** ____ **Sign-off:** ____
 
 ### C-04 Period vs spotting; auto-detect `period_start`
 When does logged bleeding/flow become a `period_start` (vs spotting)? Flow-intensity threshold / duration rule: ____. `flow_intensity` scale: 1=____ 2=____ 3=____ 4=____.
+> **Interim in use (2026-07-08, pending your sign-off):** `flow_intensity` 1–4 {1 spotting, 2 light, 3 medium, 4 heavy}. The period-vs-spotting auto-detection rule remains yours to define (nothing interim adopted).
 **Source:** ____ **Sign-off:** ____
 
 ### C-05 Regularity definition
@@ -114,6 +116,7 @@ For each insight: the statistical method, minimum-data gate before showing, and 
 
 ### C-12 Eligible population & cycle-suppression handling
 Confirm v1 population (recommend: menstruating, reproductive age). Define engine behavior for users with **no detectable cycle** — continuous hormonal suppression (e.g. **Dienogest**, which the app tracks), pregnancy, peri/post-menopause: should the cycle engine suppress phase output and show a "phases unavailable" state? ____.
+> **PO riders (2026-07-08):** (1) v1 ships a user-controlled **cycle-tracking pause** — `pause_reason` {pregnancy, hormonal_suppression, other}; while paused: no phase predictions, an explicit "phases unavailable" state, paused spans excluded from estimators (fields land in P4a; confirm/adjust the engine semantics here at P6). (2) Onboarding currently requires a last-period date (D-02) — **users with amenorrhea need a future alternate onboarding flow**; please advise what it should ask instead.
 **Sign-off:** ____
 
 ### C-13 `ref_medication` starter catalog (endometriosis)
@@ -127,6 +130,7 @@ Provide a vetted starter catalog. Mark dose ranges as *typical*, not prescriptiv
 
 ### C-14 Endometriosis staging & surgery vocabulary
 Staging system to use (recommend **rASRM I–IV**): confirm labels. Surgery-type controlled list (e.g. laparoscopy, excision, ablation, hysterectomy): ____.
+> **Note (2026-07-08):** a nullable `rasrm_stage` 1–4 field ships in P4a (rendered I–IV) pending your confirmation of the staging system — values are user-entered, never inferred. Also please review the **PO-extended logging vocabularies** (product-owned, frozen in definitions.md 2026-07-08): regions +bowel_rectal/bladder/vaginal/chest_shoulder; triggers incl. physical_strain/poor_sleep/weather; 20-member non-pain symptom catalog incl. `depressed_mood` (wording sensitivity) and `heavy_menstrual_flow` (should tie into C-15 red-flag thresholds). Flag anything clinically off.
 **Sign-off:** ____
 
 ### C-15 Red-flag / crisis symptom guidance (safety)

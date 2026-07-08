@@ -15,6 +15,23 @@ Two hormone definitions have a **stable DB/wire code that differs from the on-sc
 
 The other five hormones (`progesterone`, `lh`, `fsh`, `testosterone`, `cortisol`) have code == label-lowercased; no mismatch.
 
+---
+
+# ✅ Session ratifications — 2026-07-08 (pre-P4a decision session, plan r15)
+
+> The PO reviewed every P4a-consumed set item-by-item. **This block supersedes the per-module tables below where they differ** (the tables remain as extraction provenance). All enums are **append-only**. Cross-refs: decision-sheet D-08..D-14, `ARCHITECTURE.md §A` 2026-07-08 rows, plan §4 r15.
+
+- **Pain/intensity scale (D-08):** canonical **0–10 (NRS-11)** everywhere — quick check-in, full form, body map, non-pain symptoms; 0 = valid "none today". Screen 9's ten-button 0–9 row and §D's old 1–5 are superseded (P4b corrects the UI).
+- **Frozen verbatim:** Goal enum (5 codes, first two default ON, multi-select min 1) · Regularity {regular, somewhat, irregular}, default `somewhat` · Mood {low, tired, steady, bright} = **1–4** · Hormone tables per B16 (codes `estradiol`/`glp1`, labels "Estrogen"/"GLP-1"; one reference table {code, display_label, category, color, display_unit}).
+- **Hormone defaults (D-14):** all 7 always extracted; **charted default = all 7 ON** (screen 6 authoritative; screen 33's 4-ON = populated sample, not spec).
+- **Notifications:** categories {daily_checkin, phase_shift, period_prediction, medication_reminders}; canonical label **"Phase shift"** (singular); initial seed = screen 7: ON / ON / OFF / OFF.
+- **Symptom region enum (D-09, PO-extended):** `lower_abdomen`, `pelvis`, `lower_back`, `legs`, `bowel_rectal` "Bowel / rectal", `bladder` "Bladder", `vaginal` "Vaginal", `chest_shoulder` "Chest / shoulder", + `unspecified` (no-location home).
+- **Pain types (D-09, PO-extended):** `cramping`, `sharp`, `burning`, `dull`, `stabbing`, `throbbing` (PO removed "aching").
+- **Triggers (D-09, PO-modified):** `stress`, `intercourse`, `food`, `exercise`, `physical_strain` "Physical strain / sedentarism", `poor_sleep` "Poor sleep", `weather` "Weather" (PO removed bowel_movement/urination as triggers).
+- **Non-pain symptom catalog (D-09, PO-extended, 20):** `bloating`, `nausea`, `fatigue`, `diarrhea`, `constipation`, `headache`, `dizziness`, `inflammation` "General inflammation", `water_retention` "Fluid retention", `joint_pain` "Cramping / joint pain", `frequent_urination`, `frequent_bowel_movements`, `indigestion`, `depressed_mood` "Depressed mood", `painful_intercourse`, `heavy_menstrual_flow` "Excessive menstrual flow", `brain_fog` "Mental fog", `poor_concentration` "Trouble concentrating", `food_sensitivity` "Food sensitivity", `acne`. Each logs as its own 0–10 row (D-09); P4b UI groups/progressively discloses — storage is a flat enum. **Clinician wording/completeness review requested with C-14** (esp. `depressed_mood`; `heavy_menstrual_flow` ties to C-15 red-flags).
+- **UX guardrail (D-09):** classification (region/side/types/triggers) is always optional chips; only intensity + date required; quick check-in never asks for any of it.
+- **Quick check-in (D-11):** {pain 0–10, mood 1–4}, ≥1 required, **upserts `cycle_day_logs`** (headline pain + mood, one per day); classified episodes append `symptoms` rows via full form/body map.
+
 ## Conventions used in this document
 
 - **kind**: the shape of the definition — `enum`, `ordinal_scale`, `code_label_table`, `seed_table_shape`, or `copy_strings`.

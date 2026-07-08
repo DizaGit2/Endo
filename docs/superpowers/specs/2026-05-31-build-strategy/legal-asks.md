@@ -66,8 +66,8 @@ Full ToS (ES + EN), including the non-medical-service positioning. ______
 Confirm wording, who owns its accuracy, and the update/removal process if a request is ever received. ______
 **Owner / date:** ____________
 
-### L-09 🟠 (Only if social login / email-share kept) extra subprocessor & consent text
-If D-01 keeps Apple/Google login, or D-20 keeps server-side email sharing: add the subprocessor entries + any extra consent. (Default recommendations defer both, making this N/A.) ______
+### L-09 🔴 Social-login subprocessors & consent text — **LIVE (D-01 reopened 2026-07-08: Apple/Google login IS in v1, phase P4c)**
+Required now (ES + EN): Apple + Google subprocessor entries for the privacy policy, any extra consent text for brokered sign-in, and the Apple "Hide My Email" relay implications (relay addresses vs `email_hash` account-linking). Server-side email sharing remains deferred per the D-20 default — only the login half is live. **Gates P4c and launch; long lead — start with the OAuth app registrations.** ______
 **Owner / date:** ____________
 
 ---

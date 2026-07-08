@@ -14,12 +14,12 @@
 **Conflict:** Screen 2 shows an "Apple · Google" button; the architecture lists only Keycloak email/password.
 **Options:** (a) v1 email/password only, remove/disable the buttons (or "coming soon"); (b) wire Keycloak identity brokering now (Apple "Hide My Email" relay handling, account-linking on `email_hash`, +2 subprocessors in the privacy policy).
 **Recommended default:** (a) — defer social login to phase 2. Removes 2 subprocessors and Apple-review complexity from v1.
-**Decision:** ​_______________________________________________
+**Decision:** ✅ resolved 2026-07-08 — **(b) social login IS in v1**, reopened by PO (P3b's shipped no-social state stands until then). Implemented as **new phase P4c** (after P4b): Keycloak brokering, account-linking on `email_hash`, DEK provisioning for brokered identities, screen-2 buttons. Long-lead started now: Apple/Google OAuth app registrations + **L-09** (now live).
 
 ### D-02 🔴 "Onboarding complete" criteria — what's mandatory vs skippable?
 **Conflict:** `onboarding_completed_at` exists but nothing defines what sets it; screens imply skippability ("Not now", "Edit anytime").
 **Recommended default:** Mandatory = account created + last-period date (needed to seed the cycle). Baseline / goals / hormone-prefs / notifications all **skippable** with sane defaults; the dashboard tolerates missing data.
-**Decision:** ​_______________________________________________
+**Decision:** ✅ approved 2026-07-08 — recommended default (per-step persistence; `/onboarding/complete` validates account + last-period and stamps `onboarding_completed_at`). **PO note:** this flow excludes users with amenorrhea — they need a future alternate onboarding path (no last-period gate); cross-ref **C-12/D-23** and the cycle-tracking-pause rider (§A 2026-07-08).
 
 ### D-03 🟠 Primary locale
 **Conflict:** Architecture says "Spanish and English at minimum"; every mockup is English; hosting is EU-only.
@@ -28,7 +28,7 @@
 
 ### D-04 🟠 MFA / email verification for end users
 **Recommended default:** TOTP MFA **optional** (off by default; device Face-ID app-lock covers casual security); **email verification required** with a grace window (account usable immediately, nagged until verified). Password reset uses Keycloak's flow with reassurance copy that **data is not lost on reset** (DEK is server-held, not password-derived).
-**Decision:** ​_______________________________________________
+**Decision:** ✅ approved 2026-07-08 — recommended default.
 
 ---
 
@@ -54,34 +54,34 @@
 ### D-08 🔴 Pain / symptom intensity scale: 1–5 or 0–10?
 **Conflict:** Architecture + CLAUDE.md say `intensity 1..5`; **every screen shows 0–10** ("3/10", body-map "7", "Avg 0–9").
 **Recommended default:** **0–10** (match the screens). Apply the same scale to non-pain symptoms (bloating/nausea show "5/10"). Update `ARCHITECTURE.md §D/§A` + CLAUDE.md; confirm whether 0 is a valid logged value (recommend yes = "none today").
-**Decision:** ​_______________________________________________
+**Decision:** ✅ approved 2026-07-08 — **0–10 (NRS-11)**; 0 is valid ("none today"); same scale for non-pain symptoms and the body map; screen-9's ten-button 0–9 row is a mockup artifact corrected in P4b. `ARCHITECTURE.md §A/§D` updated.
 
 ### D-09 🔴 Symptom data shape: TYPE / TRIGGERS / RELATED / region / body-map
 **Conflict:** Screen 12 collects pain TYPE (Cramping/Sharp/Burning/Dull), TRIGGERS (Stress/Intercourse/Food), RELATED (Bloating/Nausea/Fatigue), and LOCATION; screen 13 places multi-point body-map taps with front/back + per-point intensity — but `symptoms` has columns for none of it.
 **Recommended default:** Store structured: `pain_types[]`, `triggers[]` (keep `intercourse` — clinically meaningful as dyspareunia), `region` enum + `side` (front/back), `intensity`. RELATED items become their own symptom rows (they carry their own intensity, e.g. "Bloating 5/10"). Body-map taps **snap to nearest region** (one row per region+side+intensity); **no raw x/y coords v1**. Add an `unspecified` region member so quick-check-in pain (no location UI) can be stored.
-**Decision:** ​_______________________________________________
+**Decision:** ✅ approved 2026-07-08 — structured storage as recommended, with PO guardrail: **classification is always optional chips** (only intensity + date required; region defaults `unspecified`); the quick check-in never asks for it. **Vocabularies extended & frozen** (final tables: definitions.md ratification block 2026-07-08): regions 8 + `unspecified` (adds bowel_rectal, bladder, vaginal, chest_shoulder), pain types 6 (adds stabbing, throbbing — no aching), triggers 7 (stress, intercourse, food, exercise, physical_strain, poor_sleep, weather), non-pain symptom catalog 20. RELATED = own intensity-bearing rows. Clinician review of the vocab requested alongside C-14.
 
 ### D-10 🔴 Mood / energy / libido modeling
 **Conflict:** `cycle_day_logs` has separate `mood`/`energy`/`libido` smallints; screen 9 shows only a 4-way "Mood" grid (Low/Tired/Steady/Bright) where "Tired" is really energy; libido appears on no screen.
 **Recommended default:** Quick check-in writes **mood** as ordinal 1–4 {low, tired, steady, bright} (formalize the 4 labels). Capture **energy** and **libido** on the *full* day form (not quick check-in), both optional; define their scales when that form is specced. Don't populate `energy` from the mood grid.
-**Decision:** ​_______________________________________________
+**Decision:** ✅ approved 2026-07-08 — recommended default.
 
 ### D-11 🔴 Quick check-in vs full form — payloads & what each writes
 **Recommended default:** Quick check-in = `{pain 0–10, mood 1–4}` → writes pain to `symptoms` (region=`unspecified`) + mood to `cycle_day_logs` (upsert one-per-day). Full symptom form writes a `symptoms` row with region/type/triggers/intensity (append, many-per-day). Write both request schemas into `ARCHITECTURE.md`.
-**Decision:** ​_______________________________________________
+**Decision:** ✅ approved 2026-07-08 (modified) — **headline-pain model**: quick check-in = `{pain 0–10, mood 1–4}`, ≥1 required, and **both upsert one-per-day onto `cycle_day_logs`** (new `pain` column; repeat check-ins update today's value; 0 = a true "no pain today" data point). Detailed/classified pain from the full form + body map still **appends** `symptoms` rows (many per day, per D-09). The quick check-in no longer writes `symptoms` rows.
 
 ### D-12 🔴 Per-user timezone & the "today" rule
 **Conflict:** Architecture defers per-user TZ (single 08:00 Europe/Madrid job); screens need user-local "today"/"Day X of Y"/"this week".
 **Recommended default:** Capture `users.timezone` from device at `/onboarding/start`; use it for **all** day-boundary computation now (one shared helper). Keep the nightly Madrid job only as a batch fan-out trigger, but evaluate per-user local times inside it. Revise the `§A` scheduling row to match. (This also unblocks notifications D-19.)
-**Decision:** ​_______________________________________________
+**Decision:** ✅ approved 2026-07-08 — recommended default (IANA `users.timezone`; `§A` scheduling row revised).
 
 ### D-13 🟠 Shared data rules: soft-delete visibility, pagination, future-dating, notes limits
 **Recommended default:** Soft-delete via `deleted_at`; **all reads/matviews/reports/export exclude soft-deleted rows**. List endpoints paginate (limit/offset, max page 100). **No future dates** for symptom/body/activity/lab entries (max = user-local today); `cycle_events` may backdate within a floor (account-creation − 2y). `notes_enc` max 2000 chars, never sent to the LLM, truncated in PDFs. State once in `§C`.
-**Decision:** ​_______________________________________________
+**Decision:** ✅ approved 2026-07-08 (modified) — bundle as recommended (pagination default 50 / max 100), with the PO exception made explicit: soft-delete governs **individual entries only**; full account deletion ("delete all my data") remains the P2 **crypto-shred** — hard, irreversible, never soft.
 
 ### D-14 🟠 Goal selection cardinality & hormone-default conflict
 **Recommended default:** Goals multi-select, **min 1, no max** (the 2 pre-selected are a real default). Resolve the onboarding-vs-settings hormone-default conflict (screen 6 all 7 ON, FSH on; screen 33 Testosterone+GLP-1+FSH off) by: **all 7 extracted from labs regardless**; "tracked"/charted defaults = the 5 shown on screen 33 (hidden ≠ not-extracted).
-**Decision:** ​_______________________________________________
+**Decision:** ✅ approved 2026-07-08 (modified) — goals: multi-select, min 1, no max, first two = real defaults. Hormones: all 7 always extracted; **charted default = all 7 ON** (screen 6 "Defaults shown" is authoritative; screen 33's 4-ON state is a populated sample — this line's "the 5" was a miscount of that 4-ON screen).
 
 ---
 
