@@ -519,7 +519,7 @@ $ flutter test   ->  00:10 +274: All tests passed!
 ```
 - **Decision for T9–T18:** the `string` + `DateOnly.ParseExact(…, "yyyy-MM-dd", CultureInfo.InvariantCulture)` fallback is **NOT taken**. Date-keyed DTO members are declared `DateOnly` / `DateOnly?` directly. The already-committed `Date`/`DateSerializer` plumbing (`client/lib/api/serializers.dart:33`) needs no change.
 - **Rider for T21/P4b (new, discovered here):** the dart-dio generator emits **every** property as a nullable getter — Swashbuckle emits no `required` array, so even the non-nullable `DateOnly` arrives as `Date?`. P4b must null-check every date field; this is not a P4a defect.
-- **Rider for T21 (new, discovered here):** `client/analysis_options.yaml` excludes `lib/api/**` and `**/*.g.dart`, so **`flutter analyze` cannot detect a broken regenerated client** — it reported "No issues found" with deliberately stale `*.g.dart` on disk. The real compile gate for `lib/api` is **`flutter test`** (which is what CI runs). T21 must prove the regen with `flutter test`, never with `flutter analyze` alone.
+- **Rider for T21 (new, discovered here):** `client/analysis_options.yaml` excludes `lib/api/**` and `**/*.g.dart`, so **`flutter analyze` cannot detect a broken regenerated client** — it reported "No issues found" with deliberately stale `*.g.dart` on disk. The real compile gate for `lib/api` is **`flutter test`** (which is what CI runs). T21 must prove the regen with `flutter test`, never with `flutter analyze` alone. **T21 must also COMMIT the regenerated `*.g.dart` files** — verified 2026-08-06: `.github/workflows/ci-client.yml` runs only `pub get` → `analyze` → `test --coverage` and never `dart run build_runner build`, so uncommitted generated code means CI tests stale bindings.
 
 **Probe 2 — `List<string>` primitive collection: PASS.** Declared `public List<string> PainTypes { get; set; } = []` with no converter and no `HasColumnType`.
 ```
@@ -562,7 +562,11 @@ Postgres  pg_indexes -> CREATE UNIQUE INDEX ... USING btree ("UserId","Metric","
           steps 2 and 5 => REJECTED PostgresException SqlState=23505; steps 1/3/4/6 => ACCEPTED
 ```
 - **Decision for T6/T7:** their "second open span rejected" and "second live `weight_kg` blocked" assertions are meaningful on the SQLite unit-test provider — no Postgres-only test tier is needed for them.
-- **Correction to the breakdown:** T1's bullet 4 prints `HasFilter("\"DeletedAt\" IS NULL\"")`, which carries a stray trailing `\"` and does not compile. The working C# is **`HasFilter("\"DeletedAt\" IS NULL\")`** without it, i.e. filter SQL `"DeletedAt" IS NULL`.
+- **Correction to the breakdown:** T1's bullet 4 prints `HasFilter("\"DeletedAt\" IS NULL\"")`, which carries a stray trailing `\"` and does not compile. The working C# — copy this exactly — is:
+  ```csharp
+  .HasFilter("\"DeletedAt\" IS NULL");
+  ```
+  i.e. the filter SQL reaching the provider is `"DeletedAt" IS NULL`. *(Corrected 2026-08-06 after task review: the first attempt at this correction was itself malformed — it kept a `\"` before the closing paren, so the string literal never closed.)*
 
 **Post-revert clean-tree proof.**
 ```
