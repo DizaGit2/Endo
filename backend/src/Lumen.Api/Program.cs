@@ -163,6 +163,11 @@ builder.Services.AddRateLimiter(options =>
 
 builder.Services.AddExceptionHandler<ProblemExceptionHandler>();
 builder.Services.AddProblemDetails();
+// Minimal-API binding failures must THROW so ProblemExceptionHandler can turn them into the one P4a
+// 400 body (T3). Left alone the behaviour differs per environment and is wrong in both: Development
+// defaults this to true (the throw became a generic 500), Production leaves it false (a bodyless 400
+// the client renders as an empty error). Explicit here so every environment answers identically.
+builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
