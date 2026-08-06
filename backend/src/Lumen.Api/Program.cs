@@ -6,13 +6,16 @@ using Lumen.Api;
 using Lumen.Api.Auth;
 using Lumen.Api.Hangfire;
 using Lumen.Api.Onboarding;
+using Lumen.Api.Time;
 using Lumen.Application.Auth;
 using Lumen.Application.Crypto;
+using Lumen.Application.Time;
 using Lumen.Domain.Entities;
 using Lumen.Infrastructure.Auth;
 using Lumen.Infrastructure.Crypto;
 using Lumen.Infrastructure.Jobs;
 using Lumen.Infrastructure.Persistence;
+using Lumen.Infrastructure.Time;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.RateLimiting;
@@ -117,6 +120,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 builder.Services.AddAuthorization();
+
+// --- time (D-12) ---
+// The single authority on the user-local day. The resolver is stateless apart from its timezone
+// cache, so it is a singleton; the context holds one memoised users read, so it is per-request.
+builder.Services.AddSingleton<IUserDayResolver, UserDayResolver>();
+builder.Services.AddScoped<IUserDayContext, UserDayContext>();
 
 // --- onboarding ---
 // Extracted from the /onboarding/start handler (P3c-T2) so validation/compensation are unit-testable.
