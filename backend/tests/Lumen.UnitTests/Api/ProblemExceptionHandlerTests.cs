@@ -4,6 +4,7 @@ using Lumen.Api;
 using Lumen.Application.Auth;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Shouldly;
 using Xunit;
 
@@ -48,7 +49,24 @@ public class ProblemExceptionHandlerTests
 
     // --- harness ----------------------------------------------------------
 
-    private sealed record Written(int StatusCode, string? ContentType, string RawBody, JsonElement Body);
+    private sealed record LogEntry(LogLevel Level, Exception? Exception, string Message);
+
+    private sealed record Written(
+        int StatusCode, string? ContentType, string RawBody, JsonElement Body, IReadOnlyList<LogEntry> Logged);
+
+    private sealed class CapturingLogger : ILogger<ProblemExceptionHandler>
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add(new LogEntry(logLevel, exception, formatter(state, exception)));
+    }
 
     private static async Task<Written> HandleAsync(Exception exception)
     {
@@ -61,7 +79,8 @@ public class ProblemExceptionHandlerTests
         using var responseBody = new MemoryStream();
         httpContext.Response.Body = responseBody;
 
-        var handler = new ProblemExceptionHandler(provider.GetRequiredService<IProblemDetailsService>());
+        var logger = new CapturingLogger();
+        var handler = new ProblemExceptionHandler(provider.GetRequiredService<IProblemDetailsService>(), logger);
         var handled = await handler.TryHandleAsync(httpContext, exception, CancellationToken.None);
         handled.ShouldBeTrue("the handler must own every exception it is handed");
 
@@ -71,7 +90,8 @@ public class ProblemExceptionHandlerTests
             httpContext.Response.StatusCode,
             httpContext.Response.ContentType,
             raw,
-            document.RootElement.Clone()); // Clone() survives the JsonDocument's disposal.
+            document.RootElement.Clone(), // Clone() survives the JsonDocument's disposal.
+            logger.Entries);
     }
 
     private static string[] ErrorsFor(JsonElement body, string key) =>
@@ -170,5 +190,63 @@ public class ProblemExceptionHandlerTests
         Title(written.Body).ShouldBe("An unexpected error occurred.");
         written.RawBody.ShouldNotContain("8f14e45f");
         written.Body.TryGetProperty("errors", out _).ShouldBeFalse("only the 400 arm carries an errors map");
+    }
+
+    // --- who gets to be an operational alarm (T3 review round 2) ----------
+    //
+    // Request logging now sits OUTSIDE UseExceptionHandler so it reports the status the client
+    // received rather than a hard-coded 500 (Program.cs). The cost of that ordering is that the
+    // exception object no longer reaches the request logger at all, and .NET's ExceptionHandlerMiddleware
+    // emits no diagnostics of its own once an IExceptionHandler claims the exception — verified against
+    // the running app, where a handled exception produced exactly one Error line and it came from
+    // Serilog. So the stack trace for a genuine failure has to be logged HERE, by the thing that
+    // swallows it. The split is by response class, not by exception type: 5xx means "we broke", 4xx
+    // means "the caller did".
+
+    [Fact]
+    public async Task Unrecognised_exception_is_logged_at_error_with_the_exception_attached()
+    {
+        var boom = new InvalidOperationException("DEK unwrap failed for user 8f14e45f");
+
+        var written = await HandleAsync(boom);
+
+        var logged = written.Logged.ShouldHaveSingleItem();
+        logged.Level.ShouldBe(LogLevel.Error, "a genuine bug must still page someone");
+        // The exception OBJECT, not its text: that is what carries the stack trace to the sink.
+        logged.Exception.ShouldBeSameAs(boom);
+    }
+
+    [Fact]
+    public async Task IdentityProviderException_is_still_logged_at_error_with_the_exception_attached()
+    {
+        // 502 is an upstream outage, not caller error — it keeps its alarm and its stack trace.
+        var upstream = new IdentityProviderException("Keycloak returned 503 for POST /users");
+
+        var written = await HandleAsync(upstream);
+
+        var logged = written.Logged.ShouldHaveSingleItem();
+        logged.Level.ShouldBe(LogLevel.Error);
+        logged.Exception.ShouldBeSameAs(upstream);
+    }
+
+    [Fact]
+    public async Task BadHttpRequestException_is_not_logged_as_an_error()
+    {
+        var written = await HandleAsync(new BadHttpRequestException(LeakyBindingMessage));
+
+        written.Logged.ShouldNotContain(
+            entry => entry.Level >= LogLevel.Error,
+            "a malformed request is user input; alarming on it is the false alarm this fixes");
+        // Nor may the quoted request content reach a log line by this route (§F).
+        written.Logged.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DuplicateUserException_is_not_logged_as_an_error()
+    {
+        // A 409 is the caller re-using an email — the same class of event as a 400, not an outage.
+        var written = await HandleAsync(new DuplicateUserException("An account with that email already exists."));
+
+        written.Logged.ShouldBeEmpty();
     }
 }

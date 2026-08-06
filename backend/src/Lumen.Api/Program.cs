@@ -173,6 +173,14 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+// OUTERMOST on purpose (T3 review): request logging must observe the response the client actually
+// received. Nested inside UseExceptionHandler it saw the in-flight exception instead, and Serilog's
+// exception path hard-codes status 500 — so every handled failure, including a malformed body that
+// the client was correctly answered with a 400, was written as an Error-level "responded 500" with a
+// stack trace. That is an operational alarm for user input, and a binding-failure message quotes the
+// value that failed to bind, which here is health data (§F bars that from a log line too).
+app.UseSerilogRequestLogging();
+
 app.UseExceptionHandler(); // clean ProblemDetails on unhandled errors; no stack traces (with env=Production)
 
 // Trust X-Forwarded-For only from private networks (the Caddy reverse proxy) so the rate limiter
@@ -185,7 +193,6 @@ forwardedHeaders.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("172.16.0.0/12")
 forwardedHeaders.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("192.168.0.0/16"));
 app.UseForwardedHeaders(forwardedHeaders);
 
-app.UseSerilogRequestLogging();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
