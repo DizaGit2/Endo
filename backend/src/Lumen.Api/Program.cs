@@ -7,6 +7,7 @@ using Lumen.Api.Auth;
 using Lumen.Api.Hangfire;
 using Lumen.Api.Onboarding;
 using Lumen.Api.Time;
+using Lumen.Api.Validation;
 using Lumen.Application.Auth;
 using Lumen.Application.Crypto;
 using Lumen.Application.Time;
@@ -229,24 +230,8 @@ app.MapGet("/health/ready", async (IConfiguration cfg) =>
 
 // --- spine endpoints (P1) ---
 
-// Creates the Keycloak user, provisions the Vault-wrapped DEK, writes the encrypted profile + consent.
-app.MapPost("/onboarding/start", async (
-    OnboardingStartRequest request,
-    OnboardingService onboarding,
-    CancellationToken ct) =>
-{
-    var result = await onboarding.StartAsync(request, ct);
-    return result switch
-    {
-        OnboardingStartResult.Success success => Results.Ok(new { userId = success.UserId }),
-        OnboardingStartResult.Invalid invalid => Results.BadRequest(new { error = invalid.Error }),
-        _ => throw new System.Diagnostics.UnreachableException($"Unhandled {nameof(OnboardingStartResult)}: {result.GetType()}"),
-    };
-})
-.AllowAnonymous()
-.RequireRateLimiting("onboarding-start")
-.Produces<object>(StatusCodes.Status200OK)
-.ProducesProblem(StatusCodes.Status400BadRequest);
+// Onboarding routes live in Lumen.Api/Onboarding/OnboardingEndpoints.cs (T4).
+app.MapOnboardingEndpoints();
 
 app.MapGet("/me", async (
     ICurrentUserAccessor current,
@@ -255,8 +240,10 @@ app.MapGet("/me", async (
     CancellationToken ct) =>
 {
     var userId = current.UserId;
+    // The query filter excludes soft-deleted users, so a crypto-shredded account's still-valid JWT
+    // lands here — and gets the phase's ONE 404 body (T3/T4), never a bodyless Results.NotFound().
     var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
-    if (user is null) return Results.NotFound();
+    if (user is null) return NotFoundProblem.Result();
 
     var profile = await db.UserProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId, ct);
     var displayName = profile?.DisplayNameEnc is { } enc ? await crypto.DecryptStringAsync(enc, ct) : null;
@@ -265,7 +252,8 @@ app.MapGet("/me", async (
 })
 .RequireAuthorization()
 .Produces<MeResponse>(StatusCodes.Status200OK)
-.ProducesProblem(StatusCodes.Status401Unauthorized);
+.ProducesProblem(StatusCodes.Status401Unauthorized)
+.ProducesProblem(StatusCodes.Status404NotFound);
 
 app.MapDelete("/me", async (
     ICurrentUserAccessor current,
@@ -308,6 +296,39 @@ app.MapPatch("/me", async (
 {
     var userId = current.UserId;
     var now = clock.GetUtcNow();
+
+    // Validate-then-act (T3): every field error is collected BEFORE the first write, so a request
+    // that is rejected has changed nothing — no half-saved profile, and the user fixes all of it in
+    // one round trip. Absent (null/blank) means "leave it alone"; it is never a reset to the default.
+    var problems = new ValidationProblemBuilder();
+    var timezone = Blank(request.Timezone) ? null : request.Timezone;
+    var locale = Blank(request.Locale) ? null : request.Locale;
+
+    // D-12: users.timezone is the sole input to every "today" this API computes, and UserDayResolver
+    // logs a fallback warning on every request that cannot resolve it — so an unvalidated value here
+    // would be user-controlled log amplification on top of mis-filed day-keyed data.
+    if (timezone is not null && !TimeZoneInfo.TryFindSystemTimeZoneById(timezone, out _))
+        problems.Add("timezone", ValidationMessages.NotAnIanaTimeZone);
+
+    if (locale is not null)
+    {
+        if (locale.Length > 35) // the users.locale column
+            problems.Add("locale", ValidationMessages.MaxLength(35));
+        else if (!IsWellFormedLocale(locale))
+            problems.Add("locale", MeValidationMessages.NotABcp47Locale);
+    }
+
+    if (problems.HasErrors) return problems.Build();
+
+    // Soft-deleted users are filtered out: an erased account's still-valid JWT gets the shared 404,
+    // the same answer GET /me gives it.
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+    if (user is null) return NotFoundProblem.Result();
+
+    if (timezone is not null) user.Timezone = timezone;
+    if (locale is not null) user.Locale = locale;
+    if (timezone is not null || locale is not null) user.UpdatedAt = now;
+
     var profile = await db.UserProfiles.FirstOrDefaultAsync(p => p.UserId == userId, ct);
     if (profile is null)
     {
@@ -322,11 +343,35 @@ app.MapPatch("/me", async (
 })
 .RequireAuthorization()
 .Produces(StatusCodes.Status204NoContent)
-.ProducesProblem(StatusCodes.Status401Unauthorized);
+.ProducesValidationProblem()
+.ProducesProblem(StatusCodes.Status401Unauthorized)
+.ProducesProblem(StatusCodes.Status404NotFound);
 
 app.Run();
 
 static int ParsePort(string? value, int fallback) => int.TryParse(value, out var port) ? port : fallback;
+
+static bool Blank(string? value) => string.IsNullOrWhiteSpace(value);
+
+/// <summary>
+/// Structural well-formedness check for a BCP-47 language tag, delegated to the BCL's own culture-name
+/// rules rather than a hand-rolled pattern (§G11 — P4a invents no values of its own).
+/// <c>predefinedOnly: false</c> keeps it permissive: any syntactically valid tag is accepted even if
+/// this host's ICU data does not know that exact locale, because rejecting a real user's locale is
+/// worse than storing one nobody formats against. Only genuine garbage ("not a locale!") is refused.
+/// </summary>
+static bool IsWellFormedLocale(string locale)
+{
+    try
+    {
+        _ = System.Globalization.CultureInfo.GetCultureInfo(locale, predefinedOnly: false);
+        return true;
+    }
+    catch (System.Globalization.CultureNotFoundException)
+    {
+        return false;
+    }
+}
 
 static async Task<bool> CanConnectAsync(string host, int port, TimeSpan timeout)
 {
@@ -344,9 +389,27 @@ static async Task<bool> CanConnectAsync(string host, int port, TimeSpan timeout)
 }
 
 // DTOs
-public record OnboardingStartRequest(string Email, string Password, string? DisplayName, string? Locale, string? Timezone, string? PolicyVersion);
+// `OnboardingStartRequest` moved to Onboarding/OnboardingContracts.cs (T4) — still in the global
+// namespace, so its OpenAPI schema name is unchanged.
 public record MeResponse(Guid Id, string? DisplayName, string Locale, string Timezone, bool OnboardingCompleted);
-public record UpdateMeRequest(string? DisplayName);
+
+/// <summary>
+/// Settings patch. Every member is optional and <c>null</c> means "leave unchanged" — this is a PATCH,
+/// so an absent field is not a request to reset it.
+/// </summary>
+/// <param name="Timezone">IANA zone id (e.g. <c>Europe/Madrid</c>). D-12 resolves the user's local day from it.</param>
+/// <param name="Locale">BCP-47 tag, ≤ 35 chars per the <c>users.locale</c> column (D-05).</param>
+public record UpdateMeRequest(string? DisplayName, string? Locale, string? Timezone);
+
+/// <summary>
+/// Messages owned by <c>/me</c> alone (§G12: only genuinely cross-cutting strings belong on
+/// <see cref="ValidationMessages"/>). Wire strings — asserted verbatim in <c>MePatchLiveTests</c>.
+/// </summary>
+public static class MeValidationMessages
+{
+    /// <summary>The string is not a syntactically valid BCP-47 language tag (e.g. <c>es-ES</c>).</summary>
+    public const string NotABcp47Locale = "value is not a recognized BCP-47 locale";
+}
 
 // Exposed for WebApplicationFactory in integration tests.
 public partial class Program;

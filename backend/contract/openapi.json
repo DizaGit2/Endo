@@ -1,6 +1,43 @@
 {
   "components": {
     "schemas": {
+      "HttpValidationProblemDetails": {
+        "additionalProperties": {},
+        "properties": {
+          "detail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "errors": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "nullable": true,
+            "type": "object"
+          },
+          "instance": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          },
+          "type": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "MeResponse": {
         "additionalProperties": false,
         "properties": {
@@ -56,6 +93,16 @@
         },
         "type": "object"
       },
+      "OnboardingStartResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ProblemDetails": {
         "additionalProperties": {},
         "properties": {
@@ -87,6 +134,14 @@
         "additionalProperties": false,
         "properties": {
           "displayName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "locale": {
+            "nullable": true,
+            "type": "string"
+          },
+          "timezone": {
             "nullable": true,
             "type": "string"
           }
@@ -167,6 +222,16 @@
               }
             },
             "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
           }
         },
         "tags": [
@@ -188,6 +253,16 @@
           "204": {
             "description": "No Content"
           },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "401": {
             "content": {
               "application/problem+json": {
@@ -197,6 +272,16 @@
               }
             },
             "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
           }
         },
         "tags": [
@@ -220,7 +305,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStartResponse"
+                }
               }
             },
             "description": "OK"
@@ -229,7 +316,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
                 }
               }
             },

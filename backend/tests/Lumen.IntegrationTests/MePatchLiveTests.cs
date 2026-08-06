@@ -113,6 +113,137 @@ public class MePatchLiveTests(LumenApiFactory factory) : IClassFixture<LumenApiF
         }
     }
 
+    // --- T4: users.timezone / users.locale become mutable ---------------------------------
+
+    [Fact]
+    public async Task Patch_me_updates_timezone_and_locale()
+    {
+        var email = $"patch-tz-{Guid.NewGuid():N}@example.com";
+        const string newTimezone = "America/Argentina/Buenos_Aires";
+        const string newLocale = "en-GB";
+        Guid userId = default;
+        try
+        {
+            (userId, var token) = await OnboardAndLoginAsync(email, "Zona Original");
+
+            var authed = factory.CreateClient();
+            authed.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var patch = await authed.PatchAsJsonAsync("/me", new { timezone = newTimezone, locale = newLocale });
+            patch.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+            // The D-12 hole this closes: every day-keyed write resolves "today" from users.timezone,
+            // so a user who moves must be able to correct it or their data is filed against the wrong day.
+            await using var db = TestFixtures.NewDb();
+            var user = await db.Users.AsNoTracking().SingleAsync(u => u.Id == userId);
+            user.Timezone.ShouldBe(newTimezone);
+            user.Locale.ShouldBe(newLocale);
+
+            var me = await authed.GetAsync("/me");
+            var body = await me.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("timezone").GetString().ShouldBe(newTimezone);
+            body.GetProperty("locale").GetString().ShouldBe(newLocale);
+        }
+        finally
+        {
+            if (userId != default) await CleanupAsync(userId);
+        }
+    }
+
+    [Fact]
+    public async Task Patch_me_with_an_unknown_timezone_returns_the_shared_400_and_writes_nothing()
+    {
+        var email = $"patch-badtz-{Guid.NewGuid():N}@example.com";
+        Guid userId = default;
+        try
+        {
+            (userId, var token) = await OnboardAndLoginAsync(email, "Zona Original");
+
+            var authed = factory.CreateClient();
+            authed.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            // A garbage zone id is not merely wrong data: UserDayResolver logs a WARN every time it
+            // fails to resolve, on every day-keyed request, forever — user-controlled log amplification.
+            var patch = await authed.PatchAsJsonAsync("/me", new { displayName = "Never Saved", timezone = "Mars/Olympus" });
+
+            patch.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            patch.Content.Headers.ContentType!.MediaType.ShouldBe("application/problem+json");
+            var problem = await patch.Content.ReadFromJsonAsync<JsonElement>();
+            problem.GetProperty("detail").GetString().ShouldBe("The request contained invalid data.");
+            problem.GetProperty("errors").GetProperty("timezone")[0].GetString()
+                .ShouldBe("value is not a recognized IANA time zone");
+
+            // Validate-then-act: the rejected request must not have written the display name either.
+            await using var db = TestFixtures.NewDb();
+            var user = await db.Users.AsNoTracking().SingleAsync(u => u.Id == userId);
+            user.Timezone.ShouldBe("Europe/Madrid");
+            var me = await authed.GetAsync("/me");
+            var body = await me.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("displayName").GetString().ShouldBe("Zona Original");
+        }
+        finally
+        {
+            if (userId != default) await CleanupAsync(userId);
+        }
+    }
+
+    [Theory]
+    // 36 characters: one over the users.locale column limit.
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "text exceeds the maximum length of 35 characters")]
+    [InlineData("not a locale!", "value is not a recognized BCP-47 locale")]
+    public async Task Patch_me_with_an_unusable_locale_returns_the_shared_400(string locale, string expectedMessage)
+    {
+        var email = $"patch-badloc-{Guid.NewGuid():N}@example.com";
+        Guid userId = default;
+        try
+        {
+            (userId, var token) = await OnboardAndLoginAsync(email, "Zona Original");
+
+            var authed = factory.CreateClient();
+            authed.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var patch = await authed.PatchAsJsonAsync("/me", new { locale });
+
+            patch.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            var problem = await patch.Content.ReadFromJsonAsync<JsonElement>();
+            problem.GetProperty("errors").GetProperty("locale")[0].GetString().ShouldBe(expectedMessage);
+
+            await using var db = TestFixtures.NewDb();
+            (await db.Users.AsNoTracking().SingleAsync(u => u.Id == userId)).Locale.ShouldBe("es-ES");
+        }
+        finally
+        {
+            if (userId != default) await CleanupAsync(userId);
+        }
+    }
+
+    [Fact]
+    public async Task Patch_me_leaves_timezone_and_locale_alone_when_they_are_absent()
+    {
+        var email = $"patch-keep-{Guid.NewGuid():N}@example.com";
+        Guid userId = default;
+        try
+        {
+            (userId, var token) = await OnboardAndLoginAsync(email, "Zona Original");
+
+            var authed = factory.CreateClient();
+            authed.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            // Absent is not "reset to default" — a display-name-only PATCH must not touch the zone.
+            var patch = await authed.PatchAsJsonAsync("/me", new { displayName = "Solo Nombre" });
+            patch.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+            await using var db = TestFixtures.NewDb();
+            var user = await db.Users.AsNoTracking().SingleAsync(u => u.Id == userId);
+            user.Timezone.ShouldBe("Europe/Madrid");
+            user.Locale.ShouldBe("es-ES");
+        }
+        finally
+        {
+            if (userId != default) await CleanupAsync(userId);
+        }
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private async Task<(Guid userId, string token)> OnboardAndLoginAsync(string email, string displayName)

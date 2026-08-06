@@ -19,5 +19,15 @@ namespace Lumen.IntegrationTests;
 public class LumenApiFactory : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder) =>
-        builder.UseSetting("Hangfire:EnableServer", "false");
+        builder
+            .UseSetting("Hangfire:EnableServer", "false")
+            // The production default is 5 sign-ups per minute per IP, and every request from this
+            // in-process host lands in the same partition (RemoteIpAddress is null → "anonymous").
+            // A test class that onboards more than five users therefore starts failing with 429s that
+            // say nothing about the behaviour under test — which is exactly what happened once T4 added
+            // its PATCH /me cases, and would keep happening as P4a's remaining tasks add theirs.
+            // Raised only here: BOTH limiter tests (RateLimitLiveTests, OnboardingRateLimitLiveTests)
+            // build their own WebApplicationFactory with explicit low limits, so the coverage that
+            // actually asserts the limiter is untouched.
+            .UseSetting("RateLimit:OnboardingStartPermitPerMinute", "100");
 }
