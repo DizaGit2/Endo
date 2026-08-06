@@ -492,7 +492,88 @@ cd client; $env:PUB_CACHE='C:\pub_cache'; flutter analyze; flutter test; dart ru
 - **Tasks:** ✅ **DETAILED AT PHASE ENTRY 2026-08-06 → [`../specs/2026-05-31-build-strategy/p4a-task-breakdown.md`](../specs/2026-05-31-build-strategy/p4a-task-breakdown.md)** — 22 strictly-serial TDD tasks with a binding **Global constraints** block (§G1–G14: frozen vocabularies with exact members, the two-tier bounds rule, the three-migration cap, the zero-clinical-inference boundary, cross-task ownership, and the in-branch doc amendments each task owes). That file is the implementer's and reviewer's source of truth for P4a; this outline remains for orientation: entities/migrations (`cycle_events`, `cycle_day_logs`, `symptoms`, `user_insight_snapshot` placeholder, `user_devices` upsert endpoint) → onboarding `baseline/goals/hormones/notifications/complete` (+ cycle-setup home) → Cycle endpoints → Symptoms endpoints (quick + full, region/type/triggers per D-09) → settings/cycle → validation (intensity bounds per D-08, enum membership, calendar windows, onboarding state machine) → onboarding-validation ProblemDetails alignment (r13; client-side validation lands in P4b) → OpenAPI+Dart regen.
 - **Phase-entry decisions (2026-08-06):** PO confirmed — (1) **crypto-shred now hard-deletes the new plaintext health rows** (§D mandates plaintext for the P6 engine, so DEK deletion no longer suffices; §2's erasure invariant amended in §F, task T8 gets ⚠ treatment, privacy wording flagged for L-05/L-06); (2) `cycle_tracking_pause_spans` history table ships (rider 2's three fields cannot satisfy §A:59's "paused spans excluded from estimators"); (3) `POST /symptoms` is a **batch** (1–50, all-or-nothing); (4) four additive surfaces ship — timezone/locale on `PATCH /me`, `DELETE /cycle/events/{id}`, phase-override storage + `GET /onboarding/state` + `POST /me/devices`, and the `rasrm_stage`/`diagnosed_on` write+read path. Resolved from the docs without a PO call: sanity bounds are **soft/non-blocking** (no invented tier), the C-03/C-04 clinical numbers live in **documentation only** (no `Lumen.Domain.Clinical`, no `ref_insight_rule` this phase), and the B16 `ref_hormone` table **defers to P7b** (constants file ships now). Full rationale in the breakdown's "Decisions taken at phase entry".
 
-**STATUS** _(empty)_
+**STATUS**
+- **State:** IN PROGRESS · **Branch:** `phase/04a-logging-backend` (from `d2257fc`) · **T1 done 2026-08-06** · **NEXT = T2** (`IUserDayResolver` / D-12 user-local day).
+
+#### T1 spike verdicts (2026-08-06)
+
+Throwaway spike per the breakdown's T1: probe edits were made, evidence captured, then **fully reverted** — nothing under `backend/src`, `backend/tests` or `client/` is committed, and the only commit is this docs change. Probes 2–4 ran in a scratch EF project outside the repo pinned to the solution's exact provider versions (Npgsql.EntityFrameworkCore.PostgreSQL **10.0.2**, Microsoft.EntityFrameworkCore.Sqlite **10.0.4**, EFCore.Design **10.0.4**), against a throwaway database `lumen_p4a_spike` on the compose Postgres (host port 55432) that was **created and dropped** inside the run. The dev `lumen` database was never touched (still the 7 baseline tables); no probe migration was applied anywhere.
+
+| # | Assumption under test | Verdict | Sanctioned fallback |
+|---|---|---|---|
+| 1 | `DateOnly` → `format: date` → Dart `Date`, compiles | **PASS** | **not taken** |
+| 2 | `List<string>` primitive collection: SQLite round-trip + `text[]` on Npgsql | **PASS** | **not taken** |
+| 3 | Dialect-neutral CHECK `"Pain" >= 0 AND "Pain" <= 10` on SQLite **and** Postgres | **PASS** | n/a |
+| 4 | Filtered unique index `WHERE "DeletedAt" IS NULL` emitted **and enforced** by SQLite | **PASS** | n/a |
+
+**Probe 1 — `format: date` → Dart: PASS.** Added `DateOnly ProbeRequiredDate` to `MeResponse` and `DateOnly? ProbeOptionalDate` to `UpdateMeRequest`, regenerated both snapshots (`LUMEN_OPENAPI_UPDATE=1`), then ran the full `client/lib/api/README.md` recipe (openapi-generator-cli **7.11.0** JAR, `-g dart-dio`, `pubName=lumen,pubLibrary=lumen.api,sourceFolder=api`) + `flutter pub get` + `dart run build_runner build` + `flutter test`.
+```
+contract:   "probeRequiredDate": { "format": "date", "type": "string" }
+            "probeOptionalDate": { "format": "date", "nullable": true, "type": "string" }
+dart-dio:   import 'package:lumen/api/model/date.dart';
+            @BuiltValueField(wireName: r'probeRequiredDate')  Date? get probeRequiredDate;
+            specifiedType: const FullType(Date)            // required
+            specifiedType: const FullType.nullable(Date)   // nullable
+built_value (me_response.g.dart):   final Date? probeRequiredDate;
+$ flutter test   ->  00:10 +274: All tests passed!
+```
+- **Decision for T9–T18:** the `string` + `DateOnly.ParseExact(…, "yyyy-MM-dd", CultureInfo.InvariantCulture)` fallback is **NOT taken**. Date-keyed DTO members are declared `DateOnly` / `DateOnly?` directly. The already-committed `Date`/`DateSerializer` plumbing (`client/lib/api/serializers.dart:33`) needs no change.
+- **Rider for T21/P4b (new, discovered here):** the dart-dio generator emits **every** property as a nullable getter — Swashbuckle emits no `required` array, so even the non-nullable `DateOnly` arrives as `Date?`. P4b must null-check every date field; this is not a P4a defect.
+- **Rider for T21 (new, discovered here):** `client/analysis_options.yaml` excludes `lib/api/**` and `**/*.g.dart`, so **`flutter analyze` cannot detect a broken regenerated client** — it reported "No issues found" with deliberately stale `*.g.dart` on disk. The real compile gate for `lib/api` is **`flutter test`** (which is what CI runs). T21 must prove the regen with `flutter test`, never with `flutter analyze` alone.
+
+**Probe 2 — `List<string>` primitive collection: PASS.** Declared `public List<string> PainTypes { get; set; } = []` with no converter and no `HasColumnType`.
+```
+SQLite  (EnsureCreated)  "PainTypes" TEXT NOT NULL
+        raw stored value          ["cramping","sharp","throbbing"]
+        read-back                 [cramping, sharp, throbbing] (count=3)   -> ROUNDTRIP PASS
+        LINQ .Contains("sharp")   translates -> 1 row
+Npgsql  (migrations add) PainTypes = table.Column<List<string>>(type: "text[]", nullable: false)
+        live information_schema   PainTypes -> data_type=ARRAY udt_name=_text
+```
+- **Decision for T5:** the `jsonb` + `ValueComparer` fallback (and its same-branch `docs(arch)` note on §D's `pain_types[]`) is **NOT taken**. `symptoms.pain_types` ships as a plain `List<string>` primitive collection → `text[]` on Postgres.
+- **Rider:** the two providers store it *differently* (SQLite JSON text vs PG `text[]`). Tests must assert over the materialized `List<string>`, never over raw column text, and no provider-specific SQL (`= ANY(...)`) may leak into query code.
+
+**Probe 3 — dialect-neutral CHECK: PASS on both.** One literal, `"Pain" >= 0 AND "Pain" <= 10`, created *and enforced* on both providers.
+```
+SQLite  CONSTRAINT "ck_probe_symptoms_pain_range" CHECK ("Pain" >= 0 AND "Pain" <= 10)
+        Pain=  0 => ACCEPTED   (D-08: 0 is a valid datum)
+        Pain= 10 => ACCEPTED
+        Pain= 11 => REJECTED SqliteException: SQLite Error 19: 'CHECK constraint failed: ck_probe_symptoms_pain_range'
+        Pain= -1 => REJECTED SqliteException: SQLite Error 19: 'CHECK constraint failed: ck_probe_symptoms_pain_range'
+Postgres  pg_get_constraintdef -> CHECK ((("Pain" >= 0) AND ("Pain" <= 10)))
+        Pain= 11 => REJECTED PostgresException SqlState=23514
+        Pain= -1 => REJECTED PostgresException SqlState=23514
+```
+- **Decision for T5–T7:** write the CHECK once with **double-quoted PascalCase column identifiers**; it is portable as-is. The identifier in the literal must match the real column name — Lumen keeps PascalCase columns under snake_case tables, so `"Pain"` is correct; any `HasColumnName(...)` rename would silently invalidate the literal on **both** providers.
+- **Rider for every CHECK/unique test in this phase:** the rejection types differ (`SqliteException` Error 19 vs `PostgresException` SqlState 23514/23505). Assert on `DbUpdateException` — never on a provider-specific exception type or message.
+
+**Probe 4 — filtered unique index: PASS, emitted *and enforced* by SQLite.** The §G9 `body_metrics` exception is implementable; the six-step D-02 re-submit scenario behaves identically on both providers.
+```
+SQLite (EnsureCreated)
+  CREATE UNIQUE INDEX "IX_probe_body_metrics_UserId_Metric_MeasuredOn"
+    ON "probe_body_metrics" ("UserId", "Metric", "MeasuredOn") WHERE "DeletedAt" IS NULL;
+  1. insert live (user, weight_kg, 2026-08-06)                      => ACCEPTED
+  2. insert SECOND live row, same key                               => REJECTED SqliteException 19 (UNIQUE constraint failed)
+  3. soft-delete row 1 (DeletedAt = now)                            => ACCEPTED
+  4. re-insert same key while row 1 is a tombstone (D-02 re-submit) => ACCEPTED
+  5. insert a THIRD row, same key, row 4 still live                 => REJECTED SqliteException 19 (UNIQUE constraint failed)
+  6. soft-delete row 4, so TWO tombstones share the key             => ACCEPTED
+Postgres  pg_indexes -> CREATE UNIQUE INDEX ... USING btree ("UserId","Metric","MeasuredOn") WHERE ("DeletedAt" IS NULL)
+          steps 2 and 5 => REJECTED PostgresException SqlState=23505; steps 1/3/4/6 => ACCEPTED
+```
+- **Decision for T6/T7:** their "second open span rejected" and "second live `weight_kg` blocked" assertions are meaningful on the SQLite unit-test provider — no Postgres-only test tier is needed for them.
+- **Correction to the breakdown:** T1's bullet 4 prints `HasFilter("\"DeletedAt\" IS NULL\"")`, which carries a stray trailing `\"` and does not compile. The working C# is **`HasFilter("\"DeletedAt\" IS NULL\")`** without it, i.e. filter SQL `"DeletedAt" IS NULL`.
+
+**Post-revert clean-tree proof.**
+```
+$ git status --porcelain            -> (only the pre-existing untracked ?? .claude/)
+$ dotnet build backend/Lumen.slnx -warnaserror --nologo   -> 0 Warning(s), 0 Error(s)
+$ dotnet test backend/Lumen.slnx --filter "FullyQualifiedName~OpenApi"
+  Passed!  - Failed: 0, Passed: 3   (contract snapshot drift guard green at baseline)
+$ docker exec lumen-postgres-1 psql -U postgres -c "\l"   -> no lumen_p4a_spike (dropped)
+  lumen DB tables: __EFMigrationsHistory, admin_audit_log, consent_records, user_devices,
+                   user_keys, user_profile_enc, users   (7 baseline tables — unchanged)
+```
 
 ---
 
