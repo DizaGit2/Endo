@@ -43,8 +43,12 @@ public sealed class ProblemExceptionHandler(IProblemDetailsService problemDetail
 
         // The same `errors: { field: [messages] }` envelope ValidationProblemBuilder emits, under the
         // reserved cross-field key: a client parsing a 400 never has to care which side produced it.
+        // Detail is the same shared sentence too (T3 review fix): the client renders `detail ?? title`
+        // (error_mapper.dart), and title deliberately still differs from the builder's so the two 400
+        // producers stay distinguishable in logs.
         if (exception is BadHttpRequestException)
         {
+            context.ProblemDetails.Detail = ValidationMessages.RequestDetail;
             context.ProblemDetails.Extensions["errors"] = new Dictionary<string, string[]>(StringComparer.Ordinal)
             {
                 [ValidationProblemBuilder.RequestKey] = [ValidationMessages.MalformedRequest],

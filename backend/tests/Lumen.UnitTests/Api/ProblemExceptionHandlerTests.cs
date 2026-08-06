@@ -80,6 +80,9 @@ public class ProblemExceptionHandlerTests
     private static string? Title(JsonElement body) =>
         body.TryGetProperty("title", out var title) ? title.GetString() : null;
 
+    private static string? Detail(JsonElement body) =>
+        body.TryGetProperty("detail", out var detail) ? detail.GetString() : null;
+
     // --- the new arm: malformed input is a 400 ----------------------------
 
     [Fact]
@@ -98,6 +101,10 @@ public class ProblemExceptionHandlerTests
         var written = await HandleAsync(new BadHttpRequestException(LeakyBindingMessage));
 
         Title(written.Body).ShouldBe("Validation failed.");
+        // Same detail ValidationProblemBuilder.Build() carries (T3 review fix): the two 400
+        // producers keep distinguishable titles for logs, but a user must see the same sentence
+        // either way, since error_mapper.dart renders `detail ?? title`.
+        Detail(written.Body).ShouldBe("The request contained invalid data.");
         // Same `errors: { field: [messages] }` shape ValidationProblemBuilder emits, under the
         // reserved cross-field key — one 400 body for the whole phase.
         ErrorsFor(written.Body, "request").ShouldBe([MalformedRequestMessage]);
