@@ -215,6 +215,55 @@ public class VocabularyTests
         HormoneCatalog.Colors.Count.ShouldBe(7);
     }
 
+    // --- T7 sets: body metrics & sources, endo status, unit system, the snapshot marker -------
+
+    [Fact]
+    public void Body_metrics_freeze_only_weight_kg_because_D15_is_still_open() =>
+        // The full metric set is P5's (D-15 undecided): pre-freezing body_fat_pct/waist_cm here
+        // would pre-empt a decision P4a has no standing to make. Append-only, so P5 just adds.
+        BodyMetric.Metrics.All.ShouldBe(["weight_kg"]);
+
+    [Fact]
+    public void Body_metric_sources_are_the_three_ratified_members_with_manual_as_the_default()
+    {
+        // §D:188 — the two sync sources ship as committed values now so P5's HealthKit/Google Fit
+        // work writes an already-frozen code rather than inventing one.
+        BodyMetric.Sources.All.ShouldBe(["manual", "apple_health", "google_fit"]);
+        BodyMetric.Sources.Default.ShouldBe("manual");
+    }
+
+    [Fact]
+    public void Endo_status_has_the_three_ratified_members() =>
+        UserProfileEnc.EndoStatuses.All.ShouldBe(["diagnosed", "suspected", "not_applicable"]);
+
+    [Fact]
+    public void Unit_system_has_the_single_reserved_metric_member()
+    {
+        // D-06: metric-only v1. The column is reserved for a future imperial *display* toggle and
+        // has no write path in P4a.
+        User.UnitSystems.All.ShouldBe(["metric"]);
+        User.UnitSystems.Default.ShouldBe("metric");
+    }
+
+    [Fact]
+    public void The_insight_snapshot_marker_says_placeholder_and_nothing_else() =>
+        // §G6 mandates the value verbatim; it is not a §G11 invention. P6 appends its own writer
+        // codes when the engine ships.
+        UserInsightSnapshot.ComputedByValues.All.ShouldBe(["placeholder"]);
+
+    [Fact]
+    public void The_snapshot_reuses_the_four_phase_codes_rather_than_declaring_its_own() =>
+        // One vocabulary, one home: a second copy of the phase codes is how two tables drift apart.
+        UserInsightSnapshot.PhaseCodes.ShouldBeSameAs(CyclePhaseOverride.Phases.All);
+
+    [Fact]
+    public void Data_completeness_is_a_zero_to_hundred_percentage()
+    {
+        // C-09 renamed §D's `confidence`. P4a pins the SHAPE only — nothing computes a score (§G6).
+        UserInsightSnapshot.DataCompletenessScale.Min.ShouldBe((short)0);
+        UserInsightSnapshot.DataCompletenessScale.Max.ShouldBe((short)100);
+    }
+
     [Fact]
     public void Every_vocabulary_member_is_lowercase_snake_case()
     {
@@ -229,6 +278,9 @@ public class VocabularyTests
             .. UserCycleSettings.RegularityValues.All, .. UserCycleSettings.PauseReasons.All,
             .. UserGoal.Codes.All, .. HormoneCatalog.Codes.All,
             .. HormoneCatalog.NotificationCategories.All,
+            .. BodyMetric.Metrics.All, .. BodyMetric.Sources.All,
+            .. UserProfileEnc.EndoStatuses.All, .. User.UnitSystems.All,
+            .. UserInsightSnapshot.ComputedByValues.All,
         ];
 
         foreach (var member in all)
@@ -256,6 +308,12 @@ public class VocabularyTests
         foreach (var g in UserGoal.Codes.All) g.Length.ShouldBeLessThanOrEqualTo(32);
         foreach (var h in HormoneCatalog.Codes.All) h.Length.ShouldBeLessThanOrEqualTo(32);
         foreach (var c in HormoneCatalog.NotificationCategories.All) c.Length.ShouldBeLessThanOrEqualTo(32);
+        foreach (var m in BodyMetric.Metrics.All) m.Length.ShouldBeLessThanOrEqualTo(24);
+        foreach (var s in BodyMetric.Sources.All) s.Length.ShouldBeLessThanOrEqualTo(16);
+        foreach (var u in User.UnitSystems.All) u.Length.ShouldBeLessThanOrEqualTo(8);
+        foreach (var c in UserInsightSnapshot.ComputedByValues.All) c.Length.ShouldBeLessThanOrEqualTo(24);
+        // UserProfileEnc.EndoStatuses has no column length to fit: the code is stored as AES-GCM
+        // ciphertext in endo_status_enc (bytea), not as a varchar.
     }
 
     [Fact]

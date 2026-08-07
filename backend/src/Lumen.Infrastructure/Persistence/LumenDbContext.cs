@@ -23,6 +23,8 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
     public DbSet<UserGoal> UserGoals => Set<UserGoal>();
     public DbSet<UserHormonePref> UserHormonePrefs => Set<UserHormonePref>();
     public DbSet<UserNotificationPref> UserNotificationPrefs => Set<UserNotificationPref>();
+    public DbSet<BodyMetric> BodyMetrics => Set<BodyMetric>();
+    public DbSet<UserInsightSnapshot> UserInsightSnapshots => Set<UserInsightSnapshot>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         // The soft-delete query filter on User intentionally coexists with required dependents.
@@ -39,6 +41,11 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
             e.HasIndex(x => x.EmailHash).IsUnique();
             e.Property(x => x.Locale).IsRequired().HasMaxLength(35);    // BCP-47
             e.Property(x => x.Timezone).IsRequired().HasMaxLength(64);  // IANA tz id
+            // D-06 reserved (T7): metric-only v1, no write path. ValueGeneratedNever() for the same
+            // reason as the T6 settings columns — the CLR initializer references a named const, so
+            // EF infers no sentinel and an explicit null would otherwise be swallowed by the default.
+            e.Property(x => x.UnitSystem).IsRequired().HasMaxLength(8)
+                .HasDefaultValue(User.UnitSystems.Default).ValueGeneratedNever();
             e.HasQueryFilter(x => x.DeletedAt == null);                 // soft-deleted users excluded from reads (D-13)
         });
 
@@ -251,6 +258,53 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
             e.Property(x => x.CategoryCode).IsRequired().HasMaxLength(32);
             e.HasIndex(x => new { x.UserId, x.CategoryCode }).IsUnique();
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // --- P4a body metrics & the insight-snapshot placeholder (T7) -----------------------
+        // Same physical conventions as T5/T6: snake_case tables, PascalCase column identifiers,
+        // no naming convention (the CHECK and index-filter literals double-quote the real
+        // identifiers), CHECKs on frozen numeric scales only, no CHECK on vocabulary membership.
+
+        b.Entity<BodyMetric>(e =>
+        {
+            e.ToTable("body_metrics");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Metric).IsRequired().HasMaxLength(24);
+            e.Property(x => x.ValueEnc).IsRequired();
+            // Same sentinel guard as the T6 defaulted columns: `= Sources.Default` is a named-const
+            // reference, so EF infers no sentinel and an explicit null would be swallowed by the
+            // DB default instead of hitting the NOT NULL constraint.
+            e.Property(x => x.Source).IsRequired().HasMaxLength(16)
+                .HasDefaultValue(BodyMetric.Sources.Default).ValueGeneratedNever();
+            // §G9 FILTERED — the ONE deliberate tombstone exception. D-02's baseline step must stay
+            // re-submittable after a delete, so a tombstone frees the key instead of occupying it.
+            // (cycle_tracking_pause_spans also has a partial unique index, but its predicate is
+            // EndedOn — a domain lifecycle column, not a soft-delete marker — so a DB-level audit
+            // correctly finds two filtered unique indexes while §G9's tombstone inventory stays at
+            // exactly one.)
+            e.HasIndex(x => new { x.UserId, x.Metric, x.MeasuredOn }).IsUnique()
+                .HasFilter("\"DeletedAt\" IS NULL");
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        b.Entity<UserInsightSnapshot>(e =>
+        {
+            // §G6 placeholder: zero rows, no read endpoint, nothing computed. The CHECK pins the
+            // 0..100 percentage SHAPE of the C-09 data-completeness score (§D's `confidence`,
+            // renamed) — no clinical threshold lives in this schema.
+            e.ToTable("user_insight_snapshot", t => t.HasCheckConstraint(
+                "ck_user_insight_snapshot_data_completeness_range",
+                "\"DataCompleteness\" >= 0 AND \"DataCompleteness\" <= 100"));
+            e.HasKey(x => x.UserId);
+            e.Property(x => x.CurrentPhase).HasMaxLength(16);
+            // MissingDataCardsEnc stays bytea (the CLR byte[] default) — NOT jsonb: §D:173 makes
+            // every "Enc" column AES-GCM ciphertext, which cannot live in a jsonb column.
+            e.Property(x => x.ComputedBy).IsRequired().HasMaxLength(24)
+                .HasDefaultValue(UserInsightSnapshot.ComputedByValues.Placeholder).ValueGeneratedNever();
+            e.HasOne<User>().WithOne().HasForeignKey<UserInsightSnapshot>(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // No DeletedAt and no query filter: every column is derived output, not a user entry.
         });
     }
 }
