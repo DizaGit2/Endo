@@ -72,8 +72,12 @@ public sealed class UserDayResolver(TimeProvider clock, ILogger<UserDayResolver>
         // user to a region — so the warning records THAT a fallback happened and why in the abstract,
         // never which id or whose. The bad id is deliberately NOT cached against its key either, so
         // this stays a per-occurrence signal rather than a one-shot startup blip.
+        //
+        // The property is FallbackCause, not the obvious {Reason}: `reason` is a redacted name from
+        // T8 onward (it is the cycle_tracking_pause_spans column that holds 'pregnancy'), so logging
+        // this under it would print "[redacted]" and destroy the only diagnostic the line carries.
         logger.LogWarning(
-            "User timezone is unusable ({Reason}); falling back to the default zone {FallbackTimezone}",
+            "User timezone is unusable ({FallbackCause}); falling back to the default zone {FallbackTimezone}",
             reason, FallbackTimezoneId);
 
         // If the fallback zone itself is missing, the host has no usable timezone database at all —

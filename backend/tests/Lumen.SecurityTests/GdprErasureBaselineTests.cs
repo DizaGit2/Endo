@@ -334,6 +334,13 @@ public class GdprErasurePlaintextCompletenessTests(ITestOutputHelper output)
     /// <summary>The scalar property whose presence defines "this table belongs to a user".</summary>
     private const string UserIdPropertyName = "UserId";
 
+    /// <summary>
+    /// The soft-delete tombstone column. Its presence on a user-owned entity is EXACTLY what makes
+    /// <c>IgnoreQueryFilters()</c> mandatory in the erasure path, so the set of tables that need it is
+    /// read from the model here rather than typed out.
+    /// </summary>
+    private const string DeletedAtPropertyName = "DeletedAt";
+
     // Deterministic fixture ids (not Guid.NewGuid()): the purge below runs BEFORE the seed as well as
     // after it, so a crashed previous run cannot leave rows that poison this one, and the ids can be
     // quoted verbatim in the erasure evidence. The assembly disables test parallelisation, so no two
@@ -344,6 +351,15 @@ public class GdprErasurePlaintextCompletenessTests(ITestOutputHelper output)
     private static readonly DateTimeOffset SeedAt = new(2026, 8, 6, 9, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset TombstonedAt = new(2026, 8, 6, 10, 0, 0, TimeSpan.Zero);
     private static readonly DateOnly SeedDay = new(2026, 8, 6);
+
+    /// <summary>
+    /// The PRIOR audit entry every fixture user gets — an action that is NOT <c>crypto_shred</c>,
+    /// stamped before <see cref="SeedAt"/>. Without a row like this "the audit trail survived" is
+    /// unfalsifiable: the only row left to count is the one the job inserts on its way out.
+    /// </summary>
+    private const string PriorAuditAction = AdminAuditLog.Actions.SystemJob;
+
+    private static readonly DateTimeOffset PriorAuditAt = SeedAt.AddDays(-30);
 
     /// <summary>
     /// User-owned tables the erasure MUST empty. Every one of these is also seeded by
@@ -365,11 +381,17 @@ public class GdprErasurePlaintextCompletenessTests(ITestOutputHelper output)
     ];
 
     /// <summary>
-    /// The five soft-deletable tables. A tombstoned row is invisible to every ordinary read, so a
-    /// delete written without <c>IgnoreQueryFilters()</c> silently leaves it behind — which is the
-    /// precise defect this suite exists to prevent. <c>body_metrics</c> can legitimately hold several
-    /// tombstones for the same <c>(metric, day)</c> (§G9's one filtered-unique exception), so the
-    /// seed plants two of them.
+    /// The soft-deletable tables this suite EXPECTS, checked for set-equality against the model by
+    /// <see cref="Every_user_owned_table_in_the_model_is_either_erased_or_documented_as_retained"/>.
+    /// A tombstoned row is invisible to every ordinary read, so a delete written without
+    /// <c>IgnoreQueryFilters()</c> silently leaves it behind — which is the precise defect this suite
+    /// exists to prevent. <c>body_metrics</c> can legitimately hold several tombstones for the same
+    /// <c>(metric, day)</c> (§G9's one filtered-unique exception), so the seed plants two of them.
+    ///
+    /// <para>Set-equality, never a count. The first version asserted <c>SoftDeletable.Count == 5</c>,
+    /// a literal compared to a literal in the same file: a future soft-deletable table could be added
+    /// to the model, seeded live-only, and pass every assertion here while a missing
+    /// <c>IgnoreQueryFilters()</c> left its tombstoned health rows behind for ever.</para>
     /// </summary>
     private static readonly IReadOnlyList<Type> SoftDeletable =
     [
@@ -399,11 +421,22 @@ public class GdprErasurePlaintextCompletenessTests(ITestOutputHelper output)
             .OrderBy(et => et.GetTableName(), StringComparer.Ordinal)];
 
     /// <summary>
+    /// Every user-owned entity type that ALSO carries a <c>DeletedAt</c> — i.e. every table whose
+    /// erasure delete must run under <c>IgnoreQueryFilters()</c>. Derived, so a soft-deletable table
+    /// added by a later phase enters this suite without anyone remembering to type it in.
+    /// </summary>
+    private static IReadOnlyList<IEntityType> SoftDeletableUserOwnedEntityTypes(LumenDbContext db) =>
+        [.. UserOwnedEntityTypes(db).Where(et => et.FindProperty(DeletedAtPropertyName) is not null)];
+
+    /// <summary>
     /// Row count straight from Postgres for one user and one table — no EF query filter, no change
     /// tracker, no navigation. Table and column names come from the compiled model, so a
     /// <c>ToTable</c>/column rename surfaces as a missing relation rather than a silent pass.
+    /// <paramref name="tombstonedOnly"/> narrows the count to rows whose <c>DeletedAt</c> is set: the
+    /// rows an ordinary read hides, and therefore the only ones whose survival is invisible.
     /// </summary>
-    private static async Task<long> RowCountAsync(LumenDbContext db, IEntityType entityType, Guid userId)
+    private static async Task<long> RowCountAsync(
+        LumenDbContext db, IEntityType entityType, Guid userId, bool tombstonedOnly = false)
     {
         var table = entityType.GetTableName().ShouldNotBeNull();
         var schema = entityType.GetSchema();
@@ -412,21 +445,33 @@ public class GdprErasurePlaintextCompletenessTests(ITestOutputHelper output)
             .GetColumnName(store).ShouldNotBeNull();
         var relation = schema is null ? $"\"{table}\"" : $"\"{schema}\".\"{table}\"";
 
+        var tombstoneClause = string.Empty;
+        if (tombstonedOnly)
+        {
+            var deletedAtColumn = entityType.FindProperty(DeletedAtPropertyName)
+                .ShouldNotBeNull($"{entityType.ClrType.Name} has no {DeletedAtPropertyName} to count")
+                .GetColumnName(store).ShouldNotBeNull();
+            tombstoneClause = $" AND \"{deletedAtColumn}\" IS NOT NULL";
+        }
+
         // EF1002 suppressed deliberately: relation and column names cannot be query parameters in any
         // provider, and both come from the compiled EF model — never from a request or stored value.
         // The user id IS a real parameter ({0}).
 #pragma warning disable EF1002
         return await db.Database
-            .SqlQueryRaw<long>($"SELECT count(*) AS \"Value\" FROM {relation} WHERE \"{column}\" = {{0}}", userId)
+            .SqlQueryRaw<long>(
+                $"SELECT count(*) AS \"Value\" FROM {relation} WHERE \"{column}\" = {{0}}{tombstoneClause}",
+                userId)
             .SingleAsync();
 #pragma warning restore EF1002
     }
 
     private static async Task<Dictionary<Type, long>> RowCountsAsync(
-        LumenDbContext db, IReadOnlyList<IEntityType> entityTypes, Guid userId)
+        LumenDbContext db, IReadOnlyList<IEntityType> entityTypes, Guid userId, bool tombstonedOnly = false)
     {
         var counts = new Dictionary<Type, long>();
-        foreach (var et in entityTypes) counts[et.ClrType] = await RowCountAsync(db, et, userId);
+        foreach (var et in entityTypes)
+            counts[et.ClrType] = await RowCountAsync(db, et, userId, tombstonedOnly);
         return counts;
     }
 
@@ -471,6 +516,21 @@ public class GdprErasurePlaintextCompletenessTests(ITestOutputHelper output)
             Platform = "ios",
             PushToken = "t8-" + userId.ToString("N"),
             CreatedAt = SeedAt,
+        });
+
+        // Prior audit history — retained by design, and the only thing that makes the post-erasure
+        // audit assertion falsifiable (see PriorAuditAction). EntityId is the bare user GUID, the same
+        // key CryptoShredJob writes its own record under, because admin_audit_log has no user FK.
+        db.AdminAuditLogs.Add(new AdminAuditLog
+        {
+            Id = Guid.NewGuid(),
+            ActorId = null,
+            Action = PriorAuditAction,
+            EntityType = AdminAuditLog.EntityTypes.User,
+            EntityId = userId.ToString(),
+            BeforeJson = null,
+            AfterJson = null,
+            At = PriorAuditAt,
         });
 
         // ── T5: plaintext observations, each with a live row AND a tombstone ──
@@ -682,6 +742,25 @@ public class GdprErasurePlaintextCompletenessTests(ITestOutputHelper output)
         // set-difference assertions above green.
         MustBeErased.Count.ShouldBe(13);
         RetainedByDesign.Count.ShouldBe(2);
+
+        // The SOFT-DELETE axis, also read from the model. This is the structural half of the tombstone
+        // guard: every user-owned table carrying a DeletedAt must be one this suite knows to seed a
+        // tombstone into and to count tombstones on after the erasure. Set-equality in BOTH directions
+        // — a count would let a sixth soft-deletable table appear, be seeded live-only, and sail
+        // through the end-to-end test while a missing IgnoreQueryFilters() left its tombstones behind.
+        var modelledSoftDeletable = SoftDeletableUserOwnedEntityTypes(db).Select(et => et.ClrType).ToHashSet();
+
+        modelledSoftDeletable.Except(SoftDeletable).Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal)
+            .ShouldBeEmpty(
+                $"these user-owned entity types carry a {DeletedAtPropertyName} but are missing from " +
+                "SoftDeletable. Add them there AND seed a tombstoned row for them in SeedFullUserAsync, " +
+                "or their tombstones are never counted and a CryptoShredJob delete written without " +
+                "IgnoreQueryFilters() leaves invisible health rows behind for ever.");
+
+        SoftDeletable.Except(modelledSoftDeletable).Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal)
+            .ShouldBeEmpty(
+                $"these types are listed as soft-deletable but no longer carry a {DeletedAtPropertyName} " +
+                "in the EF model — the tombstone classification has drifted from the schema.");
     }
 
     // ── Test 6: end-to-end erasure completeness + tenant isolation ────────────────────────────
@@ -699,14 +778,33 @@ public class GdprErasurePlaintextCompletenessTests(ITestOutputHelper output)
 
             await using var probe = SecurityTestFixtures.NewDb();
             var userOwned = UserOwnedEntityTypes(probe);
+            var softDeletable = SoftDeletableUserOwnedEntityTypes(probe);
             var erasedBefore = await RowCountsAsync(probe, userOwned, ErasedUserId);
             var otherBefore = await RowCountsAsync(probe, userOwned, OtherUserId);
+            var tombstonesBefore = await RowCountsAsync(probe, softDeletable, ErasedUserId, tombstonedOnly: true);
 
             // Non-vacuity: the sweep below can only mean something if every table actually held rows.
             foreach (var t in MustBeErased)
                 erasedBefore[t].ShouldBeGreaterThan(0,
                     $"the fixture must seed {t.Name} — a zero-rows-after assertion on an empty table " +
                     "proves nothing");
+
+            // Non-vacuity, tombstone axis. Every soft-deletable table must hold at least one row with
+            // DeletedAt SET before the erasure runs, or "no tombstones survived" is a statement about
+            // rows that never existed. This is the assertion whose absence made the whole soft-delete
+            // half of this suite decorative.
+            foreach (var et in softDeletable)
+                tombstonesBefore[et.ClrType].ShouldBeGreaterThan(0,
+                    $"the fixture must seed a TOMBSTONED (DeletedAt IS NOT NULL) row in " +
+                    $"{et.GetTableName()} — without one, the post-erasure tombstone count is trivially " +
+                    "zero and a missing IgnoreQueryFilters() would pass unnoticed");
+
+            // The pre-existing audit history the erasure must NOT touch (fix 4). Seeded with At before
+            // SeedAt and an action that is not crypto_shred, so "the audit trail survived" cannot be
+            // satisfied by the single row the job writes for itself.
+            var auditBefore = await probe.AdminAuditLogs.AsNoTracking()
+                .CountAsync(l => l.EntityId == ErasedUserId.ToString());
+            auditBefore.ShouldBe(1, "the fixture seeds exactly one PRIOR audit row for the erased user");
 
             // Act — erase user 1 only.
             await using var jobDb = SecurityTestFixtures.NewDb();
@@ -716,6 +814,7 @@ public class GdprErasurePlaintextCompletenessTests(ITestOutputHelper output)
             await using var read = SecurityTestFixtures.NewDb();
             var erasedAfter = await RowCountsAsync(read, userOwned, ErasedUserId);
             var otherAfter = await RowCountsAsync(read, userOwned, OtherUserId);
+            var tombstonesAfter = await RowCountsAsync(read, softDeletable, ErasedUserId, tombstonedOnly: true);
 
             // Live-database evidence, straight from Postgres, for the erasure record.
             output.WriteLine($"erased user  = {ErasedUserId}");
@@ -729,7 +828,22 @@ public class GdprErasurePlaintextCompletenessTests(ITestOutputHelper output)
                     $"{otherBefore[t],12} {otherAfter[t],7}");
             }
 
-            // 1. COMPLETENESS — nothing user-owned survives except what §F deliberately retains.
+            // 1. TOMBSTONES — asserted FIRST, and on a tombstone-specific count. It has to come before
+            //    the total-rows sweep below to be a guard at all: `erasedAfter` is a raw count(*) that
+            //    already includes tombstones, so the general "survivors" assertion always throws first
+            //    and the tombstone message could never be the one an engineer read. The pre-counts
+            //    above prove each of these tables actually held a tombstone going in.
+            var tombstoneSurvivors = softDeletable
+                .Where(et => tombstonesAfter[et.ClrType] > 0)
+                .Select(et => $"{et.GetTableName()}={tombstonesAfter[et.ClrType]} of {tombstonesBefore[et.ClrType]}")
+                .OrderBy(s => s, StringComparer.Ordinal);
+            tombstoneSurvivors.ShouldBeEmpty(
+                "TOMBSTONED rows survived erasure — the delete for these tables must run under " +
+                "IgnoreQueryFilters(). This is the invisible leak: every ordinary read already hides " +
+                "these rows, so nothing but this assertion would ever reveal that the health data of a " +
+                "deleted account is still in Postgres and in every nightly pg_dump.");
+
+            // 2. COMPLETENESS — nothing user-owned survives except what §F deliberately retains.
             var survivors = MustBeErased
                 .Where(t => erasedAfter[t] > 0)
                 .Select(t => $"{t.Name}={erasedAfter[t]}")
@@ -739,31 +853,24 @@ public class GdprErasurePlaintextCompletenessTests(ITestOutputHelper output)
                 "that survives DELETE /me is unrecoverable by a later fix: it is already in every " +
                 "nightly pg_dump.");
 
-            // 2. TOMBSTONES — restated through EF with IgnoreQueryFilters(), because a delete written
-            //    WITHOUT it leaves exactly these rows behind and every ordinary read hides them.
-            var softDeletedSurvivors = new List<string>();
-            if (await read.CycleEvents.IgnoreQueryFilters().CountAsync(x => x.UserId == ErasedUserId) is var ce and > 0)
-                softDeletedSurvivors.Add($"cycle_events={ce}");
-            if (await read.CycleDayLogs.IgnoreQueryFilters().CountAsync(x => x.UserId == ErasedUserId) is var cd and > 0)
-                softDeletedSurvivors.Add($"cycle_day_logs={cd}");
-            if (await read.Symptoms.IgnoreQueryFilters().CountAsync(x => x.UserId == ErasedUserId) is var sy and > 0)
-                softDeletedSurvivors.Add($"symptoms={sy}");
-            if (await read.CyclePhaseOverrides.IgnoreQueryFilters().CountAsync(x => x.UserId == ErasedUserId) is var po and > 0)
-                softDeletedSurvivors.Add($"cycle_phase_overrides={po}");
-            if (await read.BodyMetrics.IgnoreQueryFilters().CountAsync(x => x.UserId == ErasedUserId) is var bm and > 0)
-                softDeletedSurvivors.Add($"body_metrics={bm}");
-            softDeletedSurvivors.ShouldBeEmpty(
-                "soft-deletable rows survived erasure — the delete must run under IgnoreQueryFilters(), " +
-                "or tombstoned health data outlives the account that owned it");
-            SoftDeletable.Count.ShouldBe(5); // the five restated above; grows only with the model
-
             // 3. RETENTION — the two deliberate §F exceptions are untouched, and the audit trail stands.
             foreach (var (type, why) in RetainedByDesign)
                 erasedAfter[type].ShouldBe(erasedBefore[type], $"must survive erasure: {why}");
 
-            var auditRows = await read.AdminAuditLogs.AsNoTracking().CountAsync(
-                l => l.EntityId == ErasedUserId.ToString() && l.Action == AdminAuditLog.Actions.CryptoShred);
-            auditRows.ShouldBe(1, "the erasure record itself has no user FK and must survive (§F)");
+            // admin_audit_log has no user FK and is never deleted: the PRIOR history survives and the
+            // job adds exactly one crypto_shred row. Counting only the crypto_shred rows would be a
+            // guard that cannot fail — the job inserts that row itself, so a job that wiped the user's
+            // entire audit trail before writing it would still show exactly one.
+            var audit = await read.AdminAuditLogs.AsNoTracking()
+                .Where(l => l.EntityId == ErasedUserId.ToString())
+                .ToListAsync();
+            audit.Count.ShouldBe(auditBefore + 1,
+                "erasure must ADD its crypto_shred row to the audit trail, not replace it — the prior " +
+                "history is GDPR Art. 7(1)/recital-65 accountability evidence and has no user FK (§F)");
+            audit.Count(l => l.Action == AdminAuditLog.Actions.CryptoShred).ShouldBe(1,
+                "exactly one erasure record (§F)");
+            audit.ShouldContain(l => l.Action == PriorAuditAction && l.At == PriorAuditAt,
+                $"the pre-existing '{PriorAuditAction}' row seeded at {PriorAuditAt:O} must still be there");
 
             // 4. TENANT ISOLATION — the other user lost nothing at all, in any table.
             var collateral = userOwned

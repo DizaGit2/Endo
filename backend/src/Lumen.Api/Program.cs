@@ -30,16 +30,26 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((context, config) => config
     .MinimumLevel.Information()
-    // Microsoft.AspNetCore's own hosting diagnostics log the RAW request path three times per request
-    // at Information ("Request starting/finished HTTP/1.1 GET http://host/cycle/day/2026-08-06 …",
-    // plus the unhandled-request line). "/cycle/day/2026-08-06" asserts that this user logged
-    // something on that day — a health-adjacent fact §F bars from a log line — and no enricher can
-    // catch it reliably, because the path arrives inside a rendered URL under generic property names
-    // ({Path}, {Url}). Silencing that category below Warning is also the canonical Serilog.AspNetCore
-    // setup: UseSerilogRequestLogging (below) exists to REPLACE those lines with one summary event,
-    // and this app's summary logs the route template instead of the path. Microsoft.Hosting.Lifetime
-    // is a separate category, so "Now listening on…" and the shutdown lines still appear.
-    .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+    // Microsoft.AspNetCore.Hosting.Diagnostics logs the RAW request path three times per request at
+    // Information ("Request starting/finished HTTP/1.1 GET http://host/cycle/day/2026-08-06 …", plus
+    // the unhandled-request line). "/cycle/day/2026-08-06" asserts that this user logged something on
+    // that day — a health-adjacent fact §F bars from a log line — and no enricher can catch it
+    // reliably, because the path arrives inside a rendered URL under generic property names ({Path},
+    // {Url}). Silencing that category below Warning is also the canonical Serilog.AspNetCore setup:
+    // UseSerilogRequestLogging (below) exists to REPLACE those lines with one summary event, and this
+    // app's summary logs the route template instead of the path.
+    //
+    // The override is scoped to ...Hosting, NOT the whole "Microsoft.AspNetCore" tree, and the
+    // difference matters: the broader form also silenced every authentication and authorization
+    // diagnostic — including the only output the token perimeter guard below (JwtBearerEvents
+    // .OnTokenValidated → context.Fail) ever produces — for zero additional §F benefit. Measured on
+    // the live stack: BOTH forms leave zero occurrences of the date in the log; only the narrow one
+    // keeps the auth-failure lines. Microsoft.IdentityModel already replaces PII in those messages
+    // with "[PII of type '…' is hidden…]". Pinned by RequestLoggingPipelineTests
+    // .The_level_override_silences_hosting_diagnostics_only_not_authentication_failures.
+    // Microsoft.Hosting.Lifetime is a separate category, so "Now listening on…" and the shutdown
+    // lines still appear.
+    .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .Enrich.With(new PiiRedactionEnricher())
     .WriteTo.Console());
