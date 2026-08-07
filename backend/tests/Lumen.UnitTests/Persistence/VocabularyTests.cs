@@ -1,4 +1,5 @@
 using Lumen.Domain.Entities;
+using Lumen.Domain.Reference;
 using Shouldly;
 using Xunit;
 
@@ -121,6 +122,99 @@ public class VocabularyTests
         // §G11: a P4a invention. Append-only, so P6's computed corrections can add their own later.
         CyclePhaseOverride.Sources.All.ShouldBe(["user_correction"]);
 
+    // --- T6 sets: cycle settings, pause reasons, goals, hormones, notification categories ---
+
+    [Fact]
+    public void Regularity_has_the_three_ratified_members_with_somewhat_as_the_default()
+    {
+        UserCycleSettings.RegularityValues.All.ShouldBe(["regular", "somewhat", "irregular"]);
+        UserCycleSettings.RegularityValues.Default.ShouldBe("somewhat");
+    }
+
+    [Fact]
+    public void Pause_reasons_are_the_FIVE_C12_members_not_the_superseded_three()
+    {
+        // ARCHITECTURE.md:59 (authoritative) + clinical-asks C-12, PO-extended 2026-07-14.
+        // The r15 rider's 3-member list {pregnancy, hormonal_suppression, other} is SUPERSEDED.
+        UserCycleSettings.PauseReasons.All.ShouldBe([
+            "pregnancy", "hormonal_suppression", "surgical", "menopause", "other",
+        ]);
+        UserCycleSettings.PauseReasons.All.Count.ShouldBe(5);
+        UserCycleSettings.PauseReasons.All.ShouldContain("surgical");
+        UserCycleSettings.PauseReasons.All.ShouldContain("menopause");
+    }
+
+    [Fact]
+    public void Goals_are_the_five_ratified_codes_with_the_first_two_selected_by_default()
+    {
+        UserGoal.Codes.All.ShouldBe([
+            "manage_symptoms", "understand_hormones", "plan_fertility",
+            "prepare_appointments", "just_curious",
+        ]);
+        UserGoal.DefaultSelected.ShouldBe(["manage_symptoms", "understand_hormones"]);
+    }
+
+    [Fact]
+    public void Hormones_are_the_seven_canonical_codes_and_all_seven_are_charted_by_default()
+    {
+        HormoneCatalog.Codes.All.ShouldBe([
+            "estradiol", "progesterone", "lh", "fsh", "testosterone", "cortisol", "glp1",
+        ]);
+        // D-14: charted default = all 7 ON (screen 33's 4-ON state is a populated sample).
+        UserHormonePref.DefaultCharted.ShouldBe([
+            "estradiol", "progesterone", "lh", "fsh", "testosterone", "cortisol", "glp1",
+        ]);
+    }
+
+    [Fact]
+    public void Notification_categories_are_the_four_ratified_codes_seeded_ON_ON_OFF_OFF()
+    {
+        HormoneCatalog.NotificationCategories.All.ShouldBe([
+            "daily_checkin", "phase_shift", "period_prediction", "medication_reminders",
+        ]);
+        // Screen 7 (onboarding) is the authoritative initial seed, not screen 34's all-ON sample.
+        UserNotificationPref.DefaultEnabled.ShouldBe(["daily_checkin", "phase_shift"]);
+        UserNotificationPref.DefaultEnabled.ShouldNotContain("period_prediction");
+        UserNotificationPref.DefaultEnabled.ShouldNotContain("medication_reminders");
+    }
+
+    [Fact]
+    public void The_B16_label_map_covers_every_hormone_and_keeps_the_two_code_label_mismatches()
+    {
+        HormoneCatalog.Labels["estradiol"].ShouldBe("Estrogen");
+        HormoneCatalog.Labels["glp1"].ShouldBe("GLP-1");
+        HormoneCatalog.Labels["progesterone"].ShouldBe("Progesterone");
+        HormoneCatalog.Labels["lh"].ShouldBe("LH");
+        HormoneCatalog.Labels["fsh"].ShouldBe("FSH");
+        HormoneCatalog.Labels["testosterone"].ShouldBe("Testosterone");
+        HormoneCatalog.Labels["cortisol"].ShouldBe("Cortisol");
+        HormoneCatalog.Labels.Count.ShouldBe(7);
+    }
+
+    [Fact]
+    public void The_notification_label_map_uses_the_singular_Phase_shift()
+    {
+        HormoneCatalog.NotificationCategories.Labels["phase_shift"].ShouldBe("Phase shift");
+        HormoneCatalog.NotificationCategories.Labels["phase_shift"].ShouldNotBe("Phase shifts");
+        HormoneCatalog.NotificationCategories.Labels["daily_checkin"].ShouldBe("Daily check-in");
+        HormoneCatalog.NotificationCategories.Labels["period_prediction"].ShouldBe("Period prediction");
+        HormoneCatalog.NotificationCategories.Labels["medication_reminders"].ShouldBe("Medication reminders");
+        HormoneCatalog.NotificationCategories.Labels.Count.ShouldBe(4);
+    }
+
+    [Fact]
+    public void Every_hormone_carries_its_CLAUDE_md_swatch_colour()
+    {
+        HormoneCatalog.Colors["estradiol"].ShouldBe("#C25A36");
+        HormoneCatalog.Colors["progesterone"].ShouldBe("#7B8F6B");
+        HormoneCatalog.Colors["lh"].ShouldBe("#D4537E");
+        HormoneCatalog.Colors["fsh"].ShouldBe("#378ADD");
+        HormoneCatalog.Colors["testosterone"].ShouldBe("#BA7517");
+        HormoneCatalog.Colors["cortisol"].ShouldBe("#7F77DD");
+        HormoneCatalog.Colors["glp1"].ShouldBe("#1D9E75");
+        HormoneCatalog.Colors.Count.ShouldBe(7);
+    }
+
     [Fact]
     public void Every_vocabulary_member_is_lowercase_snake_case()
     {
@@ -132,6 +226,9 @@ public class VocabularyTests
             .. Symptom.PainTypeCodes.All, .. Symptom.TriggerCodes.All,
             .. CyclePhaseOverride.Phases.All, .. CyclePhaseOverride.Boundaries.All,
             .. CyclePhaseOverride.Sources.All,
+            .. UserCycleSettings.RegularityValues.All, .. UserCycleSettings.PauseReasons.All,
+            .. UserGoal.Codes.All, .. HormoneCatalog.Codes.All,
+            .. HormoneCatalog.NotificationCategories.All,
         ];
 
         foreach (var member in all)
@@ -154,5 +251,29 @@ public class VocabularyTests
         foreach (var phase in CyclePhaseOverride.Phases.All) phase.Length.ShouldBeLessThanOrEqualTo(16);
         foreach (var b in CyclePhaseOverride.Boundaries.All) b.Length.ShouldBeLessThanOrEqualTo(8);
         foreach (var s in CyclePhaseOverride.Sources.All) s.Length.ShouldBeLessThanOrEqualTo(24);
+        foreach (var r in UserCycleSettings.RegularityValues.All) r.Length.ShouldBeLessThanOrEqualTo(16);
+        foreach (var r in UserCycleSettings.PauseReasons.All) r.Length.ShouldBeLessThanOrEqualTo(32);
+        foreach (var g in UserGoal.Codes.All) g.Length.ShouldBeLessThanOrEqualTo(32);
+        foreach (var h in HormoneCatalog.Codes.All) h.Length.ShouldBeLessThanOrEqualTo(32);
+        foreach (var c in HormoneCatalog.NotificationCategories.All) c.Length.ShouldBeLessThanOrEqualTo(32);
+    }
+
+    [Fact]
+    public void Every_hormone_and_category_code_has_exactly_one_label_and_no_orphans()
+    {
+        // The B16 "one shared constants file" rule only holds if the maps stay in lockstep with
+        // the code lists — an orphaned entry is how a renamed code silently loses its label.
+        HormoneCatalog.Labels.Keys.OrderBy(k => k).ShouldBe(HormoneCatalog.Codes.All.OrderBy(k => k));
+        HormoneCatalog.Colors.Keys.OrderBy(k => k).ShouldBe(HormoneCatalog.Codes.All.OrderBy(k => k));
+        HormoneCatalog.NotificationCategories.Labels.Keys.OrderBy(k => k)
+            .ShouldBe(HormoneCatalog.NotificationCategories.All.OrderBy(k => k));
+    }
+
+    [Fact]
+    public void Every_default_seed_list_is_a_subset_of_its_own_vocabulary()
+    {
+        UserGoal.DefaultSelected.ShouldBeSubsetOf(UserGoal.Codes.All);
+        UserHormonePref.DefaultCharted.ShouldBeSubsetOf(HormoneCatalog.Codes.All);
+        UserNotificationPref.DefaultEnabled.ShouldBeSubsetOf(HormoneCatalog.NotificationCategories.All);
     }
 }

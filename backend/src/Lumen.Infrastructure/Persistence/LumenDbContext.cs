@@ -17,6 +17,13 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
     public DbSet<Symptom> Symptoms => Set<Symptom>();
     public DbSet<CyclePhaseOverride> CyclePhaseOverrides => Set<CyclePhaseOverride>();
 
+    // Named CycleSettings, not UserCycleSettings, so the property does not shadow the entity type.
+    public DbSet<UserCycleSettings> CycleSettings => Set<UserCycleSettings>();
+    public DbSet<CycleTrackingPauseSpan> CycleTrackingPauseSpans => Set<CycleTrackingPauseSpan>();
+    public DbSet<UserGoal> UserGoals => Set<UserGoal>();
+    public DbSet<UserHormonePref> UserHormonePrefs => Set<UserHormonePref>();
+    public DbSet<UserNotificationPref> UserNotificationPrefs => Set<UserNotificationPref>();
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         // The soft-delete query filter on User intentionally coexists with required dependents.
         => optionsBuilder.ConfigureWarnings(w =>
@@ -152,6 +159,84 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
             e.HasIndex(x => new { x.UserId, x.CycleStartOn }); // "all overrides for this cycle"
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        // --- P4a settings & preference tables (T6) -----------------------------------------
+        // None of these carry DeletedAt: D-13's soft-delete governs individual *entries*, and a
+        // tombstone on a per-user singleton or a preference row would strand its unique key and
+        // block re-selecting. Account deletion hard-deletes them (§F, T8).
+        //
+        // Every column with a DB default is also mapped ValueGeneratedNever(). HasDefaultValue()
+        // alone makes EF treat the CLR default as "not set", so a deliberate `false` on a
+        // `default true` column would be dropped from the INSERT and come back `true`. The DDL
+        // default still ships (it is what a non-EF writer gets); EF simply always sends the value.
+
+        b.Entity<UserCycleSettings>(e =>
+        {
+            e.ToTable("user_cycle_settings", t =>
+            {
+                // §G7 structural only: a positive integer that fits smallint. NOT the 10-120
+                // sanity band (a non-blocking endpoint warning) and NOT the 21-45 clinical bound
+                // (clinician-UNSIGNED, estimator-only, P6). Bounds never block entry.
+                t.HasCheckConstraint(
+                    "ck_user_cycle_settings_avg_cycle_length_positive", "\"AvgCycleLengthDays\" > 0");
+                t.HasCheckConstraint(
+                    "ck_user_cycle_settings_avg_period_length_positive",
+                    "\"AvgPeriodLengthDays\" IS NULL OR \"AvgPeriodLengthDays\" > 0");
+                // No CHECK tying PauseReason to TrackingPaused: resume preserves the last reason.
+            });
+            e.HasKey(x => x.UserId);
+            e.Property(x => x.AvgCycleLengthDays)
+                .HasDefaultValue(UserCycleSettings.DefaultAvgCycleLengthDays).ValueGeneratedNever();
+            // AvgPeriodLengthDays: nullable, deliberately no default (screen 3 never collects it).
+            e.Property(x => x.Regularity).IsRequired().HasMaxLength(16)
+                .HasDefaultValue(UserCycleSettings.RegularityValues.Default).ValueGeneratedNever();
+            e.Property(x => x.PhasePredictionEnabled).HasDefaultValue(true).ValueGeneratedNever();
+            e.Property(x => x.AutoDetectPeriodStartEnabled).HasDefaultValue(true).ValueGeneratedNever();
+            e.Property(x => x.ShowFertilityWindowEnabled).HasDefaultValue(false).ValueGeneratedNever();
+            e.Property(x => x.TrackingPaused).HasDefaultValue(false).ValueGeneratedNever();
+            e.Property(x => x.PauseReason).HasMaxLength(32);
+            e.HasOne<User>().WithOne().HasForeignKey<UserCycleSettings>(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<CycleTrackingPauseSpan>(e =>
+        {
+            e.ToTable("cycle_tracking_pause_spans");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Reason).IsRequired().HasMaxLength(32);
+            // At most one OPEN pause per user. The filter is on EndedOn — a domain lifecycle
+            // column, not a soft-delete marker — so this is outside the §G9 tombstone regime.
+            e.HasIndex(x => x.UserId).IsUnique().HasFilter("\"EndedOn\" IS NULL");
+            e.HasIndex(x => new { x.UserId, x.StartedOn }); // a user's spans in chronological order
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<UserGoal>(e =>
+        {
+            e.ToTable("user_goals");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.GoalCode).IsRequired().HasMaxLength(32);
+            e.HasIndex(x => new { x.UserId, x.GoalCode }).IsUnique();
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<UserHormonePref>(e =>
+        {
+            e.ToTable("user_hormone_prefs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.HormoneCode).IsRequired().HasMaxLength(32);
+            e.HasIndex(x => new { x.UserId, x.HormoneCode }).IsUnique();
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<UserNotificationPref>(e =>
+        {
+            e.ToTable("user_notification_prefs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.CategoryCode).IsRequired().HasMaxLength(32);
+            e.HasIndex(x => new { x.UserId, x.CategoryCode }).IsUnique();
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
