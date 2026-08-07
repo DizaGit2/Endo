@@ -4,6 +4,7 @@ using Hangfire;
 using Hangfire.PostgreSql;
 using Lumen.Api;
 using Lumen.Api.Auth;
+using Lumen.Api.Cycle;
 using Lumen.Api.Hangfire;
 using Lumen.Api.Onboarding;
 using Lumen.Api.Time;
@@ -152,6 +153,10 @@ builder.Services.AddScoped<IUserDayContext, UserDayContext>();
 // Extracted from the /onboarding/start handler (P3c-T2) so validation/compensation are unit-testable.
 builder.Services.AddScoped<OnboardingService>();
 
+// --- cycle (P4a-T9) ---
+// Scoped: it consumes the request-scoped day context (D-12) and crypto context (the note cipher).
+builder.Services.AddScoped<CycleService>();
+
 // Global per-user (else per-IP) rate limit — protects costly endpoints like POST /onboarding/start.
 var permitPerMinute = builder.Configuration.GetValue<int?>("RateLimit:PermitPerMinute") ?? 60;
 // Named per-IP policy layered on top of the global limiter, just for the anonymous onboarding
@@ -268,6 +273,10 @@ app.MapGet("/health/ready", async (IConfiguration cfg) =>
 
 // Onboarding routes live in Lumen.Api/Onboarding/OnboardingEndpoints.cs (T4).
 app.MapOnboardingEndpoints();
+
+// --- cycle (P4a) ---
+// Cycle routes live in Lumen.Api/Cycle/CycleEndpoints.cs (T9).
+app.MapCycleEndpoints();
 
 app.MapGet("/me", async (
     ICurrentUserAccessor current,

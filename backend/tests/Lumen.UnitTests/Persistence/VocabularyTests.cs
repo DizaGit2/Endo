@@ -1,3 +1,4 @@
+using Lumen.Api.Cycle;
 using Lumen.Domain.Entities;
 using Lumen.Domain.Reference;
 using Shouldly;
@@ -333,5 +334,20 @@ public class VocabularyTests
         UserGoal.DefaultSelected.ShouldBeSubsetOf(UserGoal.Codes.All);
         UserHormonePref.DefaultCharted.ShouldBeSubsetOf(HormoneCatalog.Codes.All);
         UserNotificationPref.DefaultEnabled.ShouldBeSubsetOf(HormoneCatalog.NotificationCategories.All);
+    }
+
+    [Fact]
+    public void Phase_unavailability_reasons_are_the_four_reserved_codes()
+    {
+        // §G6/§G11: P4a ships zero clinical inference, so the calendar can only ever answer
+        // `phase_engine_not_implemented`. The other three are declared now and reserved for P6 so
+        // the wire vocabulary the Dart client is generated against does not change under it later.
+        CyclePhaseAvailability.PhaseEngineNotImplemented.ShouldBe("phase_engine_not_implemented");
+        CyclePhaseAvailability.TrackingPaused.ShouldBe("tracking_paused");
+        CyclePhaseAvailability.InsufficientData.ShouldBe("insufficient_data");
+        CyclePhaseAvailability.NoPeriodLogged.ShouldBe("no_period_logged");
+        CyclePhaseAvailability.All.ShouldBe([
+            "phase_engine_not_implemented", "tracking_paused", "insufficient_data", "no_period_logged",
+        ]);
     }
 }
