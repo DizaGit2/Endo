@@ -190,13 +190,40 @@ public class SchemaSmokeLiveTests
             $"[{string.Join(", ", modelOnly)}]");
     }
 
+    /// <summary>
+    /// Shared with <c>Lumen.SecurityTests.InsightSnapshotFixtureLock.Key</c> — duplicated verbatim
+    /// because test projects must not reference each other. T8's erasure-completeness fixture has to
+    /// insert a <c>user_insight_snapshot</c> row (it is the only way to PROVE erasure empties that
+    /// table), so it holds this Postgres session advisory lock for the life of its fixture and the
+    /// zero-row assertion below takes the same lock. Mutual exclusion, no sleep, and neither
+    /// assertion is weakened: a row written by production code has no lock and still fails this test.
+    /// </summary>
+    private const long InsightSnapshotFixtureLockKey = 0x4C554D454E38;
+
     [Fact]
     public async Task The_insight_snapshot_table_holds_zero_rows()
     {
         // §G6: `user_insight_snapshot` is a placeholder. P4a computes nothing, writes nothing and
         // exposes no read endpoint, so any row here would mean clinical output leaked into a phase
         // that has no phase engine.
-        var rows = await CountRowsAsync(TableNameOf(typeof(UserInsightSnapshot)));
-        rows.ShouldBe(0, "P4a inserts zero rows into user_insight_snapshot (§G6)");
+        var table = TableNameOf(typeof(UserInsightSnapshot));
+
+        await using var db = TestFixtures.NewDb();
+        await db.Database.OpenConnectionAsync(); // one physical connection: session advisory locks
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", InsightSnapshotFixtureLockKey);
+#pragma warning disable EF1002 // relation name comes from the compiled model — see CountRowsAsync
+            var rows = await db.Database
+                .SqlQueryRaw<long>($"SELECT count(*) AS \"Value\" FROM \"{table}\"")
+                .SingleAsync();
+#pragma warning restore EF1002
+            rows.ShouldBe(0, "P4a inserts zero rows into user_insight_snapshot (§G6)");
+        }
+        finally
+        {
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock({0})", InsightSnapshotFixtureLockKey);
+            await db.Database.CloseConnectionAsync();
+        }
     }
 }

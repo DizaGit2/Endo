@@ -30,6 +30,16 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((context, config) => config
     .MinimumLevel.Information()
+    // Microsoft.AspNetCore's own hosting diagnostics log the RAW request path three times per request
+    // at Information ("Request starting/finished HTTP/1.1 GET http://host/cycle/day/2026-08-06 …",
+    // plus the unhandled-request line). "/cycle/day/2026-08-06" asserts that this user logged
+    // something on that day — a health-adjacent fact §F bars from a log line — and no enricher can
+    // catch it reliably, because the path arrives inside a rendered URL under generic property names
+    // ({Path}, {Url}). Silencing that category below Warning is also the canonical Serilog.AspNetCore
+    // setup: UseSerilogRequestLogging (below) exists to REPLACE those lines with one summary event,
+    // and this app's summary logs the route template instead of the path. Microsoft.Hosting.Lifetime
+    // is a separate category, so "Now listening on…" and the shutdown lines still appear.
+    .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .Enrich.With(new PiiRedactionEnricher())
     .WriteTo.Console());
@@ -180,7 +190,23 @@ var app = builder.Build();
 // the client was correctly answered with a 400, was written as an Error-level "responded 500" with a
 // stack trace. That is an operational alarm for user input, and a binding-failure message quotes the
 // value that failed to bind, which here is health data (§F bars that from a log line too).
-app.UseSerilogRequestLogging();
+app.UseSerilogRequestLogging(options =>
+{
+    // Log the ROUTE TEMPLATE, never the raw path (§F). "/cycle/day/2026-08-06" asserts that this
+    // user logged something on that day — a health-adjacent fact — while "/cycle/day/{date}" carries
+    // the same operational signal with none of the datum. Serilog's middleware attaches RequestPath
+    // as a property unconditionally, whatever this template says, so PiiRedactionEnricher redacts
+    // that name outright and this line is what keeps the log line useful. §F:303's "never log request
+    // bodies for cycle/symptoms/day-logs" is unchanged and still holds.
+    options.MessageTemplate =
+        "HTTP {RequestMethod} {RouteTemplate} responded {StatusCode} in {Elapsed:0.0000} ms";
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+        // Unmatched requests (404s, probes, scanners) have no endpoint and therefore no template.
+        // "(unrouted)" is deliberately a constant rather than a fallback to the path.
+        diagnosticContext.Set(
+            "RouteTemplate",
+            (httpContext.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? "(unrouted)");
+});
 
 app.UseExceptionHandler(); // clean ProblemDetails on unhandled errors; no stack traces (with env=Production)
 

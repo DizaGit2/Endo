@@ -149,13 +149,99 @@ public class PiiRedactionEnricherTests
     [Fact]
     public void Non_sensitive_nested_property_with_email_shaped_value_still_gets_value_based_scrub()
     {
+        // `Note` USED to be the benign name in this control. P4a makes free-text notes health data
+        // (§F), so `note` joined SensitiveNames in T8 and the control moved to `Label`, which is not
+        // a P4a field name.
         var (logger, sink) = BuildLogger();
-        logger.Information("req {@Payload}", new { Note = "contact-me@example.com", Count = 1 });
+        logger.Information("req {@Payload}", new { Label = "contact-me@example.com", Count = 1 });
 
         var rendered = sink.Events.Single().RenderMessage();
-        rendered.ShouldContain("[redacted-email]"); // Note isn't a sensitive name — old value scrub
+        rendered.ShouldContain("[redacted-email]"); // Label isn't a sensitive name — old value scrub
         rendered.ShouldNotContain("contact-me@example.com");
         rendered.ShouldContain("1");
+    }
+
+    // ── T8: the P4a health-data field names, plus the P3c-deferred credential names ─────────────
+
+    /// <summary>
+    /// Every property name P4a can put a special-category value under (§D's plaintext columns and the
+    /// free-text note ciphertext), plus the credential names P3c deferred. One case per name: a
+    /// structured log property carrying that name must never reach a sink with its value intact.
+    /// </summary>
+    public static TheoryData<string> SensitiveP4aNames =>
+    [
+        // free-text notes (D-13) — the note itself and both column/DTO spellings
+        "notes", "note", "notesEnc",
+        // symptom classification (§D plaintext)
+        "symptomCode", "painTypes", "triggers", "region", "side", "intensity",
+        // day log / check-in ordinals
+        "pain", "mood", "energy", "libido", "flowIntensity",
+        // the POST /symptoms batch envelope
+        "entries",
+        // rider-4 condition bundle + body metrics
+        "endoStatus", "rasrmStage", "diagnosedOn", "heightCm", "weightKg",
+        // cycle settings & onboarding
+        "pauseReason", "lastPeriodStart", "goals",
+        // credentials — deferred in P3c, in scope now
+        "token", "refreshToken", "idToken", "authorization", "secret", "dek",
+    ];
+
+    [Theory]
+    [MemberData(nameof(SensitiveP4aNames))]
+    public void Redacts_every_p4a_sensitive_field_name(string name)
+    {
+        var (logger, sink) = BuildLogger();
+        logger.Information("write {" + name + "}", "leaked-health-datum");
+
+        var rendered = sink.Events.Single().RenderMessage();
+        rendered.Contains("leaked-health-datum").ShouldBeFalse(
+            $"'{name}' must be a redacted property name — P4a stores health data under it");
+        rendered.ShouldContain("[redacted]");
+    }
+
+    [Theory]
+    [MemberData(nameof(SensitiveP4aNames))]
+    public void Redacts_every_p4a_sensitive_field_name_nested_in_a_destructured_object(string name)
+    {
+        // The request-body shapes P4a logs are objects, not top-level scalars, so the nested path is
+        // the one that actually matters in production.
+        var (logger, sink) = BuildLogger();
+        var payload = new Dictionary<string, object> { [name] = "leaked-health-datum", ["ok"] = "benign" };
+        logger.Information("write {@Payload}", payload);
+
+        var rendered = sink.Events.Single().RenderMessage();
+        rendered.Contains("leaked-health-datum").ShouldBeFalse(
+            $"'{name}' must be redacted when nested inside a destructured payload");
+        rendered.ShouldContain("benign"); // siblings survive
+    }
+
+    [Fact]
+    public void Redacts_a_numeric_pain_score_not_just_strings()
+    {
+        // Intensity/pain/mood are SHORTS, not strings — a value-shape-based scrub would miss them
+        // entirely. Name-based redaction is what makes an ordinal health score safe.
+        var (logger, sink) = BuildLogger();
+        logger.Information("day log {Pain} {Mood}", 9, 1);
+
+        var rendered = sink.Events.Single().RenderMessage();
+        rendered.ShouldBe("day log \"[redacted]\" \"[redacted]\"");
+    }
+
+    [Fact]
+    public void RequestPath_with_a_date_keyed_route_is_not_emitted_raw()
+    {
+        // §F: `/cycle/day/2026-08-06` is a health-adjacent fact — it says this user logged something
+        // on that day. Request logging must emit the route TEMPLATE, never the raw path, so the
+        // enricher redacts RequestPath outright rather than trying to parse dates out of it.
+        var (logger, sink) = BuildLogger();
+        logger.Information("HTTP {RequestMethod} {RequestPath} responded {StatusCode}",
+            "POST", "/cycle/day/2026-08-06", 200);
+
+        var rendered = sink.Events.Single().RenderMessage();
+        rendered.ShouldNotContain("2026-08-06");
+        rendered.ShouldNotContain("/cycle/day");
+        rendered.ShouldContain("[redacted]");
+        rendered.ShouldContain("200"); // status code is not PII and must stay legible
     }
 
     // ── never throws, even on odd shapes ─────────────────────────────────────────────────────────
