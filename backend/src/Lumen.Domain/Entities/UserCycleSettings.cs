@@ -15,10 +15,12 @@ namespace Lumen.Domain.Entities;
 ///
 /// <para><b>Two-tier bounds (§G7).</b> <see cref="AvgCycleLengthDays"/> and
 /// <see cref="AvgPeriodLengthDays"/> are <i>typed self-reports</i>, so the only schema constraint is
-/// structural — a positive integer that fits <c>smallint</c>. The sanity band (avg cycle 10–120 d,
-/// period 1–30 d) is a <b>non-blocking warning</b> returned by the endpoint, never a CHECK; the
-/// clinical bounds (cycle 21–45 d, period 1–10 d) are clinician-UNSIGNED PO-interim values that
-/// gate the P6 estimator only and have <b>no home in this schema</b>. Bounds never block entry.</para>
+/// structural — a positive integer that fits <c>smallint</c>. The sanity band is a
+/// <b>non-blocking warning</b> returned by the endpoint, never a CHECK; the C-03/C-04 clinical
+/// bounds (see <c>ARCHITECTURE.md</c> §A; clinician-UNSIGNED, not enforced here) gate the P6
+/// estimator only and have <b>no home in this schema</b>. Neither band's numbers are repeated here
+/// — per §G7 they live only in the STATUS block and the <c>ARCHITECTURE.md</c> §A P4a row. Bounds
+/// never block entry.</para>
 ///
 /// <para><b>Deliberately absent columns:</b> <c>first_day_of_week</c> (D-05 derives it from
 /// <c>users.locale</c> via ICU) and <c>regularity_variability_days</c> (a C-05 computed output that

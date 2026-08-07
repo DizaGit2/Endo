@@ -218,21 +218,61 @@ public sealed class CycleSettingsModelTests : IDisposable
         row.PausedSince.ShouldBeNull();
     }
 
-    [Fact]
-    public void An_explicit_false_on_a_default_true_column_survives_the_insert()
-    {
-        // The reason the boolean columns are mapped ValueGeneratedNever: with EF's default
-        // sentinel handling, `false` is indistinguishable from "not set", so a user who turns
-        // phase prediction off *while the row is being created* would silently get `true`.
-        var settings = NewSettings();
-        settings.PhasePredictionEnabled = false;
-        settings.AutoDetectPeriodStartEnabled = false;
-        SaveAll(settings);
+    // NOTE: an earlier revision of this file carried
+    // `An_explicit_false_on_a_default_true_column_survives_the_insert`, documented as "the reason
+    // the boolean columns are mapped ValueGeneratedNever()". A T6 review disproved that: removing
+    // ValueGeneratedNever() from PhasePredictionEnabled alone left that test (and all 240 others)
+    // green. EF Core 10 infers a property's value-generation "sentinel" (the value treated as
+    // "not set") from a literal C# field initializer when one is present; PhasePredictionEnabled's
+    // `= true` and AutoDetectPeriodStartEnabled's `= true` are literals, so EF already sends an
+    // explicit `false` regardless of ValueGeneratedNever(), and ShowFertilityWindowEnabled /
+    // TrackingPaused have no swallow to guard against because their sentinel (CLR default `false`)
+    // already equals their own DB default. That test was therefore a vacuous guard for the claim
+    // it carried and has been deleted rather than kept under a corrected rationale, because there
+    // is no production behaviour left for it to pin: making it genuinely load-bearing would mean
+    // changing the bool columns' default scheme, which nothing here requires. The two tests below
+    // replace it with the columns where the swallow is real.
 
-        using var read = NewContext();
-        var row = read.CycleSettings.Single(x => x.UserId == _userId);
-        row.PhasePredictionEnabled.ShouldBeFalse();
-        row.AutoDetectPeriodStartEnabled.ShouldBeFalse();
+    [Fact]
+    public void AvgCycleLengthDays_zero_is_not_swallowed_by_the_DB_default_and_the_CHECK_still_rejects_it()
+    {
+        // The genuine load-bearing case for ValueGeneratedNever(). AvgCycleLengthDays' CLR
+        // initializer is `= DefaultAvgCycleLengthDays` -- a reference to a named const, not a
+        // literal -- so EF Core's sentinel-from-initializer inference does not fire, and the
+        // property's sentinel stays the plain CLR default for `short`: 0. Without
+        // ValueGeneratedNever(), an explicit AvgCycleLengthDays = 0 is indistinguishable from
+        // "not set": EF would omit the column from the INSERT, the DB default (28) would fire
+        // silently, SaveChanges would succeed, and the "> 0" CHECK would never see the caller's
+        // actual value -- defeating the one constraint it exists to enforce. Proven empirically:
+        // temporarily removing ValueGeneratedNever() from AvgCycleLengthDays alone makes this
+        // exact assertion fail (SaveChanges succeeds and the row reads back 28 instead of
+        // throwing). See "T6 review fixes" in task-6-report.md for the pasted red/green output.
+        var settings = NewSettings();
+        settings.AvgCycleLengthDays = 0;
+
+        using var db = NewContext();
+        db.Add(settings);
+        Should.Throw<DbUpdateException>(() => db.SaveChanges());
+    }
+
+    [Fact]
+    public void Regularity_null_is_not_swallowed_by_the_DB_default_and_the_NOT_NULL_constraint_still_rejects_it()
+    {
+        // Same swallow, same fix, a different column and a different guarded constraint.
+        // Regularity's initializer is `= RegularityValues.Default` -- again a named-const
+        // reference, not a literal -- so its sentinel stays the CLR default for a reference type:
+        // null. Without ValueGeneratedNever(), an explicit Regularity = null would be swallowed
+        // the same way: omitted from the INSERT, silently replaced by the DB default
+        // ("somewhat"), and the column's own NOT NULL constraint would never see the caller's
+        // actual (invalid) value. Proven empirically the same way: temporarily removing
+        // ValueGeneratedNever() from Regularity alone makes this assertion fail (SaveChanges
+        // succeeds and the row reads back "somewhat" instead of throwing).
+        var settings = NewSettings();
+        settings.Regularity = null!;
+
+        using var db = NewContext();
+        db.Add(settings);
+        Should.Throw<DbUpdateException>(() => db.SaveChanges());
     }
 
     // --- structural CHECKs (§G7): positive smallint, nothing clinical ----------------------

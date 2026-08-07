@@ -167,17 +167,31 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
         // block re-selecting. Account deletion hard-deletes them (§F, T8).
         //
         // Every column with a DB default is also mapped ValueGeneratedNever(). HasDefaultValue()
-        // alone makes EF treat the CLR default as "not set", so a deliberate `false` on a
-        // `default true` column would be dropped from the INSERT and come back `true`. The DDL
-        // default still ships (it is what a non-EF writer gets); EF simply always sends the value.
+        // alone leaves EF's value-generation "sentinel" (the value treated as "not set") wherever
+        // the model build inferred it. AvgCycleLengthDays' and Regularity's CLR initializers
+        // reference a named const rather than a literal, so EF does NOT infer the sentinel from
+        // them and falls back to the plain CLR type default (0 / null): without
+        // ValueGeneratedNever() an explicit AvgCycleLengthDays = 0 or Regularity = null would be
+        // dropped from the INSERT and silently replaced by the DB default (28 / "somewhat"),
+        // which for AvgCycleLengthDays defeats the "> 0" CHECK below entirely (see
+        // CycleSettingsModelTests.AvgCycleLengthDays_zero_is_not_swallowed_by_the_DB_default_and_the_CHECK_still_rejects_it
+        // and the Regularity/NOT-NULL sibling). The four bool columns do NOT have this problem —
+        // EF Core 10 infers their sentinel from their literal `= true` initializers (or, for the
+        // two `default false` columns, the CLR default already equals the DB default) — but they
+        // are mapped ValueGeneratedNever() too, for consistency across every defaulted column on
+        // this entity and as defence-in-depth against that inference changing later. The DDL
+        // default still ships regardless (it is what a non-EF writer gets); EF simply always sends
+        // the CLR value once ValueGeneratedNever() is set.
 
         b.Entity<UserCycleSettings>(e =>
         {
             e.ToTable("user_cycle_settings", t =>
             {
-                // §G7 structural only: a positive integer that fits smallint. NOT the 10-120
-                // sanity band (a non-blocking endpoint warning) and NOT the 21-45 clinical bound
-                // (clinician-UNSIGNED, estimator-only, P6). Bounds never block entry.
+                // §G7 structural only: a positive integer that fits smallint. NOT the sanity band
+                // (a non-blocking endpoint warning) and NOT the C-03/C-04 clinical bound (see
+                // ARCHITECTURE.md §A; clinician-UNSIGNED, estimator-only, P6). Bounds never block
+                // entry. The actual numerals are deliberately not repeated here — per §G7 they
+                // live only in the STATUS block and the ARCHITECTURE.md §A P4a row.
                 t.HasCheckConstraint(
                     "ck_user_cycle_settings_avg_cycle_length_positive", "\"AvgCycleLengthDays\" > 0");
                 t.HasCheckConstraint(
