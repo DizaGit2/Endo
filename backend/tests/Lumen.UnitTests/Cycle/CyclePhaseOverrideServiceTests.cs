@@ -451,4 +451,24 @@ public sealed class CyclePhaseOverrideServiceTests : IDisposable
         result.ShouldBeOfType<PhaseOverrideResult.UserNotFound>();
         AllRows().ShouldBeEmpty();
     }
+
+    // --- the frozen wire vocabulary (§G12) ------------------------------------------------
+
+    [Fact]
+    public void Cycle_validation_messages_are_frozen()
+    {
+        // §G12: "endpoint-specific messages are defined in their own task and asserted verbatim
+        // there" — this is that assertion for CycleContracts.cs. Every test above asserts a
+        // rejection THROUGH the constant (e.g. `.ShouldBe([CycleValidationMessages.BeforeCycleStart])`),
+        // which pins the service's behaviour to the constant but pins the constant to nothing: reword
+        // the literal and those tests stay green. These four strings are wire text the Flutter client
+        // renders verbatim, so they are pinned here against their literals, mirroring the precedent in
+        // `Lumen.UnitTests.Validation.ValidationProblemBuilderTests.Shared_message_constants_are_frozen`
+        // (T3), which does the same for the shared `ValidationMessages` constants.
+        CycleValidationMessages.NoMatchingPeriodStart.ShouldBe("must match a logged period start");
+        CycleValidationMessages.BeforeCycleStart.ShouldBe("date must not be before the cycle start");
+        CycleValidationMessages.NotBeforeNextPeriodStart.ShouldBe(
+            "date must be before the next logged period start");
+        CycleValidationMessages.DuplicateBoundary.ShouldBe("this phase and boundary appears more than once");
+    }
 }
