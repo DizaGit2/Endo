@@ -106,6 +106,51 @@ internal sealed class CycleTestHarness : IDisposable
     /// <summary>A service for the harness's primary user at <see cref="Now"/>.</summary>
     public CycleService NewService() => NewService(DayInfo());
 
+    /// <summary>
+    /// A <see cref="CycleDayService"/> over a fresh context (T10), for the given day info
+    /// (<see langword="null"/> = erased user). Same lifetime story as <see cref="NewService(UserDayInfo?)"/>.
+    /// </summary>
+    public CycleDayService NewDayService(UserDayInfo? info) => new(NewContext(), new StubUserDayContext(info), Crypto);
+
+    /// <summary>A <see cref="CycleDayService"/> for the harness's primary user at <see cref="Now"/>.</summary>
+    public CycleDayService NewDayService() => NewDayService(DayInfo());
+
+    /// <summary>
+    /// Seeds a <c>cycle_day_logs</c> row directly. <see cref="CycleDayLog.Energy"/> and
+    /// <see cref="CycleDayLog.Libido"/> are settable here even though P4a ships no writer for them
+    /// (D-10 defers both scales), because the quick check-in must be proven not to clear columns it
+    /// does not own.
+    /// </summary>
+    public CycleDayLog SeedDayLog(
+        DateOnly day,
+        Guid? userId = null,
+        short? pain = null,
+        short? mood = null,
+        short? energy = null,
+        short? libido = null,
+        byte[]? notesEnc = null,
+        DateTimeOffset? deletedAt = null)
+    {
+        var row = new CycleDayLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId ?? UserId,
+            Day = day,
+            Pain = pain,
+            Mood = mood,
+            Energy = energy,
+            Libido = libido,
+            NotesEnc = notesEnc,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+            DeletedAt = deletedAt,
+        };
+        using var db = NewOwnedContext();
+        db.CycleDayLogs.Add(row);
+        db.SaveChanges();
+        return row;
+    }
+
     public CycleEvent SeedEvent(
         string kind,
         DateOnly on,

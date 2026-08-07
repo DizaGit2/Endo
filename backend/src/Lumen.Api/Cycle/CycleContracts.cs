@@ -55,6 +55,81 @@ public record CycleEventResponse(
     DateTimeOffset UpdatedAt);
 
 /// <summary>
+/// Body of <c>POST /cycle/day/{date}</c> (screen 11, day detail) — the one-row-per-day upsert of
+/// D-11. The day itself is the route parameter, never a field here.
+///
+/// <para><b>FULL-UPSERT semantics, exactly like <see cref="LogCycleEventRequest"/>: every member
+/// describes the row's desired FINAL state, so an omitted field CLEARS the stored value rather than
+/// leaving it alone.</b> There is no third state available to express "leave this one alone":
+/// <c>int?</c>/<c>string?</c> on a positional record cannot distinguish an absent property from an
+/// explicit <c>null</c> under <c>System.Text.Json</c>, and inventing a wrapper type to do so would
+/// put an <c>Optional&lt;T&gt;</c> in the generated Dart client for a distinction the day-detail
+/// screen does not make — it submits the whole day. <b><c>POST /checkin/quick</c> is the deliberate
+/// partial counterpart</b> and is the endpoint to use when only pain or mood changed; it never
+/// clears a note this one wrote.</para>
+///
+/// <para>The two columns this DTO does <i>not</i> expose — <c>energy</c> and <c>libido</c> — are
+/// untouched by either endpoint. D-10 defers both scales, so P4a has no writer for them at all
+/// (§D), and "final state" means the final state of the fields below, not of the row.</para>
+///
+/// <para>At least one of <see cref="Pain"/>, <see cref="Mood"/> and <see cref="Notes"/> must be
+/// present, so an empty body can never blank a day by accident.</para>
+/// </summary>
+/// <param name="Pain">
+/// Headline pain on the 0–10 NRS-11 scale (D-08). <b>0 is a real datum</b> ("none today"): it
+/// satisfies the at-least-one rule and is stored as 0. Only <see langword="null"/> is "not recorded".
+/// </param>
+/// <param name="Mood">Mood on the 1–4 scale {low, tired, steady, bright} (§G10).</param>
+/// <param name="Notes">Optional free text, ≤ 2000 characters after trimming (D-13). Stored encrypted.</param>
+public record LogCycleDayRequest(
+    int? Pain,
+    int? Mood,
+    string? Notes);
+
+/// <summary>
+/// One stored <c>cycle_day_logs</c> row: the 200 body of <c>POST /cycle/day/{date}</c> and the
+/// <c>log</c> member of <see cref="CycleDayResponse"/>, with <see cref="Notes"/> echoed back in
+/// plaintext (the column itself holds only AES-256-GCM ciphertext).
+/// </summary>
+/// <remarks>
+/// No <c>id</c>: the row is addressed by <c>(user, day)</c> and §C.2 exposes no endpoint that takes a
+/// day-log id, so publishing one would be an identifier the client can only misuse. No <c>phase</c>,
+/// <c>cycleDay</c> or <c>confidence</c> either (§G6) — P4a computes none of them, and a placeholder
+/// key is exactly how a not-yet-implemented estimate gets rendered as a clinical fact.
+/// </remarks>
+public record CycleDayLogResponse(
+    DateOnly Day,
+    int? Pain,
+    int? Mood,
+    string? Notes,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+/// <summary>
+/// The 200 body of <c>GET /cycle/day/{date}</c> (screen 11): everything the user has recorded
+/// <i>on</i> one day.
+/// </summary>
+/// <remarks>
+/// A day with nothing on it is a <b>200</b> with <c>log: null</c> and empty collections, not a 404 —
+/// 404 is reserved for "no such user" (§G12), and "nothing logged" is the empty state the screen
+/// renders rather than an error. The read has no range validation: a future or long-past date is a
+/// legitimate question with an empty answer.
+/// </remarks>
+/// <param name="Date">The requested day, echoed back.</param>
+/// <param name="Log">The day's headline pain/mood/note, or <see langword="null"/> when unlogged.</param>
+/// <param name="Events">The day's live <c>cycle_events</c>, notes decrypted.</param>
+/// <param name="PhaseOverrides">
+/// The user's own live phase corrections <b>dated on this day</b> (screen 14). Named for the table,
+/// not for a phase, because that is what they are: <b>observed, user-asserted data</b>, never an
+/// inference. P4a computes no phase for any day (§G6), so nothing here is derived from anything.
+/// </param>
+public record CycleDayResponse(
+    DateOnly Date,
+    CycleDayLogResponse? Log,
+    IReadOnlyList<CycleEventResponse> Events,
+    IReadOnlyList<PhaseOverrideBoundary> PhaseOverrides);
+
+/// <summary>
 /// Body of <c>POST /cycle/phase-override</c> (screen 14) — <b>replace the whole set</b> for one
 /// cycle. Whatever this request lists becomes the user's live corrections for that cycle; every
 /// boundary it omits is retracted (soft-deleted).
@@ -121,6 +196,14 @@ public static class CycleValidationMessages
 
     /// <summary>The same <c>(phase, boundary)</c> pair appears twice in one request.</summary>
     public const string DuplicateBoundary = "this phase and boundary appears more than once";
+
+    /// <summary>
+    /// A <c>POST /cycle/day/{date}</c> body carried none of pain, mood or notes. Reported under
+    /// <see cref="Validation.ValidationProblemBuilder.RequestKey"/> because it belongs to the
+    /// combination rather than to any one field. Note that <c>pain: 0</c> <b>does</b> satisfy the
+    /// rule (D-08) — only a blank note counts as absent text.
+    /// </summary>
+    public const string DayLogEmpty = "at least one of pain, mood or notes is required";
 }
 
 /// <summary>

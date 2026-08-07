@@ -153,9 +153,13 @@ builder.Services.AddScoped<IUserDayContext, UserDayContext>();
 // Extracted from the /onboarding/start handler (P3c-T2) so validation/compensation are unit-testable.
 builder.Services.AddScoped<OnboardingService>();
 
-// --- cycle (P4a-T9) ---
-// Scoped: it consumes the request-scoped day context (D-12) and crypto context (the note cipher).
+// --- cycle (P4a-T9/T10) ---
+// Scoped: both consume the request-scoped day context (D-12) and crypto context (the note cipher).
 builder.Services.AddScoped<CycleService>();
+// Serves POST /cycle/day/{date}, POST /checkin/quick and GET /cycle/day/{date}. The check-in is a
+// §C.3 route but writes only cycle_day_logs, so it shares this service rather than racing a second
+// one on the same row.
+builder.Services.AddScoped<CycleDayService>();
 
 // Global per-user (else per-IP) rate limit — protects costly endpoints like POST /onboarding/start.
 var permitPerMinute = builder.Configuration.GetValue<int?>("RateLimit:PermitPerMinute") ?? 60;

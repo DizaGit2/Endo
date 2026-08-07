@@ -1,3 +1,4 @@
+using Lumen.Api.Persistence;
 using Lumen.Api.Time;
 using Lumen.Api.Validation;
 using Lumen.Application.Crypto;
@@ -33,12 +34,17 @@ namespace Lumen.Api.Cycle;
 /// <see cref="EntityFrameworkQueryableExtensions.IgnoreQueryFilters{TEntity}"/> and clears
 /// <c>DeletedAt</c>. A blind insert is not a duplicate row — it is a unique violation surfacing as a
 /// 500 the first time a user re-logs a day they deleted.</para>
+///
+/// <para><b>4. Every write runs inside <see cref="ConcurrencyRetry"/> (retrofitted in T10).</b> The
+/// tombstone lookup above closes the sequential case, not the concurrent one: two simultaneous posts
+/// on the same key both miss the lookup and both insert, and the loser gets a <c>23505</c> that
+/// surfaces as a 500 for a request that should simply have updated the winner's row. Because the
+/// action may run twice it must be re-runnable, which is what the <c>ChangeTracker.Clear()</c> at
+/// the top of each one is for — the failed insert is otherwise still staged and the retry fails
+/// identically.</para>
 /// </remarks>
 public sealed class CycleService(LumenDbContext db, IUserDayContext dayContext, IUserCryptoContext crypto)
 {
-    /// <summary>Plaintext note limit, D-13. Measured after trimming.</summary>
-    public const int MaxNotesLength = 2000;
-
     /// <summary>
     /// Upserts one cycle event on <c>(UserId, Kind, OccurredOn)</c>. Idempotent by construction, which
     /// is what makes the online-only client's retry safe — and what keeps two <c>period_start</c> rows
@@ -80,54 +86,65 @@ public sealed class CycleService(LumenDbContext db, IUserDayContext dayContext, 
         // Trim first: 2000 characters wrapped in whitespace is a 2000-character note, and the limit
         // exists to bound the column, not to punish a trailing newline.
         var notes = request.Notes?.Trim();
-        if (notes is { Length: > MaxNotesLength })
-            errors.Add(new CycleFieldError("notes", ValidationMessages.MaxLength(MaxNotesLength)));
+        if (notes is { Length: > FieldLimits.MaxNotesLength })
+            errors.Add(new CycleFieldError("notes", ValidationMessages.MaxLength(FieldLimits.MaxNotesLength)));
 
         if (errors.Count > 0) return new CycleEventResult.Invalid(errors);
 
         var kindValue = kind!;
         var occurredOnValue = request.OccurredOn!.Value;
         var now = day.NowUtc; // one instant for the whole request (plan §2), never a re-read clock
+        // Encrypted once, outside the retry: the blob is immutable, so a second attempt reuses it
+        // rather than burning another nonce.
+        var notesEnc = notes is { Length: > 0 } ? await crypto.EncryptStringAsync(notes, ct) : null;
 
-        // §G9 UNFILTERED regime: the lookup MUST bypass the soft-delete filter, or a tombstone on this
-        // key is invisible here and the insert below violates the unique index.
-        var row = await db.CycleEvents.IgnoreQueryFilters().FirstOrDefaultAsync(
-            e => e.UserId == day.UserId && e.Kind == kindValue && e.OccurredOn == occurredOnValue, ct);
-
-        if (row is null)
+        return await ConcurrencyRetry.ExecuteAsync<CycleEventResult>(async token =>
         {
-            row = new CycleEvent
+            // Re-runnable: a lost race leaves the failed insert staged in the tracker, and re-saving
+            // it would fail identically. Runs on the first attempt too, which is what keeps this line
+            // covered by ordinary tests rather than only under a real race.
+            db.ChangeTracker.Clear();
+
+            // §G9 UNFILTERED regime: the lookup MUST bypass the soft-delete filter, or a tombstone on
+            // this key is invisible here and the insert below violates the unique index.
+            var row = await db.CycleEvents.IgnoreQueryFilters().FirstOrDefaultAsync(
+                e => e.UserId == day.UserId && e.Kind == kindValue && e.OccurredOn == occurredOnValue, token);
+
+            if (row is null)
             {
-                Id = Guid.NewGuid(),
-                UserId = day.UserId,
-                Kind = kindValue,
-                OccurredOn = occurredOnValue,
-                Source = CycleEvent.Sources.User,
-                CreatedAt = now,
-            };
-            db.CycleEvents.Add(row);
-        }
+                row = new CycleEvent
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = day.UserId,
+                    Kind = kindValue,
+                    OccurredOn = occurredOnValue,
+                    Source = CycleEvent.Sources.User,
+                    CreatedAt = now,
+                };
+                db.CycleEvents.Add(row);
+            }
 
-        // Revive: a re-logged day resurrects its own row rather than creating a second one, and keeps
-        // its original CreatedAt — that timestamp belongs to the observation, not to this edit.
-        row.DeletedAt = null;
-        row.FlowIntensity = request.FlowIntensity is { } value ? (short)value : null;
-        row.NotesEnc = notes is { Length: > 0 } ? await crypto.EncryptStringAsync(notes, ct) : null;
-        row.UpdatedAt = now;
-        // Source is deliberately NOT reassigned on update: an onboarding-seeded row keeps its
-        // provenance when the user edits it, which is what T18's merge rule depends on.
+            // Revive: a re-logged day resurrects its own row rather than creating a second one, and
+            // keeps its original CreatedAt — that timestamp belongs to the observation, not this edit.
+            row.DeletedAt = null;
+            row.FlowIntensity = request.FlowIntensity is { } value ? (short)value : null;
+            row.NotesEnc = notesEnc;
+            row.UpdatedAt = now;
+            // Source is deliberately NOT reassigned on update: an onboarding-seeded row keeps its
+            // provenance when the user edits it, which is what T18's merge rule depends on.
 
-        await db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(token);
 
-        return new CycleEventResult.Saved(new CycleEventResponse(
-            row.Id,
-            row.Kind,
-            row.OccurredOn,
-            row.FlowIntensity,
-            notes is { Length: > 0 } ? notes : null,
-            row.Source,
-            row.CreatedAt,
-            row.UpdatedAt));
+            return new CycleEventResult.Saved(new CycleEventResponse(
+                row.Id,
+                row.Kind,
+                row.OccurredOn,
+                row.FlowIntensity,
+                notes is { Length: > 0 } ? notes : null,
+                row.Source,
+                row.CreatedAt,
+                row.UpdatedAt));
+        }, ct);
     }
 
     /// <summary>
@@ -139,16 +156,25 @@ public sealed class CycleService(LumenDbContext db, IUserDayContext dayContext, 
         var day = await dayContext.GetAsync(ct);
         if (day is null) return new CycleEventDeleteResult.NotFound();
 
-        // No IgnoreQueryFilters() here, and the UserId predicate is load-bearing: together they make
-        // another tenant's row and an already-tombstoned row indistinguishable from a typo'd id.
-        var row = await db.CycleEvents.FirstOrDefaultAsync(e => e.Id == id && e.UserId == day.UserId, ct);
-        if (row is null) return new CycleEventDeleteResult.NotFound();
+        // Wrapped for uniformity with the two upserts rather than because a soft delete can collide:
+        // it changes no unique key, so the retry can never fire here. Having every write on this
+        // service go through one path is worth more than saving a closure — the next person adding a
+        // write copies whichever shape is already there.
+        return await ConcurrencyRetry.ExecuteAsync<CycleEventDeleteResult>(async token =>
+        {
+            db.ChangeTracker.Clear();
 
-        row.DeletedAt = day.NowUtc;
-        row.UpdatedAt = day.NowUtc;
-        await db.SaveChangesAsync(ct);
+            // No IgnoreQueryFilters() here, and the UserId predicate is load-bearing: together they
+            // make another tenant's row and an already-tombstoned row indistinguishable from a typo'd id.
+            var row = await db.CycleEvents.FirstOrDefaultAsync(e => e.Id == id && e.UserId == day.UserId, token);
+            if (row is null) return new CycleEventDeleteResult.NotFound();
 
-        return new CycleEventDeleteResult.Deleted();
+            row.DeletedAt = day.NowUtc;
+            row.UpdatedAt = day.NowUtc;
+            await db.SaveChangesAsync(token);
+
+            return new CycleEventDeleteResult.Deleted();
+        }, ct);
     }
 
     /// <summary>
@@ -271,11 +297,31 @@ public sealed class CycleService(LumenDbContext db, IUserDayContext dayContext, 
             .Select(item => new PhaseOverrideBoundary(item.Phase!.Trim(), item.Boundary!.Trim(), item.OccurredOn!.Value))
             .ToList();
 
+        return await ConcurrencyRetry.ExecuteAsync<PhaseOverrideResult>(async token =>
+        {
+            db.ChangeTracker.Clear(); // see LogEventAsync: the action must be re-runnable
+
+            await ApplyOverridesAsync(day.UserId, cycleStart, requested, now, token);
+            return new PhaseOverrideResult.Saved(new PhaseOverridesResponse(cycleStart, requested));
+        }, ct);
+    }
+
+    /// <summary>
+    /// The write half of <see cref="SavePhaseOverridesAsync"/>: makes the cycle's live correction set
+    /// equal <paramref name="requested"/>. Separate so the retried action reads as one statement.
+    /// </summary>
+    private async Task ApplyOverridesAsync(
+        Guid userId,
+        DateOnly cycleStart,
+        IReadOnlyList<PhaseOverrideBoundary> requested,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
         // §G9 UNFILTERED regime again — and the reason it matters here is subtler than on cycle_events:
         // the user retracts a correction ("reset to predicted"), then corrects the same boundary again.
         // Without the tombstone in this set, that second correction is a unique violation.
         var existing = await db.CyclePhaseOverrides.IgnoreQueryFilters()
-            .Where(o => o.UserId == day.UserId && o.CycleStartOn == cycleStart)
+            .Where(o => o.UserId == userId && o.CycleStartOn == cycleStart)
             .ToListAsync(ct);
 
         foreach (var wanted in requested)
@@ -289,7 +335,7 @@ public sealed class CycleService(LumenDbContext db, IUserDayContext dayContext, 
                 row = new CyclePhaseOverride
                 {
                     Id = Guid.NewGuid(),
-                    UserId = day.UserId,
+                    UserId = userId,
                     CycleStartOn = cycleStart,
                     Phase = wanted.Phase,
                     Boundary = wanted.Boundary,
@@ -322,8 +368,6 @@ public sealed class CycleService(LumenDbContext db, IUserDayContext dayContext, 
         }
 
         await db.SaveChangesAsync(ct);
-
-        return new PhaseOverrideResult.Saved(new PhaseOverridesResponse(cycleStart, requested));
     }
 
     private static bool IsKnownPair(string? phase, string? boundary) =>

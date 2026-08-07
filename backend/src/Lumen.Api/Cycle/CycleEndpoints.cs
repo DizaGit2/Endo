@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Lumen.Api.Symptoms;
 using Lumen.Api.Validation;
 
 namespace Lumen.Api.Cycle;
@@ -79,6 +80,74 @@ public static class CycleEndpoints
         .RequireAuthorization()
         .Produces<PhaseOverridesResponse>(StatusCodes.Status200OK)
         .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
+        // The D-11 one-row-per-day upsert (screen 11). `{date}` is left UNCONSTRAINED on purpose: a
+        // `:datetime` route constraint would answer an unparseable date with a 404, which on this
+        // route means "no such user". Unconstrained, the binder throws and ProblemExceptionHandler
+        // turns it into the phase's one 400 under `errors.request` (T3).
+        app.MapPost("/cycle/day/{date}", async (
+            DateOnly date,
+            LogCycleDayRequest request,
+            CycleDayService days,
+            CancellationToken ct) =>
+        {
+            var result = await days.UpsertDayAsync(date, request, ct);
+            return result switch
+            {
+                CycleDayResult.Saved saved => Results.Ok(saved.Log),
+                CycleDayResult.Invalid invalid => Problem(invalid.Errors),
+                CycleDayResult.UserNotFound => NotFoundProblem.Result(),
+                _ => throw new UnreachableException($"Unhandled {nameof(CycleDayResult)}: {result.GetType()}"),
+            };
+        })
+        .RequireAuthorization()
+        .Produces<CycleDayLogResponse>(StatusCodes.Status200OK)
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
+        // Screen 9. §C.3 owns this route (symptoms module) but it writes only `cycle_day_logs`, so it
+        // is served by CycleDayService and registered here rather than splitting the day upsert across
+        // two services that would race each other on the same row.
+        app.MapPost("/checkin/quick", async (
+            QuickCheckinRequest request,
+            CycleDayService days,
+            CancellationToken ct) =>
+        {
+            var result = await days.QuickCheckinAsync(request, ct);
+            return result switch
+            {
+                QuickCheckinResult.Saved saved => Results.Ok(saved.Checkin),
+                QuickCheckinResult.Invalid invalid => Problem(invalid.Errors),
+                QuickCheckinResult.UserNotFound => NotFoundProblem.Result(),
+                _ => throw new UnreachableException($"Unhandled {nameof(QuickCheckinResult)}: {result.GetType()}"),
+            };
+        })
+        .RequireAuthorization()
+        .Produces<QuickCheckinResponse>(StatusCodes.Status200OK)
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
+        // The single-day read. No 400 is documented: the read validates nothing (an empty day is a
+        // 200 with a null log), so the only failures are an unbindable date and an unknown user.
+        app.MapGet("/cycle/day/{date}", async (
+            DateOnly date,
+            CycleDayService days,
+            CancellationToken ct) =>
+        {
+            var result = await days.GetDayAsync(date, ct);
+            return result switch
+            {
+                CycleDayReadResult.Found found => Results.Ok(found.Day),
+                CycleDayReadResult.UserNotFound => NotFoundProblem.Result(),
+                _ => throw new UnreachableException($"Unhandled {nameof(CycleDayReadResult)}: {result.GetType()}"),
+            };
+        })
+        .RequireAuthorization()
+        .Produces<CycleDayResponse>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status404NotFound);
 

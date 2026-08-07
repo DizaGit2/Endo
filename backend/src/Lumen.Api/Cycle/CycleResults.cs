@@ -1,3 +1,5 @@
+using Lumen.Api.Symptoms;
+
 namespace Lumen.Api.Cycle;
 
 /// <summary>
@@ -42,6 +44,50 @@ public abstract record CycleEventDeleteResult
     /// a 403 would itself confirm the id exists), and an erased caller.
     /// </summary>
     public sealed record NotFound : CycleEventDeleteResult;
+}
+
+/// <summary>Outcome of <see cref="CycleDayService.UpsertDayAsync"/>.</summary>
+public abstract record CycleDayResult
+{
+    /// <summary>The day's row was inserted, updated, or revived from a tombstone. → 200.</summary>
+    public sealed record Saved(CycleDayLogResponse Log) : CycleDayResult;
+
+    /// <summary>Nothing was written; every field error found is listed. → 400.</summary>
+    public sealed record Invalid(IReadOnlyList<CycleFieldError> Errors) : CycleDayResult;
+
+    /// <summary>
+    /// The token's <c>sub</c> has no live <c>users</c> row — it never existed, or the account was
+    /// crypto-shredded. → 404. See <see cref="CycleDayService"/>'s remarks for why this is a security
+    /// control and not a formality.
+    /// </summary>
+    public sealed record UserNotFound : CycleDayResult;
+}
+
+/// <summary>Outcome of <see cref="CycleDayService.QuickCheckinAsync"/>.</summary>
+public abstract record QuickCheckinResult
+{
+    /// <summary>Today's row was upserted. → 200.</summary>
+    public sealed record Saved(QuickCheckinResponse Checkin) : QuickCheckinResult;
+
+    /// <summary>Nothing was written; every field error found is listed. → 400.</summary>
+    public sealed record Invalid(IReadOnlyList<CycleFieldError> Errors) : QuickCheckinResult;
+
+    /// <summary>The token's <c>sub</c> has no live <c>users</c> row. → 404.</summary>
+    public sealed record UserNotFound : QuickCheckinResult;
+}
+
+/// <summary>
+/// Outcome of <see cref="CycleDayService.GetDayAsync"/>. There is deliberately no "day not found"
+/// case: an unlogged day is a <see cref="Found"/> carrying a null log and empty collections, because
+/// 404 on this route means "no such user" and nothing else (§G12).
+/// </summary>
+public abstract record CycleDayReadResult
+{
+    /// <summary>The day was read — possibly empty. → 200.</summary>
+    public sealed record Found(CycleDayResponse Day) : CycleDayReadResult;
+
+    /// <summary>The token's <c>sub</c> has no live <c>users</c> row. → 404.</summary>
+    public sealed record UserNotFound : CycleDayReadResult;
 }
 
 /// <summary>Outcome of <see cref="CycleService.SavePhaseOverridesAsync"/>.</summary>

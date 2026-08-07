@@ -157,9 +157,19 @@ public class RequestLoggingPipelineTests
     // Information). Before these tests nothing anywhere referenced RouteTemplate, EnrichDiagnosticContext,
     // MinimumLevel or the message template, and T9 ships the real /cycle/day/{date}.
 
-    /// <summary>A date-keyed path of exactly the shape T9 ships. Unrouted in P4a-T8, which is the
-    /// harder case: an unmatched request is precisely where a raw path would otherwise be logged.</summary>
+    /// <summary>
+    /// The real date-keyed route, shipped by T10. Unrouted while this test was written (T8), routed
+    /// now — which is the case §F's claim is actually about, since this is the URL the app itself
+    /// calls every time the user opens a day.
+    /// </summary>
     private const string DateKeyedPath = "/cycle/day/2026-08-06";
+
+    /// <summary>
+    /// A date-keyed path that matches no endpoint, so the <c>(unrouted)</c> fallback keeps its
+    /// coverage now that <see cref="DateKeyedPath"/> resolves. The harder case of the two: an
+    /// unmatched request is precisely where a raw path would otherwise be logged.
+    /// </summary>
+    private const string UnroutedDateKeyedPath = "/cycle/day-log/2026-08-06";
 
     /// <summary>The health-adjacent datum: it asserts this user logged something on that day (§F).</summary>
     private const string DateInPath = "2026-08-06";
@@ -172,7 +182,9 @@ public class RequestLoggingPipelineTests
 
         var events = await CaptureAsync(factory, async client => response = await client.GetAsync(DateKeyedPath));
 
-        response.ShouldNotBeNull().StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        // 401, not 404: routing runs before authorization, so the endpoint IS matched and its template
+        // IS known — which is why the assertion below can be the real template rather than a fallback.
+        response.ShouldNotBeNull().StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
 
         var completion = RequestCompletion(events);
         completion.Properties.ShouldContainKey(
@@ -181,11 +193,39 @@ public class RequestLoggingPipelineTests
             "message template renders {RouteTemplate}, so losing the property silently degrades every " +
             "request line to a literal '{RouteTemplate}'");
         ((ScalarValue)completion.Properties["RouteTemplate"]).Value.ShouldBe(
-            "(unrouted)",
-            "an unmatched request has no endpoint and therefore no template; the fallback is a " +
-            "CONSTANT on purpose — falling back to the path would reintroduce the raw date");
+            "/cycle/day/{date}",
+            "the route TEMPLATE, never the raw path: '/cycle/day/2026-08-06' asserts that this user " +
+            "logged something on that day, while the template carries the same operational signal " +
+            "with none of the datum (§F)");
 
-        // The claim itself, over every event the request produced — not just the one this app writes.
+        AssertNoDateLeak(factory, events);
+    }
+
+    [Fact]
+    public async Task An_unrouted_date_keyed_request_falls_back_to_the_unrouted_constant()
+    {
+        // The counterweight that survives T10 shipping /cycle/day/{date}: a path that matches nothing
+        // has no endpoint and therefore no template, and the fallback must stay a CONSTANT — falling
+        // back to the path would reintroduce the raw date on exactly the requests (probes, scanners,
+        // a client typo) nobody is watching.
+        using var factory = new LumenApiFactory();
+        HttpResponseMessage? response = null;
+
+        var events = await CaptureAsync(factory, async client => response = await client.GetAsync(UnroutedDateKeyedPath));
+
+        response.ShouldNotBeNull().StatusCode.ShouldBe(HttpStatusCode.NotFound);
+
+        var completion = RequestCompletion(events);
+        ((ScalarValue)completion.Properties["RouteTemplate"]).Value.ShouldBe("(unrouted)");
+
+        AssertNoDateLeak(factory, events);
+    }
+
+    /// <summary>
+    /// The §F claim itself, over every event the request produced — not just the one this app writes.
+    /// </summary>
+    private static void AssertNoDateLeak(LumenApiFactory factory, LogEvent[] events)
+    {
         var leaks = ProductionVisible(factory, events)
             .Where(e => e.RenderMessage().Contains(DateInPath, StringComparison.Ordinal))
             .Select(e => $"[{e.Level}] {SourceContextOf(e)}: {e.RenderMessage()}")
