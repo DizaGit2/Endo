@@ -86,6 +86,7 @@ D-13 verbatim: *"No future dates for symptom/body/activity/lab entries (max = us
 
 - **Unfiltered unique index + revive-the-tombstone on upsert:** `cycle_events` `(UserId, Kind, OccurredOn)`, `cycle_day_logs` `(UserId, Day)`. Upserts look the row up with `IgnoreQueryFilters()` and clear `DeletedAt`; they never insert a second row.
 - **Filtered unique index (`WHERE "DeletedAt" IS NULL`):** `body_metrics` `(UserId, Metric, MeasuredOn)` — the one deliberate exception, because the D-02 baseline step must be re-submittable after a delete. The rationale lives on the entity's XML doc.
+- **This §G9 regime is about SOFT-DELETE TOMBSTONES only** *(clarified after T6's review, 2026-08-06)*. A partial unique index whose predicate is a **domain lifecycle** column rather than `DeletedAt` is a different concern and is NOT an exception to the rule above: `cycle_tracking_pause_spans (UserId) WHERE "EndedOn" IS NULL` (T6) enforces "at most one OPEN pause per user" on a table that has no `DeletedAt` at all. So a DB-level audit after T7 correctly finds **two** filtered unique indexes while §G9's tombstone inventory stays at exactly one.
 - Every task that writes one of these tables cites the regime it is under.
 
 ### G10. Frozen vocabularies — exact members (`definitions.md:24-33`, the 2026-07-08 ratification block)
@@ -145,7 +146,7 @@ Recorded here and in the T22 STATUS block so a later phase does not mistake them
 | `§A` | New P4a row: D-12 helper location; the P4a-wide 400/404 contract; the erasure change; sanity-bounds enforcement mode; **the C-03/C-04 PO-interim numbers recorded as P6 `ref_insight_rule` seed input, unsigned**; `rasrm_stage`/`diagnosed_on` write path | T22 (numbers), T2/T3/T8 (their own lines) |
 | `§C.1` | add `POST /onboarding/cycle` (B15 — r17 flags the omission) and `GET /onboarding/state`; writes line gains `body_metrics`, `user_cycle_settings`, `user_goals`, `user_hormone_prefs`, `user_notification_prefs` | T18 (endpoints), T16/T17 (writes) |
 | `§C.2` | add `DELETE /cycle/events/{id}`; Entities line gains `cycle_phase_overrides` | T9 |
-| `§C.9` | add `POST /me/devices`; `PATCH /me` timezone/locale fields; Entities line gains `user_cycle_settings` | T4 (`/me`), T14 (settings), T15 (devices) |
+| `§C.9` | add `POST /me/devices`; `PATCH /me` timezone/locale fields; ~~Entities line gains `user_cycle_settings`~~ **— the Entities line was DONE in T6 (its task text assigned it there); T14 MUST NOT repeat it** | T4 (`/me`) ✅, ~~T14~~ **T6 ✅** (entities), T15 (devices) |
 | `§D` | `symptoms.occurred_on date`; `cycle_events.source`; `cycle_phase_overrides` (new, incl. its `source`); `user_cycle_settings`; `cycle_tracking_pause_spans`; `user_goals`; `user_hormone_prefs`; `user_notification_prefs`; `user_profile_enc` gains `endo_status_enc, rasrm_stage_enc, diagnosed_on_enc, height_cm_enc`; `body_metrics.measured_on` + its filtered unique key; `users.unit_system`; `user_insight_snapshot` corrections (`missing_data_cards_enc` is **`bytea`** not `jsonb`; `confidence` → `data_completeness`) | T5, T6, T7 |
 | `§F` | erasure now physically deletes the plaintext clinical tables (§F:299's "unreadable, not deleted" predates them); flag privacy-policy wording for L-05/L-06 | T8 |
 | `lumen-build.md` P5 entry | **strike `body_metrics`** from P5's task outline (r17: *"create it in P4a, strike from P5 in the phase branch"*) | T7 |
