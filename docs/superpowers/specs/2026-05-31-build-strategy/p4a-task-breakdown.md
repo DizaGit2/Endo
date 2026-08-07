@@ -151,6 +151,22 @@ Recorded here and in the T22 STATUS block so a later phase does not mistake them
 | `§F` | erasure now physically deletes the plaintext clinical tables (§F:299's "unreadable, not deleted" predates them); flag privacy-policy wording for L-05/L-06 | T8 |
 | `lumen-build.md` P5 entry | **strike `body_metrics`** from P5's task outline (r17: *"create it in P4a, strike from P5 in the phase branch"*) | T7 |
 
+### G15. Coverage denominator — decided mid-phase after T9's review (2026-08-06)
+
+P4a's exit criterion reads "global coverage ≥70%". **That is unreachable as literally written, and the arithmetic is settled, not a judgement call.** Measured across all three suites at T9:
+
+| Scope | Lines | Coverage |
+|---|---|---|
+| All `backend/src` | 2663/6283 | **42.4%** |
+| Migrations + `LumenDbContextModelSnapshot` | 809/4340 | 18.6% — **69.1% of all instrumented lines** |
+| Excluding migrations/snapshot | 1854/1943 | **95.4%** |
+
+§G4 freezes the migration denominator at 4,340 generated lines for the rest of the phase, while hand-written source sits at 95.4%. Break-even at 70% would require hand-written `backend/src` to grow from 1,943 lines to **~8,916 — 4.6×**. Eight more endpoint tasks of T9's size land the global figure near 50–55%.
+
+**Decision: exclude `**/Migrations/**` and `LumenDbContextModelSnapshot.cs` from the coverage denominator; the ≥70% criterion is measured against hand-written `backend/src`.** This mirrors the client precedent exactly — P3a excluded `lib/api/**` + `*.g.dart` via the committed `client/tool/check_coverage.dart`, after a review caught a coverage-glob bug that under-excluded nested generated files and reported 58.6% against a true 97.60%. Generated code that no test authors and no reviewer reads does not belong in a quality gate.
+
+**T20 owns implementing this**: apply the exclusion deterministically (by path, not a fragile glob — see the P3a bug), report BOTH figures in the STATUS block, and record the exclusion in the phase's exit-criteria tick so a later reader does not mistake 95% for whole-tree coverage.
+
 ### G14. Scope boundaries
 
 Backend only — no Flutter screens (P4b); the regenerated Dart client is the only client-side artifact. `user_devices` already exists (migration `20260614150634`) — P4a owes only the upsert endpoint, **no migration for that table**. No labs, no reports, no notification dispatch, no medication catalog.
