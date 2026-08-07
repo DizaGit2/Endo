@@ -12,6 +12,10 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
     public DbSet<ConsentRecord> ConsentRecords => Set<ConsentRecord>();
     public DbSet<UserDevice> UserDevices => Set<UserDevice>();
     public DbSet<AdminAuditLog> AdminAuditLogs => Set<AdminAuditLog>();
+    public DbSet<CycleEvent> CycleEvents => Set<CycleEvent>();
+    public DbSet<CycleDayLog> CycleDayLogs => Set<CycleDayLog>();
+    public DbSet<Symptom> Symptoms => Set<Symptom>();
+    public DbSet<CyclePhaseOverride> CyclePhaseOverrides => Set<CyclePhaseOverride>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         // The soft-delete query filter on User intentionally coexists with required dependents.
@@ -80,6 +84,74 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
             e.HasIndex(x => x.At);
             e.HasIndex(x => new { x.EntityId, x.Action }); // GDPR/DSAR erasure-proof lookup: WHERE EntityId = ? AND Action = 'crypto_shred'
             // No FK to User — audit history must survive crypto-shred (§F).
+        });
+
+        // --- P4a observation tables (T5) ---------------------------------------------------
+        // snake_case table names, PascalCase column names, no naming convention: the CHECK literals
+        // below double-quote the real column identifiers, and any HasColumnName rename would
+        // silently invalidate them on BOTH providers (T1 probe 3).
+        // CHECKs are for frozen NUMERIC scales only — vocabulary membership is enforced in code
+        // (§D: "Enums hard-coded in code, not in DB"), because the sets are append-only and a DB
+        // enum would make every new member a migration.
+
+        b.Entity<CycleEvent>(e =>
+        {
+            e.ToTable("cycle_events", t => t.HasCheckConstraint(
+                "ck_cycle_events_flow_intensity_range", "\"FlowIntensity\" >= 1 AND \"FlowIntensity\" <= 4"));
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Kind).IsRequired().HasMaxLength(16);
+            e.Property(x => x.Source).IsRequired().HasMaxLength(16);
+            // §G9 UNFILTERED: tombstones keep occupying the key, so upserts revive rather than insert.
+            e.HasIndex(x => new { x.UserId, x.Kind, x.OccurredOn }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.OccurredOn }); // calendar/range reads
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        b.Entity<CycleDayLog>(e =>
+        {
+            e.ToTable("cycle_day_logs", t =>
+            {
+                t.HasCheckConstraint("ck_cycle_day_logs_pain_range", "\"Pain\" >= 0 AND \"Pain\" <= 10");
+                t.HasCheckConstraint("ck_cycle_day_logs_mood_range", "\"Mood\" >= 1 AND \"Mood\" <= 4");
+                // No CHECK on Energy/Libido: D-10 defers both scales, so there is nothing to pin yet.
+            });
+            e.HasKey(x => x.Id);
+            // §G9 UNFILTERED: one row per (user, day) forever — the upsert revives its own tombstone.
+            e.HasIndex(x => new { x.UserId, x.Day }).IsUnique();
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        b.Entity<Symptom>(e =>
+        {
+            e.ToTable("symptoms", t => t.HasCheckConstraint(
+                "ck_symptoms_intensity_range", "\"Intensity\" >= 0 AND \"Intensity\" <= 10"));
+            e.HasKey(x => x.Id);
+            e.Property(x => x.SymptomCode).IsRequired().HasMaxLength(32);
+            e.Property(x => x.Region).IsRequired().HasMaxLength(32).HasDefaultValue(Symptom.Regions.Default);
+            e.Property(x => x.Side).HasMaxLength(8);
+            // Primitive collections: IsRequired() only. No HasColumnType — a "text[]" literal would
+            // leak into SQLite's CREATE TABLE — and no DB default; the CLR `= []` covers it (T1 probe 2).
+            e.Property(x => x.PainTypes).IsRequired();
+            e.Property(x => x.Triggers).IsRequired();
+            e.HasIndex(x => new { x.UserId, x.OccurredOn, x.OccurredAt });
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        b.Entity<CyclePhaseOverride>(e =>
+        {
+            e.ToTable("cycle_phase_overrides");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Phase).IsRequired().HasMaxLength(16);
+            e.Property(x => x.Boundary).IsRequired().HasMaxLength(8);
+            e.Property(x => x.Source).IsRequired().HasMaxLength(24);
+            // §G9 UNFILTERED: re-correcting a boundary revives the existing row.
+            e.HasIndex(x => new { x.UserId, x.CycleStartOn, x.Phase, x.Boundary }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.CycleStartOn }); // "all overrides for this cycle"
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => x.DeletedAt == null);
         });
     }
 }
