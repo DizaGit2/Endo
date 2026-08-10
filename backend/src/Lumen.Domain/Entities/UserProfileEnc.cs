@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Lumen.Domain.Entities;
 
 /// <summary>
@@ -71,4 +73,114 @@ public class UserProfileEnc
 
         public static readonly IReadOnlyList<string> All = [Diagnosed, Suspected, NotApplicable];
     }
+
+    /// <summary>
+    /// The canonical domain and encoding of <see cref="RasrmStageEnc"/> — <b>added by T16, the
+    /// column's first writer</b>. T7 deliberately shipped no type here, because the column is
+    /// ciphertext and the 1–4 range therefore <b>cannot be a DB CHECK</b>; until something wrote the
+    /// column, a constants type would have guarded nothing.
+    ///
+    /// <para><b>This type and the endpoint that consumes it are the ONLY enforcement of the range.</b>
+    /// Delete either and a stage of 9 is stored with nothing anywhere failing — no constraint, no
+    /// exception, no failing test — and the value comes back out of <c>GET /me</c> for screen 31 to
+    /// render as a roman numeral that does not exist.</para>
+    ///
+    /// <para><b>This is a STORAGE shape, not a clinical threshold</b> (§G7): 1–4 is the arity of the
+    /// rASRM staging scale, exactly as <c>smallint</c> is the arity of a cycle-length column. The
+    /// stage's clinical <i>meaning</i> is a C-14 PO-interim, clinician-UNSIGNED value, is never
+    /// inferred from (C-14: rASRM <i>"does NOT correlate with pain"</i>), and appears nowhere in
+    /// <c>backend/src</c>.</para>
+    /// </summary>
+    public static class RasrmStages
+    {
+        /// <summary>Stage I.</summary>
+        public const int Min = 1;
+
+        /// <summary>Stage IV. The scale has four stages and has never had a fifth.</summary>
+        public const int Max = 4;
+
+        /// <summary>The four stages, in order. Rendered I–IV in the UI, never stored that way.</summary>
+        public static readonly IReadOnlyList<int> All = [1, 2, 3, 4];
+
+        /// <summary>Whether <paramref name="stage"/> is a stage at all.</summary>
+        public static bool Contains(int stage) => stage >= Min && stage <= Max;
+
+        /// <summary>
+        /// The <b>one</b> canonical plaintext encoding: the invariant-culture digit <c>"1"</c>–<c>"4"</c>.
+        /// Invariant because a culture-sensitive <c>ToString()</c> writes eastern-arabic digit shapes
+        /// under <c>ar-SA</c>, which <see cref="Decode"/> would then refuse to read back.
+        /// </summary>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="stage"/> is outside 1–4. A programming-error guard on a caller expected to
+        /// have validated already: this is the last point at which an impossible stage can be stopped,
+        /// because the column carries no CHECK.
+        /// </exception>
+        public static string Encode(int stage)
+        {
+            if (!Contains(stage))
+                throw new ArgumentOutOfRangeException(nameof(stage), stage, $"the rASRM stage must be {Min}–{Max}");
+
+            return stage.ToString(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// The inverse of <see cref="Encode"/>. <see cref="NumberStyles.None"/> allows no sign, no
+        /// decimal point, no thousands separator and no surrounding whitespace, so anything that is not
+        /// a bare digit string is a <see cref="FormatException"/> rather than a coerced value.
+        /// </summary>
+        public static int Decode(string canonical) =>
+            int.Parse(canonical, NumberStyles.None, CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// The canonical plaintext format of <see cref="DiagnosedOnEnc"/>: <b>month precision</b>. Screens
+    /// 4 and 31 collect a month and a year, so a stored day would be a value the user never gave.
+    /// </summary>
+    public const string DiagnosedOnFormat = "yyyy-MM";
+
+    /// <summary>
+    /// The canonical plaintext format of <see cref="DobEnc"/>. A full date, unlike
+    /// <see cref="DiagnosedOnFormat"/>, because §A:60 fixes the stored value as a date of birth (the
+    /// age screen 4 shows is derived from it, never the other way round).
+    /// </summary>
+    public const string DobFormat = "yyyy-MM-dd";
+
+    /// <summary>Encodes a diagnosis month as <see cref="DiagnosedOnFormat"/>; the day is discarded.</summary>
+    public static string EncodeDiagnosedOn(DateOnly month) =>
+        month.ToString(DiagnosedOnFormat, CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The inverse of <see cref="EncodeDiagnosedOn"/>, answering the first day of the month.
+    /// <b>Exact-format parsing is the whole point:</b> a <c>"yyyy-MM-dd"</c> value in this column is a
+    /// <see cref="FormatException"/>, so the field cannot be silently widened into a full date by a
+    /// later writer — the day it would carry is fabricated data.
+    /// </summary>
+    public static DateOnly DecodeDiagnosedOn(string canonical) =>
+        DateOnly.ParseExact(canonical, DiagnosedOnFormat, CultureInfo.InvariantCulture);
+
+    /// <summary>Non-throwing <see cref="DecodeDiagnosedOn"/>, for validating client input.</summary>
+    public static bool TryDecodeDiagnosedOn(string canonical, out DateOnly month) =>
+        DateOnly.TryParseExact(
+            canonical, DiagnosedOnFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out month);
+
+    /// <summary>Encodes a date of birth as <see cref="DobFormat"/>, invariant-culture.</summary>
+    public static string EncodeDob(DateOnly dob) => dob.ToString(DobFormat, CultureInfo.InvariantCulture);
+
+    /// <summary>The inverse of <see cref="EncodeDob"/>.</summary>
+    public static DateOnly DecodeDob(string canonical) =>
+        DateOnly.ParseExact(canonical, DobFormat, CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The <b>one</b> canonical plaintext encoding of <see cref="HeightCmEnc"/>: an invariant-culture
+    /// integer number of centimetres (D-06 — metric-only v1, so the unit is part of the column, not a
+    /// sibling field). Same rule and same reason as <see cref="BodyMetric.EncodeValue"/>.
+    /// </summary>
+    public static string EncodeHeightCm(int centimetres) => centimetres.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The inverse of <see cref="EncodeHeightCm"/>. <see cref="NumberStyles.None"/> keeps a stray sign,
+    /// separator or space a hard error rather than a silently different height.
+    /// </summary>
+    public static int DecodeHeightCm(string canonical) =>
+        int.Parse(canonical, NumberStyles.None, CultureInfo.InvariantCulture);
 }

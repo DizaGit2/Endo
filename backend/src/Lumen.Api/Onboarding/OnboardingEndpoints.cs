@@ -42,6 +42,43 @@ public static class OnboardingEndpoints
         .Produces<OnboardingStartResponse>(StatusCodes.Status200OK)
         .ProducesValidationProblem();
 
+        // The D-02 baseline step (screen 4). Unlike /onboarding/start this one is AUTHENTICATED: the
+        // account already exists by the time the user answers it, and the data it carries is
+        // special-category health data. Answers 200 with the stored row decrypted back on both the
+        // insert and the update path — a step the user may revisit has no actionable created/updated
+        // distinction, and §C.1 exposes no `GET /onboarding/baseline` for a `Location` to point at
+        // (the read path is `GET /me`).
+        app.MapPost("/onboarding/baseline", async (
+            SaveBaselineRequest request,
+            OnboardingStepsService steps,
+            CancellationToken ct) =>
+        {
+            var result = await steps.SaveBaselineAsync(request, ct);
+            return result switch
+            {
+                SaveBaselineResult.Saved saved => Results.Ok(saved.Baseline),
+                SaveBaselineResult.Invalid invalid => Problem(invalid.Errors),
+                SaveBaselineResult.UserNotFound => NotFoundProblem.Result(),
+                _ => throw new UnreachableException($"Unhandled {nameof(SaveBaselineResult)}: {result.GetType()}"),
+            };
+        })
+        .RequireAuthorization()
+        .Produces<BaselineResponse>(StatusCodes.Status200OK)
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
         return app;
+    }
+
+    /// <summary>
+    /// Replays a step service's field errors into the phase's one 400 body. Several messages may share
+    /// a key (the builder keeps them in order), which is why this loops rather than building a map.
+    /// </summary>
+    private static IResult Problem(IReadOnlyList<OnboardingFieldError> errors)
+    {
+        var problems = new ValidationProblemBuilder();
+        foreach (var error in errors) problems.Add(error.Field, error.Message);
+        return problems.Build();
     }
 }

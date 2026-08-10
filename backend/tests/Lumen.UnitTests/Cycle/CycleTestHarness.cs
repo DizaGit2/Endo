@@ -1,6 +1,7 @@
 using Lumen.Api.Cycle;
 using Lumen.Api.CycleSettings;
 using Lumen.Api.Devices;
+using Lumen.Api.Onboarding;
 using Lumen.Api.Symptoms;
 using Lumen.Api.Time;
 using Lumen.Application.Crypto;
@@ -240,6 +241,23 @@ internal sealed class CycleTestHarness : IDisposable
 
     /// <summary>A <see cref="DeviceRegistrationService"/> for the harness's primary user at <see cref="Now"/>.</summary>
     public DeviceRegistrationService NewDeviceRegistrationService() => NewDeviceRegistrationService(DayInfo());
+
+    /// <summary>
+    /// An <see cref="OnboardingStepsService"/> over a fresh context (T16), for the given day info
+    /// (<see langword="null"/> = erased user). Unlike the three services above it DOES take
+    /// <see cref="Crypto"/>: every field the baseline step writes to <c>user_profile_enc</c> is a
+    /// <c>*_enc</c> column, and the weight lands in <c>body_metrics.ValueEnc</c>, also ciphertext.
+    /// </summary>
+    /// <remarks>
+    /// Tests that need to reach the service's OWN context — the unit-of-work guards around
+    /// <c>SaveBaselineAsync</c> — construct it directly over <see cref="NewContext"/> instead, because
+    /// observing the shared change tracker is the whole point of those assertions.
+    /// </remarks>
+    public OnboardingStepsService NewOnboardingStepsService(UserDayInfo? info, IInterceptor? interceptor = null) =>
+        new(NewContext(interceptor), new StubUserDayContext(info), Crypto);
+
+    /// <summary>An <see cref="OnboardingStepsService"/> for the harness's primary user at <see cref="Now"/>.</summary>
+    public OnboardingStepsService NewOnboardingStepsService() => NewOnboardingStepsService(DayInfo());
 
     /// <summary>
     /// Seeds a <c>user_devices</c> row directly (T15). <paramref name="lastSeenAt"/> defaults to

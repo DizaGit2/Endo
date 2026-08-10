@@ -155,6 +155,11 @@ builder.Services.AddScoped<IUserDayContext, UserDayContext>();
 // --- onboarding ---
 // Extracted from the /onboarding/start handler (P3c-T2) so validation/compensation are unit-testable.
 builder.Services.AddScoped<OnboardingService>();
+// The authenticated onboarding STEP writes (P4a-T16): POST /onboarding/baseline, plus the
+// profile-condition projection GET /me splices into MeResponse. Scoped because it consumes both the
+// request-scoped day context (D-12) and the request-scoped crypto context — unlike the three services
+// below it, every column it writes is a *_enc column.
+builder.Services.AddScoped<OnboardingStepsService>();
 
 // --- cycle (P4a-T9/T10) ---
 // Scoped: both consume the request-scoped day context (D-12) and crypto context (the note cipher).
@@ -325,6 +330,7 @@ app.MapGet("/me", async (
     ICurrentUserAccessor current,
     LumenDbContext db,
     IUserCryptoContext crypto,
+    OnboardingStepsService steps,
     CancellationToken ct) =>
 {
     var userId = current.UserId;
@@ -336,7 +342,24 @@ app.MapGet("/me", async (
     var profile = await db.UserProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId, ct);
     var displayName = profile?.DisplayNameEnc is { } enc ? await crypto.DecryptStringAsync(enc, ct) : null;
 
-    return Results.Ok(new MeResponse(userId, displayName, user.Locale, user.Timezone, user.OnboardingCompletedAt is not null));
+    // T16: the profile-condition READ path. Rider 4 requires every column the baseline step writes to
+    // have a reader too, or everything it stores is write-only for the rest of the phase and the
+    // already-shipped screen 31 has nothing to bind to. Delegated rather than inlined so the
+    // projection is unit-testable without HTTP, and so exactly one place decrypts these columns.
+    var baseline = await steps.ReadBaselineAsync(userId, ct);
+
+    return Results.Ok(new MeResponse(
+        userId,
+        displayName,
+        user.Locale,
+        user.Timezone,
+        user.OnboardingCompletedAt is not null,
+        baseline.Dob,
+        baseline.HeightCm,
+        baseline.EndoStatus,
+        baseline.RasrmStage,
+        baseline.DiagnosedOn,
+        baseline.LatestWeightKg));
 })
 .RequireAuthorization()
 .Produces<MeResponse>(StatusCodes.Status200OK)
@@ -479,7 +502,44 @@ static async Task<bool> CanConnectAsync(string host, int port, TimeSpan timeout)
 // DTOs
 // `OnboardingStartRequest` moved to Onboarding/OnboardingContracts.cs (T4) — still in the global
 // namespace, so its OpenAPI schema name is unchanged.
-public record MeResponse(Guid Id, string? DisplayName, string Locale, string Timezone, bool OnboardingCompleted);
+/// <summary>
+/// The 200 body of <c>GET /me</c> — the spine's identity read, and (since T16) the <b>read path for
+/// the rider-4 profile-condition fields</b> the baseline step writes.
+/// </summary>
+/// <remarks>
+/// <para><b>The six T16 members are purely ADDITIVE and the first five are frozen.</b> The Flutter
+/// client already binds <c>id</c>, <c>displayName</c>, <c>locale</c>, <c>timezone</c> and
+/// <c>onboardingCompleted</c>; adding members is safe, renaming or removing one is a breaking change
+/// to a shipped contract. Pinned by <c>OpenApiContractTests</c>.</para>
+///
+/// <para><b>Every T16 member is nullable and carries no <c>[DefaultValue]</c>.</b> D-02 makes each
+/// baseline answer skippable, so "not answered" must be expressible — and T13 proved that a schema
+/// <c>default</c> on a nullable member makes the property un-nullable in the generated Dart client
+/// forever.</para>
+/// </remarks>
+/// <param name="Dob">Date of birth (§A:60 stores a DOB; screen 4's age is derived from it).</param>
+/// <param name="HeightCm">Height in whole centimetres (D-06: metric-only v1).</param>
+/// <param name="EndoStatus">One of <see cref="UserProfileEnc.EndoStatuses"/>, or null if unanswered.</param>
+/// <param name="RasrmStage">The rASRM stage 1–4, rendered I–IV. Independent of <paramref name="EndoStatus"/>.</param>
+/// <param name="DiagnosedOn">
+/// The diagnosis month as <c>"yyyy-MM"</c> — a string, never a date, because the field has no day.
+/// </param>
+/// <param name="LatestWeightKg">
+/// The user's most recent <b>live</b> <c>body_metrics.weight_kg</c> value (rider 4: weight lives
+/// there, never on the profile). Null once every entry is deleted.
+/// </param>
+public record MeResponse(
+    Guid Id,
+    string? DisplayName,
+    string Locale,
+    string Timezone,
+    bool OnboardingCompleted,
+    DateOnly? Dob,
+    int? HeightCm,
+    string? EndoStatus,
+    int? RasrmStage,
+    string? DiagnosedOn,
+    decimal? LatestWeightKg);
 
 /// <summary>
 /// Settings patch. Every member is optional and <c>null</c> means "leave unchanged" — this is a PATCH,

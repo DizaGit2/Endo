@@ -432,6 +432,112 @@ public class OpenApiContractTests(LumenApiFactory factory) : IClassFixture<Lumen
         }
     }
 
+    [Fact]
+    public async Task OpenApi_documents_the_onboarding_baseline_endpoint()
+    {
+        // Asserted on the EMITTED document, not only on the committed snapshot: dropping the route
+        // from MapOnboardingEndpoints() must fail here rather than produce a snapshot diff somebody
+        // regenerates away.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+        var root = doc.RootElement;
+
+        root.GetProperty("paths").TryGetProperty("/onboarding/baseline", out var baseline)
+            .ShouldBeTrue("POST /onboarding/baseline must be documented (§C.1)");
+
+        var post = baseline.GetProperty("post");
+        post.GetProperty("responses").GetProperty("200")
+            .GetProperty("content").GetProperty("application/json").GetProperty("schema")
+            .GetProperty("$ref").GetString().ShouldBe(
+                "#/components/schemas/BaselineResponse",
+                "the 200 decrypts the stored row back, so a round-trip failure surfaces immediately");
+
+        var responses = post.GetProperty("responses");
+        responses.TryGetProperty("400", out var badRequest).ShouldBeTrue();
+        AssertIsValidationProblemSchema(
+            root,
+            badRequest.GetProperty("content").GetProperty("application/problem+json").GetProperty("schema"),
+            "POST /onboarding/baseline");
+        responses.TryGetProperty("401", out _).ShouldBeTrue("this step is authenticated — unlike /onboarding/start");
+        responses.TryGetProperty("404", out _).ShouldBeTrue(
+            "an erased user's still-valid token gets the shared 404 from this route too");
+
+        var request = root.GetProperty("components").GetProperty("schemas")
+            .GetProperty("SaveBaselineRequest").GetProperty("properties");
+        foreach (var member in new[] { "dob", "heightCm", "weightKg", "endoStatus", "rasrmStage", "diagnosedOn" })
+            request.TryGetProperty(member, out _).ShouldBeTrue($"SaveBaselineRequest must document '{member}'");
+
+        // `diagnosedOn` is month precision (yyyy-MM), so it is a bare STRING and must never be typed as
+        // a date — `format: date` would make the generated Dart client parse it into a full DateTime
+        // and re-serialize a day the user never gave (§D).
+        var diagnosedOn = request.GetProperty("diagnosedOn");
+        diagnosedOn.GetProperty("type").GetString().ShouldBe("string");
+        diagnosedOn.TryGetProperty("format", out _).ShouldBeFalse(
+            "diagnosedOn is 'yyyy-MM' — a `format: date` here would coerce it into a full date");
+
+        // `dob` IS a full date and stays one.
+        request.GetProperty("dob").GetProperty("format").GetString().ShouldBe("date");
+    }
+
+    [Fact]
+    public async Task OpenApi_me_response_carries_the_profile_condition_read_path()
+    {
+        // Rider 4 requires every new column to have a reader as well as a writer. Without these six
+        // members everything the baseline step writes is write-only for the rest of the phase, and the
+        // already-shipped screen 31 has nothing to bind to.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+        var me = doc.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("MeResponse").GetProperty("properties");
+
+        foreach (var member in new[] { "dob", "heightCm", "endoStatus", "rasrmStage", "diagnosedOn", "latestWeightKg" })
+            me.TryGetProperty(member, out _).ShouldBeTrue($"MeResponse must document '{member}'");
+
+        // Extending MeResponse is ADDITIVE — the Flutter client already binds these five, and a rename
+        // or removal is a breaking change to a shipped contract.
+        foreach (var member in new[] { "id", "displayName", "locale", "timezone", "onboardingCompleted" })
+            me.TryGetProperty(member, out _).ShouldBeTrue($"MeResponse must keep its shipped member '{member}'");
+
+        me.GetProperty("diagnosedOn").TryGetProperty("format", out _).ShouldBeFalse(
+            "diagnosedOn is 'yyyy-MM' on the read path too");
+    }
+
+    [Fact]
+    public async Task OpenApi_no_nullable_baseline_or_me_member_declares_a_default()
+    {
+        // The T13 defect, generalised: openapi-generator's dart-dio/built_value output turns a schema
+        // `default` into a builder default and skips explicit nulls on deserialize, so a default on any
+        // of these makes the property un-nullable in the generated client forever — and every member
+        // here is nullable by design, because D-02 makes each answer skippable.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+        var schemas = doc.RootElement.GetProperty("components").GetProperty("schemas");
+
+        foreach (var (schema, member) in new[]
+                 {
+                     ("SaveBaselineRequest", "dob"),
+                     ("SaveBaselineRequest", "heightCm"),
+                     ("SaveBaselineRequest", "weightKg"),
+                     ("SaveBaselineRequest", "endoStatus"),
+                     ("SaveBaselineRequest", "rasrmStage"),
+                     ("SaveBaselineRequest", "diagnosedOn"),
+                     ("BaselineResponse", "dob"),
+                     ("BaselineResponse", "heightCm"),
+                     ("BaselineResponse", "endoStatus"),
+                     ("BaselineResponse", "rasrmStage"),
+                     ("BaselineResponse", "diagnosedOn"),
+                     ("BaselineResponse", "latestWeightKg"),
+                     ("MeResponse", "dob"),
+                     ("MeResponse", "heightCm"),
+                     ("MeResponse", "endoStatus"),
+                     ("MeResponse", "rasrmStage"),
+                     ("MeResponse", "diagnosedOn"),
+                     ("MeResponse", "latestWeightKg"),
+                 })
+        {
+            schemas.GetProperty(schema).GetProperty("properties").GetProperty(member)
+                .TryGetProperty("default", out _)
+                .ShouldBeFalse($"{schema}.{member} must not carry a schema default");
+        }
+    }
+
     /// <summary>
     /// Asserts the response schema is the validation-problem one (the shape carrying the
     /// <c>errors</c> map) rather than the bare <c>ProblemDetails</c>. Matched on the referenced

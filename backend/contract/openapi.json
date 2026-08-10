@@ -1,6 +1,40 @@
 {
   "components": {
     "schemas": {
+      "BaselineResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "diagnosedOn": {
+            "nullable": true,
+            "type": "string"
+          },
+          "dob": {
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "endoStatus": {
+            "nullable": true,
+            "type": "string"
+          },
+          "heightCm": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "latestWeightKg": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "rasrmStage": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "CreateSymptomsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -346,13 +380,36 @@
       "MeResponse": {
         "additionalProperties": false,
         "properties": {
+          "diagnosedOn": {
+            "nullable": true,
+            "type": "string"
+          },
           "displayName": {
             "nullable": true,
             "type": "string"
           },
+          "dob": {
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "endoStatus": {
+            "nullable": true,
+            "type": "string"
+          },
+          "heightCm": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "latestWeightKg": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
           },
           "locale": {
             "nullable": true,
@@ -360,6 +417,11 @@
           },
           "onboardingCompleted": {
             "type": "boolean"
+          },
+          "rasrmStage": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
           },
           "timezone": {
             "nullable": true,
@@ -603,6 +665,40 @@
             },
             "nullable": true,
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "SaveBaselineRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "diagnosedOn": {
+            "nullable": true,
+            "type": "string"
+          },
+          "dob": {
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "endoStatus": {
+            "nullable": true,
+            "type": "string"
+          },
+          "heightCm": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "rasrmStage": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "weightKg": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
           }
         },
         "type": "object"
@@ -1383,6 +1479,65 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RegisterDeviceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "tags": [
+          "Lumen.Api"
+        ]
+      }
+    },
+    "/onboarding/baseline": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveBaselineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BaselineResponse"
                 }
               }
             },
