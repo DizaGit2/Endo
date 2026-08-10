@@ -176,6 +176,18 @@ internal sealed class CycleTestHarness : IDisposable
     public CycleDayService NewDayService() => NewDayService(DayInfo());
 
     /// <summary>
+    /// A <see cref="CycleCalendarService"/> over a fresh context (T13), for the given day info
+    /// (<see langword="null"/> = erased user). It takes NO <see cref="IUserCryptoContext"/> on
+    /// purpose — the calendar decrypts no <c>*_enc</c> column, and the missing dependency is what
+    /// keeps it that way.
+    /// </summary>
+    public CycleCalendarService NewCalendarService(UserDayInfo? info) =>
+        new(NewContext(), new StubUserDayContext(info));
+
+    /// <summary>A <see cref="CycleCalendarService"/> for the harness's primary user at <see cref="Now"/>.</summary>
+    public CycleCalendarService NewCalendarService() => NewCalendarService(DayInfo());
+
+    /// <summary>
     /// A <see cref="SymptomService"/> over a fresh context (T11), for the given day info
     /// (<see langword="null"/> = erased user). Same lifetime story as the two above; it additionally
     /// takes <see cref="DayResolver"/>, which is what turns a client instant into the user's day.

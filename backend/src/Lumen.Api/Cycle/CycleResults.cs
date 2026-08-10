@@ -90,6 +90,28 @@ public abstract record CycleDayReadResult
     public sealed record UserNotFound : CycleDayReadResult;
 }
 
+/// <summary>
+/// Outcome of <see cref="CycleCalendarService.GetCalendarAsync"/>. There is deliberately no "empty
+/// window" case: a window with nothing in it is a <see cref="Found"/> carrying an empty day list,
+/// because 404 on this route means "no such user" and nothing else (§G12).
+/// </summary>
+public abstract record CycleCalendarResult
+{
+    /// <summary>The window was read — possibly empty. → 200.</summary>
+    public sealed record Found(CycleCalendarResponse Calendar) : CycleCalendarResult;
+
+    /// <summary>The window was inverted or wider than <see cref="CycleCalendarWindow.MaxDays"/>. → 400.</summary>
+    public sealed record Invalid(IReadOnlyList<CycleFieldError> Errors) : CycleCalendarResult;
+
+    /// <summary>
+    /// The token's <c>sub</c> has no live <c>users</c> row — it never existed, or the account was
+    /// crypto-shredded. → 404. On a READ this is a security control in its own right: a successful
+    /// empty answer would still confirm the account existed, and a successful non-empty one would
+    /// hand back health data after erasure.
+    /// </summary>
+    public sealed record UserNotFound : CycleCalendarResult;
+}
+
 /// <summary>Outcome of <see cref="CycleService.SavePhaseOverridesAsync"/>.</summary>
 public abstract record PhaseOverrideResult
 {

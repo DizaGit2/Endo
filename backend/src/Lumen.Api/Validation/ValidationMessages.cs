@@ -62,6 +62,19 @@ public static class ValidationMessages
     public const string NotAnIanaTimeZone = "value is not a recognized IANA time zone";
 
     /// <summary>
+    /// A windowed read arrived with its end before its start. Reported on the <b>end</b> bound — the
+    /// later of the two, and the one the client most likely got wrong. An inverted window is a 400
+    /// rather than an empty page because <c>[]</c> is indistinguishable from "you logged nothing that
+    /// month", which is the reading that hides the client bug forever.
+    ///
+    /// <para>Hoisted out of <c>SymptomValidationMessages</c> (T12) in T13, when
+    /// <c>GET /cycle/calendar</c> became the second windowed read to state the same rule. Two copies
+    /// of a wire string the client renders verbatim could only ever drift apart — the same reason
+    /// <see cref="FieldLimits.MaxNotesLength"/> was hoisted out of <c>CycleService</c>.</para>
+    /// </summary>
+    public const string RangeEndBeforeStart = "date must not be before the start of the range";
+
+    /// <summary>
     /// The request could not be bound at all — unparseable JSON, a route/query value of the wrong
     /// type, a missing required parameter. Emitted only by <see cref="ProblemExceptionHandler"/>,
     /// under <see cref="ValidationProblemBuilder.RequestKey"/>. Intentionally vague: the framework's

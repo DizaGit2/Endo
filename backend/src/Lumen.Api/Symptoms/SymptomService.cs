@@ -208,7 +208,7 @@ public sealed class SymptomService(
         if (to is null)
             errors.Add(new SymptomFieldError("to", ValidationMessages.Required));
         else if (from is { } start && to is { } end && end < start)
-            errors.Add(new SymptomFieldError("to", SymptomValidationMessages.RangeEndBeforeStart));
+            errors.Add(new SymptomFieldError("to", ValidationMessages.RangeEndBeforeStart));
 
         var pageSize = limit ?? SymptomPaging.DefaultLimit;
         if (pageSize < SymptomPaging.MinLimit || pageSize > SymptomPaging.MaxLimit)

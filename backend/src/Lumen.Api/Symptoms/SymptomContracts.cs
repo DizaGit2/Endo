@@ -131,13 +131,10 @@ public static class SymptomPaging
 /// </summary>
 public static class SymptomValidationMessages
 {
-    /// <summary>
-    /// <c>GET /symptoms</c> arrived with <c>to</c> before <c>from</c>. Reported on <c>to</c> — the
-    /// later of the two, and the one the client most likely got wrong. An inverted window is answered
-    /// with a 400 rather than an empty page because <c>[]</c> is indistinguishable from "you logged
-    /// nothing that month", which is the reading that hides the client bug forever.
-    /// </summary>
-    public const string RangeEndBeforeStart = "date must not be before the start of the range";
+    // `RangeEndBeforeStart` lived here until T13, when `GET /cycle/calendar` became the second
+    // windowed read to state the same rule. It now lives on `ValidationMessages` — the shared home for
+    // a message more than one feature genuinely uses — with the identical literal, so nothing on the
+    // wire changed.
 
     /// <summary>
     /// A quick check-in supplied neither pain nor mood. Reported under

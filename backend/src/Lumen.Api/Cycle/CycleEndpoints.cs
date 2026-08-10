@@ -151,6 +151,33 @@ public static class CycleEndpoints
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status404NotFound);
 
+        // The windowed read behind screens 10 and 8 (T13). Both bounds are optional and default
+        // independently to the edges of the user's current month; a future `to` is legitimate here,
+        // because a month view spans forward even though every write is capped by today. `DateOnly?`
+        // so an out-of-range window reaches the validator and comes back attached to its own field —
+        // an UNPARSEABLE bound still fails at the binder and becomes T3's one 400 under `request`,
+        // which is the right answer for a parameter that could not be read at all.
+        app.MapGet("/cycle/calendar", async (
+            DateOnly? from,
+            DateOnly? to,
+            CycleCalendarService calendar,
+            CancellationToken ct) =>
+        {
+            var result = await calendar.GetCalendarAsync(from, to, ct);
+            return result switch
+            {
+                CycleCalendarResult.Found found => Results.Ok(found.Calendar),
+                CycleCalendarResult.Invalid invalid => Problem(invalid.Errors),
+                CycleCalendarResult.UserNotFound => NotFoundProblem.Result(),
+                _ => throw new UnreachableException($"Unhandled {nameof(CycleCalendarResult)}: {result.GetType()}"),
+            };
+        })
+        .RequireAuthorization()
+        .Produces<CycleCalendarResponse>(StatusCodes.Status200OK)
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
         return app;
     }
 

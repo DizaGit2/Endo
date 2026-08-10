@@ -142,6 +142,61 @@ public class OpenApiContractTests(LumenApiFactory factory) : IClassFixture<Lumen
             "PATCH /me returns the shared 404 problem when the users row is gone.");
     }
 
+    // --- T13: the §G6 phase envelope, and the absence of everything else phase-shaped -------------
+
+    [Fact]
+    public async Task OpenApi_carries_the_phase_engine_not_implemented_code_into_the_contract()
+    {
+        // The POINT of CyclePhaseAvailability is that P6 can start emitting real phase data without a
+        // client-visible vocabulary change — and a constant reaches the generated Dart client only if
+        // a DTO carries it into the contract. The Dart client is regenerated exactly once, in T21, so
+        // GET /cycle/calendar is the last chance to put this code there. Asserted on the emitted
+        // document rather than only on the committed snapshot, so deleting the attribute fails here
+        // instead of merely producing a snapshot diff somebody regenerates away.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+        var root = doc.RootElement;
+
+        root.GetProperty("paths").TryGetProperty("/cycle/calendar", out var calendar)
+            .ShouldBeTrue("GET /cycle/calendar must be documented");
+        calendar.GetProperty("get").GetProperty("responses").GetProperty("200")
+            .GetProperty("content").GetProperty("application/json").GetProperty("schema")
+            .GetProperty("$ref").GetString().ShouldBe("#/components/schemas/CycleCalendarResponse");
+
+        var phaseRef = root.GetProperty("components").GetProperty("schemas")
+            .GetProperty("CycleCalendarResponse").GetProperty("properties")
+            .GetProperty("phase").GetProperty("$ref").GetString()!;
+
+        var phase = root.GetProperty("components").GetProperty("schemas")
+            .GetProperty(phaseRef.Split('/')[^1]).GetProperty("properties");
+
+        phase.GetProperty("available").GetProperty("type").GetString().ShouldBe("boolean");
+
+        phase.GetProperty("unavailableReason").TryGetProperty("default", out var reason).ShouldBeTrue(
+            "the §G6 reason code must reach the generated client through the CONTRACT, not just exist " +
+            "as a C# constant with no consumer — `unavailableReason` documents no value, so the " +
+            "[DefaultValue] on CyclePhaseAvailabilityResponse is gone");
+        reason.GetString().ShouldBe("phase_engine_not_implemented");
+    }
+
+    [Fact]
+    public async Task OpenApi_no_calendar_day_row_documents_a_phase_a_cycle_day_or_a_confidence()
+    {
+        // §G6 enforced on the WIRE CONTRACT, which is where it matters: P4a computes none of these,
+        // and a documented key is exactly how a not-yet-implemented estimate becomes a clinical fact
+        // in a client author's mental model. The response-level `phase` envelope is the one exception
+        // and it says the engine does not exist.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+
+        var day = doc.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("CycleCalendarDay").GetProperty("properties");
+
+        foreach (var forbidden in new[] { "phase", "cycleDay", "confidence", "notes" })
+        {
+            day.TryGetProperty(forbidden, out _).ShouldBeFalse(
+                $"CycleCalendarDay must not document '{forbidden}' (§G6 / no note plaintext on this read)");
+        }
+    }
+
     /// <summary>
     /// Asserts the response schema is the validation-problem one (the shape carrying the
     /// <c>errors</c> map) rather than the bare <c>ProblemDetails</c>. Matched on the referenced

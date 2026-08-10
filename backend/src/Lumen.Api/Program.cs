@@ -161,6 +161,9 @@ builder.Services.AddScoped<CycleService>();
 // §C.3 route but writes only cycle_day_logs, so it shares this service rather than racing a second
 // one on the same row.
 builder.Services.AddScoped<CycleDayService>();
+// GET /cycle/calendar (T13). Scoped for the request-scoped day context alone: it takes NO crypto
+// context, because the calendar decrypts no *_enc column (§G6 read path — a flag, never the note).
+builder.Services.AddScoped<CycleCalendarService>();
 
 // --- symptoms (P4a-T11) ---
 // Scoped: consumes the request-scoped day context (D-12) and crypto context (the note cipher), plus

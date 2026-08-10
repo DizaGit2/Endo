@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace Lumen.Api.Cycle;
 
 // The DTOs, wire strings and code vocabulary of the cycle feature, per the T3 convention
@@ -9,7 +11,8 @@ namespace Lumen.Api.Cycle;
 // ids are `LogCycleEventRequest`, `CycleEventResponse`, `SavePhaseOverridesRequest`,
 // `PhaseOverrideInput`, `PhaseOverridesResponse`, `PhaseOverrideBoundary` — no namespace prefix).
 // The real hazard is a short-type-name COLLISION across feature folders, which throws a
-// duplicate-schemaId error at document generation, so every name below is globally unique.
+// duplicate-schemaId error at document generation, so every name below is globally unique — including
+// T13's `CycleCalendarResponse`, `CyclePhaseAvailabilityResponse` and `CycleCalendarDay`.
 
 /// <summary>
 /// Body of <c>POST /cycle/events</c> — an upsert keyed on <c>(user, kind, occurredOn)</c>, not an
@@ -225,7 +228,180 @@ public static class CycleValidationMessages
     /// rule (D-08) — only a blank note counts as absent text.
     /// </summary>
     public const string DayLogEmpty = "at least one of pain, mood or notes is required";
+
+    /// <summary>
+    /// A <c>GET /cycle/calendar</c> window spanned more than <see cref="CycleCalendarWindow.MaxDays"/>
+    /// days. Reported on <c>to</c>, the same key as
+    /// <see cref="Validation.ValidationMessages.RangeEndBeforeStart"/>, so the client attaches both
+    /// window faults to one input and can clamp the far bound to fix either.
+    /// </summary>
+    /// <remarks>
+    /// Parameterised for the same reason as <see cref="Validation.ValidationMessages.Between"/>: the
+    /// bound is stated inside the sentence, and taking it from the constant is what keeps the two from
+    /// drifting apart silently.
+    /// </remarks>
+    public static string MaxWindowDays(int max) =>
+        // Invariant: a wire string must not vary with the server's thread culture.
+        FormattableString.Invariant($"the range must not exceed {max} days");
 }
+
+/// <summary>
+/// The size bound of one <c>GET /cycle/calendar</c> window. <b>A P4a INVENTION (§G11)</b>, recorded
+/// here and in the T22 STATUS block so a later phase does not mistake 366 for a ratified clinical or
+/// product number: it bounds a query, and it means nothing else.
+/// </summary>
+/// <remarks>
+/// <b>This is a bounded DATE WINDOW, not the D-13 50/100 offset page</b> — the reading matters,
+/// because it is why <c>GET /cycle/calendar</c> takes no <c>limit</c>/<c>offset</c> and does not touch
+/// <see cref="Symptoms.SymptomPaging"/>. The response is one sparse row per day that has something on
+/// it, so the window itself is the only thing that can make it large, and a cap on the window is a cap
+/// on the response. Offset paging over a calendar would additionally be meaningless to the screens
+/// that call it: screens 8 and 10 render a whole month or nothing.
+///
+/// <para>366 rather than 365 so a leap year's complete calendar still fits in one request. The cap is
+/// inclusive and both ends of the window count toward it, so the widest legal window is
+/// <c>from + 365</c>.</para>
+/// </remarks>
+public static class CycleCalendarWindow
+{
+    /// <summary>The inclusive ceiling in days: a 366-day window is accepted, a 367-day one is a 400.</summary>
+    public const int MaxDays = 366;
+}
+
+/// <summary>
+/// The 200 body of <c>GET /cycle/calendar?from&amp;to</c> — the bounded, <b>sparse</b> aggregation
+/// behind screen 10 (cycle calendar) and screen 8 (dashboard).
+/// </summary>
+/// <remarks>
+/// <para><b>The window is stated in USER-LOCAL DAYS and both ends are inclusive</b>, matched against
+/// the day-keyed columns (<c>cycle_day_logs.Day</c>, <c>cycle_events.OccurredOn</c>,
+/// <c>symptoms.OccurredOn</c>) — never against a UTC instant recomputed from the bounds. Those columns
+/// exist so a range read is a day-keyed index scan rather than a per-row timezone conversion (D-12),
+/// and they already hold the user's own day: converting the bounds back into instants here would
+/// re-introduce the conversion the columns removed, and would answer differently for a row logged
+/// before the user last changed timezone. <b>This is the same rule
+/// <c>GET /symptoms</c> follows</b> (T12), deliberately, so the two windowed reads can never disagree
+/// about which rows a month contains.</para>
+///
+/// <para><b>Both parameters are optional and default independently</b> to the corresponding edge of
+/// the user's current month, so a bare <c>GET /cycle/calendar</c> is "this month" and <c>?from=</c>
+/// alone is "from that day to the end of my month". There is no unbounded read to fall into: whatever
+/// the client omits, the response echoes back the bounds actually applied.</para>
+///
+/// <para><b>A future <c>to</c> is legitimate here</b>, as it is on <c>GET /symptoms</c> and nowhere
+/// else in this phase: every WRITE is capped by today (§G8), but a month view spans forward and
+/// clamping the window the client had just drawn would make the calendar disagree with itself.</para>
+///
+/// <para><b>No <c>*_enc</c> column is decrypted on this path.</b> The day row carries
+/// <see cref="CycleCalendarDay.HasNotes"/>, a flag, and never the note — a month of notes on the wire
+/// to answer a boolean the screen renders as a dot would be plaintext health data spent for nothing.
+/// <c>CycleCalendarService</c> takes no <c>IUserCryptoContext</c> at all, which is what keeps it that
+/// way.</para>
+/// </remarks>
+/// <param name="From">The first day of the window actually applied, echoed back.</param>
+/// <param name="To">The last day of the window actually applied, echoed back.</param>
+/// <param name="Today">
+/// The user's local today (D-12), computed server-side. Screen 8 highlights it and screen 10 draws it,
+/// and the server's answer is the one that keyed every row — so the client never re-derives it from
+/// its own clock.
+/// </param>
+/// <param name="Timezone">The IANA zone <see cref="Today"/> and the window were resolved in.</param>
+/// <param name="Phase">
+/// <b>The §G6 envelope, and the only phase-shaped member anywhere in this contract.</b> See
+/// <see cref="CyclePhaseAvailabilityResponse"/>.
+/// </param>
+/// <param name="Days">
+/// <b>One row per day that has something on it, ascending.</b> A day with nothing logged is
+/// <b>absent</b>, not a zero row: a month view is mostly empty, and 31 empty rows per request is
+/// payload the client throws away. An empty window is a <b>200</b> with an empty list — 404 on this
+/// route means "no such user" and nothing else (§G12).
+/// </param>
+public record CycleCalendarResponse(
+    DateOnly From,
+    DateOnly To,
+    DateOnly Today,
+    string Timezone,
+    CyclePhaseAvailabilityResponse Phase,
+    IReadOnlyList<CycleCalendarDay> Days);
+
+/// <summary>
+/// Whether the calendar could tell the client what cycle phase its days are in — and in P4a it never
+/// can. <b>This is the §G6 envelope: <c>{ available: false, unavailableReason:
+/// "phase_engine_not_implemented" }</c>, every time.</b>
+/// </summary>
+/// <remarks>
+/// <para><b>Why the response says anything at all about a phase it does not compute.</b> P4b has to
+/// render <i>something</i> where screens 8 and 10 show a phase band, and the two honest options are
+/// "we do not know" and silence. Silence is the dangerous one: a client that receives no phase key has
+/// to invent its own reading of the gap, and the reading it will pick is the one the mockups imply —
+/// that the phase is simply missing for these particular days. An explicit, machine-readable
+/// <i>reason</i> is what lets the client draw an unavailable state instead of an empty one, and it is
+/// what stops a placeholder from being mistaken for a clinical output later.</para>
+///
+/// <para><b>Why it lives here rather than on a day row.</b> There is exactly one reason for the whole
+/// window, because the reason is a property of the server, not of any day: the engine does not exist
+/// yet. Repeating it per day would give the shape of a per-day judgement to something that is not one —
+/// and would put a <c>phase</c> key on a day row, which §G6 forbids outright. <b>No
+/// <see cref="CycleCalendarDay"/> carries a <c>phase</c>, <c>cycleDay</c> or <c>confidence</c>
+/// key.</b></para>
+///
+/// <para><b>Why it is in the P4a contract at all, given P4a computes nothing.</b> The Dart client is
+/// generated exactly once in this phase (T21). Shipping the envelope now means P6 can start emitting
+/// real phase data — and the other three reserved reasons on
+/// <see cref="CyclePhaseAvailability"/> — without a client-visible vocabulary change. A DTO is the
+/// only thing that carries a constant into the generated client, so this record is how those codes get
+/// there.</para>
+/// </remarks>
+/// <param name="Available">
+/// <b>Always <see langword="false"/> in P4a.</b> When P6 ships the engine this becomes true and
+/// <see cref="UnavailableReason"/> becomes <see langword="null"/>; the client must branch on this flag
+/// and never on the presence of a phase value.
+/// </param>
+/// <param name="UnavailableReason">
+/// One of <see cref="CyclePhaseAvailability"/> when <see cref="Available"/> is
+/// <see langword="false"/>; <see langword="null"/> when it is true. <b>P4a can only ever answer
+/// <see cref="CyclePhaseAvailability.PhaseEngineNotImplemented"/></b> — declared as the schema default
+/// so the code reaches the generated client and the committed contract, not merely this file.
+/// </param>
+public record CyclePhaseAvailabilityResponse(
+    [property: DefaultValue(false)] bool Available,
+    [property: DefaultValue(CyclePhaseAvailability.PhaseEngineNotImplemented)] string? UnavailableReason);
+
+/// <summary>
+/// One day of the calendar that has something on it: the day log's headline scales, plus how many
+/// <c>cycle_events</c> and <c>symptoms</c> rows fall on it.
+/// </summary>
+/// <remarks>
+/// <b>No <c>phase</c>, <c>cycleDay</c> or <c>confidence</c> key (§G6)</b> — P4a computes none of them,
+/// and a placeholder key is exactly how a not-yet-implemented estimate gets rendered as a clinical
+/// fact. The one thing this contract says about phases is the response-level
+/// <see cref="CyclePhaseAvailabilityResponse"/>, which says the engine does not exist.
+///
+/// <para><b>No <c>notes</c> either</b>: the row carries <see cref="HasNotes"/>, and the note text is
+/// read one day at a time through <c>GET /cycle/day/{date}</c>.</para>
+///
+/// <para>The counts are of <b>live</b> rows only: soft-deleted rows (D-13) are excluded from both, as
+/// they are from the day's very presence. A day whose every row is a tombstone does not appear.</para>
+/// </remarks>
+/// <param name="Date">The user-local day (D-12) these values belong to.</param>
+/// <param name="Pain">
+/// The day log's headline pain, 0–10 (D-08), or <see langword="null"/> when no day log exists or none
+/// was recorded. <b>0 is a real datum</b> ("none today") and must never be read as an absence.
+/// </param>
+/// <param name="Mood">The day log's mood, 1–4, or <see langword="null"/>.</param>
+/// <param name="HasNotes">
+/// Whether the day log carries an encrypted note. <b>A flag, never the note</b> — see the remarks on
+/// <see cref="CycleCalendarResponse"/>.
+/// </param>
+/// <param name="EventCount">How many live <c>cycle_events</c> rows fall on this day (0–3 in practice: the key is <c>(user, kind, day)</c>).</param>
+/// <param name="SymptomCount">How many live <c>symptoms</c> rows fall on this day. D-09 makes one save multi-row, so this is routinely &gt; 1.</param>
+public record CycleCalendarDay(
+    DateOnly Date,
+    int? Pain,
+    int? Mood,
+    bool HasNotes,
+    int EventCount,
+    int SymptomCount);
 
 /// <summary>
 /// Why a cycle day carries no phase. <b>P4a can only ever answer
@@ -238,6 +414,13 @@ public static class CycleValidationMessages
 /// declaring the full set here means P6 can start emitting them without a client-visible vocabulary
 /// change. They are a <b>P4a invention</b> (§G11), not part of the 2026-07-08 ratification block.
 /// Append-only, like every other vocabulary in this codebase.</para>
+///
+/// <para><b>T13 is what makes that true rather than aspirational.</b> A constant reaches the generated
+/// client only if a DTO carries it, and until <c>GET /cycle/calendar</c> shipped, this class had zero
+/// consumers and <c>phase_engine_not_implemented</c> appeared nowhere in
+/// <c>backend/contract/openapi.json</c>. <see cref="CyclePhaseAvailabilityResponse"/> is the DTO that
+/// carries it, and it declares the value as the schema default so the string is in the committed
+/// contract and not only in this file.</para>
 /// </summary>
 public static class CyclePhaseAvailability
 {

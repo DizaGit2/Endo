@@ -124,7 +124,7 @@ public sealed class SymptomListServiceTests : IDisposable
         // logged nothing that month", which is the reading that hides the bug forever.
         var result = await ListAsync(from: To, to: From);
 
-        MessagesFor(result, "to").ShouldBe([SymptomValidationMessages.RangeEndBeforeStart]);
+        MessagesFor(result, "to").ShouldBe([ValidationMessages.RangeEndBeforeStart]);
     }
 
     [Fact]
@@ -379,7 +379,9 @@ public sealed class SymptomListServiceTests : IDisposable
     public void The_range_message_is_frozen()
     {
         // A wire string the Flutter client renders verbatim; asserting it through the constant would
-        // pin the service to the constant and the constant to nothing.
-        SymptomValidationMessages.RangeEndBeforeStart.ShouldBe("date must not be before the start of the range");
+        // pin the service to the constant and the constant to nothing. Hoisted to ValidationMessages
+        // in T13 when GET /cycle/calendar became the second windowed read to state the same rule —
+        // the literal is unchanged, which is what this assertion proves.
+        ValidationMessages.RangeEndBeforeStart.ShouldBe("date must not be before the start of the range");
     }
 }
