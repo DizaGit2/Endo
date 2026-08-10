@@ -9,8 +9,9 @@ namespace Lumen.Api.Symptoms;
 //
 // Schema ids are the bare type names and are namespace-INDEPENDENT (§G12, verified in T9), so the
 // `namespace` above is a style choice. The real hazard is a short-type-name COLLISION across feature
-// folders, which throws a duplicate-schemaId error at document generation: `QuickCheckinRequest` and
-// `QuickCheckinResponse` are unique across the whole API.
+// folders, which throws a duplicate-schemaId error at document generation: `QuickCheckinRequest`,
+// `QuickCheckinResponse`, `CreateSymptomsRequest`, `SymptomEntryInput`, `CreateSymptomsResponse` and
+// `SymptomResponse` are each unique across the whole API.
 
 /// <summary>
 /// Body of <c>POST /checkin/quick</c> (screen 9, "How's today?") — the app's most-tapped write.
@@ -74,6 +75,28 @@ public record QuickCheckinResponse(
     DateTimeOffset UpdatedAt);
 
 /// <summary>
+/// The structural size bounds of one <c>POST /symptoms</c> payload. <b>A P4a INVENTION (§G11)</b>,
+/// recorded here and in the T22 STATUS block so a later phase does not mistake 1–50 for a ratified
+/// clinical or product number: it bounds a request body, and it means nothing else.
+/// </summary>
+/// <remarks>
+/// The batch exists because D-09 makes one user action multi-row (see
+/// <see cref="CreateSymptomsRequest"/>), so the floor of 1 is simply "a save must save something"
+/// and the ceiling of 50 is comfortably above the largest real save — screen 12's pain row plus every
+/// one of the 20 RELATED chips is 21 rows, and screen 13's body map is one row per placed point.
+/// It is a denial-of-service bound on an authenticated write, not a limit the user is expected to
+/// meet; if a real client ever needs more, raising it is additive and breaks no stored data.
+/// </remarks>
+public static class SymptomBatch
+{
+    /// <summary>A save must contain at least one entry; an empty array is a client bug, not a no-op.</summary>
+    public const int MinEntries = 1;
+
+    /// <summary>The inclusive ceiling: 50 entries are accepted, 51 are rejected.</summary>
+    public const int MaxEntries = 50;
+}
+
+/// <summary>
 /// Messages owned by the symptoms endpoints alone (§G12: only genuinely cross-cutting strings belong
 /// on <see cref="Validation.ValidationMessages"/>). These are <b>wire strings</b> asserted verbatim
 /// against their literals in the unit suites — rewording one is a contract change, not a copy edit.
@@ -86,4 +109,167 @@ public static class SymptomValidationMessages
     /// combination, not to either field.
     /// </summary>
     public const string QuickCheckinEmpty = "at least one of pain or mood is required";
+
+    /// <summary>
+    /// <c>POST /symptoms</c> arrived with <c>entries: []</c>. Reported on the <c>entries</c> field
+    /// rather than under <see cref="Validation.ValidationProblemBuilder.RequestKey"/>: the array is a
+    /// real field the client can point at, and it is a different fault from an absent one (which gets
+    /// <see cref="Validation.ValidationMessages.Required"/>).
+    /// </summary>
+    public const string BatchEmpty = "at least one entry is required";
+
+    /// <summary>
+    /// The batch exceeded <see cref="SymptomBatch.MaxEntries"/>. Parameterised for the same reason as
+    /// <see cref="Validation.ValidationMessages.Between"/>: the bound is stated in the sentence, and
+    /// taking it from the constant is what keeps the two from drifting apart silently.
+    /// </summary>
+    public static string MaxEntries(int max) =>
+        // Invariant: a wire string must not vary with the server's thread culture.
+        FormattableString.Invariant($"a request may contain at most {max} entries");
 }
+
+/// <summary>
+/// Body of <c>POST /symptoms</c> (screens 12 and 13) — <b>a BATCH create</b>, 1–50 entries
+/// (<see cref="SymptomBatch"/>), <b>all-or-nothing</b>, answered with <b>201</b> and an
+/// <see cref="CreateSymptomsResponse.Items"/> array.
+///
+/// <para><b>Why a batch and not N single creates (OQ-6, ruled at phase entry).</b> D-09 makes one
+/// user action inherently multi-row: screen 12's single "Save symptom" writes the pain row <i>plus
+/// one row per RELATED chip</i>, and screen 13's "Save body map" writes one row per placed point. The
+/// client is <b>online-only with no write queue</b>, so N requests per save would let a dropped
+/// connection leave half an episode recorded — and a half-recorded episode is worse than none,
+/// because the user believes the save succeeded and every later aggregate reads the fragment as the
+/// whole truth. One request, one transaction, one outcome.</para>
+///
+/// <para><b>All-or-nothing is literal.</b> One invalid entry rejects the whole batch with a 400 and
+/// writes NOTHING — not the valid entries, not a partial episode. Errors are keyed by the indexed
+/// JSON path (<c>entries[3].intensity</c>) so the client can attach each message to the right row of
+/// the form.</para>
+/// </summary>
+/// <param name="Entries">
+/// The episodes to record, in the order the client wants them back. Absent is a validation error, not
+/// an empty batch: a save that silently recorded nothing is the failure mode this endpoint exists to
+/// prevent.
+/// </param>
+public record CreateSymptomsRequest(
+    IReadOnlyList<SymptomEntryInput>? Entries);
+
+/// <summary>
+/// One symptom episode to record. <b>Only <see cref="Intensity"/> is required</b> — the date defaults
+/// to now, and <b>every classification field is optional</b> (D-09): a user who taps a number and
+/// saves has recorded a valid symptom.
+///
+/// <para><b>Write semantics — this row is FULL-REPLACE, and that is the third of the phase's three
+/// rules (§G12). Decided here, on the evidence, for T12 to inherit.</b> The deciding question is not
+/// the HTTP verb, it is <b>how many surfaces write the row</b>. A <c>symptoms</c> row is
+/// <b>id-addressed and single-writer</b>: it is created by one save and thereafter edited only by
+/// re-opening it in the form that owns it. Nothing else ever writes an existing row, so the body
+/// genuinely does describe the row's whole desired state — and an omitted or <see langword="null"/>
+/// classification field on T12's <c>PATCH /symptoms/{id}</c> <b>CLEARS</b> the stored value
+/// (<see cref="Side"/> → null, <see cref="PainTypes"/>/<see cref="Triggers"/> → empty,
+/// <see cref="Notes"/> → null, <see cref="Region"/> → <c>unspecified</c>).</para>
+///
+/// <para><b>The second reason is decisive on its own: here, clearing IS the affordance.</b> These
+/// fields are toggle chips and a body-map side switch. Under MERGE the user could add "sharp" but
+/// never take it back off, set a side but never un-set it, write a note but never delete it — every
+/// classification would be one-way and permanently wrong. That is the opposite of
+/// <c>cycle_day_logs</c>, where merging costs nothing precisely because screens 9 and 11 offer no
+/// clear affordance to lose. <b>So: <c>POST /cycle/events</c> full-upsert, <c>POST /cycle/day/{date}</c>
+/// and <c>POST /checkin/quick</c> merge, <c>POST</c>/<c>PATCH /symptoms</c> full-replace.</b> Note
+/// the verb tension deliberately: §C.3 names the update <c>PATCH</c>, and its semantics are still
+/// full replace, because the verb was never the test.</para>
+///
+/// <para>The rule is <b>invisible in the generated Dart client</b> — every field is a nullable member
+/// on a <c>built_value</c> class and nothing on the wire says which one clears — which is why it is
+/// stated on the DTO rather than in one place. On this CREATE endpoint it makes no observable
+/// difference; it is stated now so T12 does not have to re-derive it or copy a neighbour.</para>
+/// </summary>
+/// <param name="SymptomCode">
+/// One of the 21 ratified codes (§G10: <c>pain</c> plus the 20-member non-pain catalogue). Absent or
+/// blank defaults to <c>pain</c>. Matched with <see cref="StringComparer.Ordinal"/> and <b>never
+/// case-fixed</b>: the vocabulary is append-only and stored rows carry these strings forever, so two
+/// spellings of one concept must not both get in.
+/// </param>
+/// <param name="Intensity">
+/// <b>Required.</b> Severity on the 0–10 NRS-11 scale (D-08). <b>0 is a real datum</b>, never an
+/// absence. Typed <c>int?</c> rather than <c>short?</c> on purpose, so an out-of-range value like
+/// 40000 reaches the validator and comes back as a message attached to this field, instead of being
+/// rejected by the model binder as an unreadable body.
+/// </param>
+/// <param name="Region">One of the 9 ratified regions (§G10). Absent or blank defaults to <c>unspecified</c>.</param>
+/// <param name="Side">
+/// Anatomical <c>front</c> or <c>back</c> — <b>not</b> laterality (ARCHITECTURE.md:37,:51,:184). The
+/// body map has a front view and a back view; left/right was never part of the model. Blank is stored
+/// as null.
+/// </param>
+/// <param name="PainTypes">
+/// Zero or more of the 6 ratified pain qualities (§G10). De-duplicated and re-ordered into canonical
+/// vocabulary order before storage, so P6 never sees order or duplicate noise and two rows recording
+/// the same qualities compare equal. <see langword="null"/> is stored as an empty array, never NULL.
+/// <b>Accepted on every symptom code</b> — there is no cross-field rule (§G6/§G7).
+/// </param>
+/// <param name="Triggers">Zero or more of the 7 ratified triggers (§G10). Same normalisation as <see cref="PainTypes"/>.</param>
+/// <param name="OccurredAt">
+/// When the episode happened. Absent defaults to the request's single <c>now</c>. Normalised to UTC
+/// before storage (<b>mandatory</b>: Npgsql rejects a non-zero offset on a <c>timestamptz</c>
+/// parameter). The stored day key is derived from it via <c>IUserDayResolver</c> and is never
+/// client-supplied.
+/// <para><b>Capped by the user's local today and NOTHING ELSE (§G8).</b> There is no backdate floor
+/// here — D-13 gives one to <c>cycle_events</c> alone, and a symptom logged five years back is a user
+/// transcribing a paper diary, which is exactly the history D-13 permits. The cap is at <b>local-day
+/// granularity</b>, so an instant later today is fine and a phone whose clock runs fast does not lose
+/// the entry.</para>
+/// </param>
+/// <param name="Notes">Optional free text, ≤ 2000 characters after trimming (D-13). Stored encrypted.</param>
+public record SymptomEntryInput(
+    string? SymptomCode,
+    int? Intensity,
+    string? Region,
+    string? Side,
+    IReadOnlyList<string>? PainTypes,
+    IReadOnlyList<string>? Triggers,
+    DateTimeOffset? OccurredAt,
+    string? Notes);
+
+/// <summary>
+/// The <b>201</b> body of <c>POST /symptoms</c>: every row the batch created, in request order.
+/// </summary>
+/// <remarks>
+/// <b>No <c>Location</c> header.</b> A batch creates N resources and <c>Location</c> is a single URI,
+/// so there is nothing honest to put in it; the ids the client needs are in <see cref="Items"/>.
+/// Wrapped in an object rather than returned as a bare array so the response can gain a member later
+/// without breaking the generated client.
+/// </remarks>
+public record CreateSymptomsResponse(
+    IReadOnlyList<SymptomResponse> Items);
+
+/// <summary>
+/// One stored <c>symptoms</c> row, with <see cref="Notes"/> echoed back in plaintext (the column
+/// itself holds only AES-256-GCM ciphertext).
+/// </summary>
+/// <remarks>
+/// No <c>phase</c>, <c>cycleDay</c> or <c>confidence</c> key (§G6): P4a computes none of them, and a
+/// placeholder is exactly how a not-yet-implemented estimate gets rendered as a clinical fact. No
+/// severity bucket either — "moderate"/"severe" is clinical inference, and this row carries the
+/// number the user chose and nothing derived from it.
+/// </remarks>
+/// <param name="Id">The id T12's read, update and delete take.</param>
+/// <param name="OccurredAt">The normalised UTC instant actually stored.</param>
+/// <param name="OccurredOn">
+/// The user-local day <see cref="OccurredAt"/> falls on (D-12), computed server-side. Echoed back so
+/// the client never re-derives it from its own clock — the server's answer is the one that keyed the
+/// row for every calendar and range read.
+/// </param>
+public record SymptomResponse(
+    Guid Id,
+    string SymptomCode,
+    int Intensity,
+    string Region,
+    string? Side,
+    IReadOnlyList<string> PainTypes,
+    IReadOnlyList<string> Triggers,
+    DateTimeOffset OccurredAt,
+    DateOnly OccurredOn,
+    string? Notes,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);

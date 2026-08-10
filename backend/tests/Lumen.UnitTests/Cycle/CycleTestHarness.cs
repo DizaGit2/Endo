@@ -1,12 +1,17 @@
 using Lumen.Api.Cycle;
+using Lumen.Api.Symptoms;
 using Lumen.Api.Time;
 using Lumen.Application.Crypto;
+using Lumen.Application.Time;
 using Lumen.Domain.Entities;
 using Lumen.Infrastructure.Crypto;
 using Lumen.Infrastructure.Persistence;
+using Lumen.Infrastructure.Time;
+using Lumen.UnitTests.Time;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Lumen.UnitTests.Cycle;
 
@@ -73,6 +78,14 @@ internal sealed class CycleTestHarness : IDisposable
     public Guid OtherUserId { get; } = Guid.NewGuid();
     public TestUserCryptoContext Crypto { get; } = new();
 
+    /// <summary>
+    /// The REAL <see cref="UserDayResolver"/> over a clock frozen at <see cref="Now"/> (T11). Not a
+    /// stub: <c>occurredAt → occurredOn</c> is the one D-12 conversion a symptom write performs, and a
+    /// fake that echoed the UTC date back would make every user-local-day assertion below vacuous.
+    /// </summary>
+    public IUserDayResolver DayResolver { get; } =
+        new UserDayResolver(new FixedTimeProvider(Now), NullLogger<UserDayResolver>.Instance);
+
     public CycleTestHarness()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
@@ -123,6 +136,42 @@ internal sealed class CycleTestHarness : IDisposable
 
     /// <summary>A <see cref="CycleDayService"/> for the harness's primary user at <see cref="Now"/>.</summary>
     public CycleDayService NewDayService() => NewDayService(DayInfo());
+
+    /// <summary>
+    /// A <see cref="SymptomService"/> over a fresh context (T11), for the given day info
+    /// (<see langword="null"/> = erased user). Same lifetime story as the two above; it additionally
+    /// takes <see cref="DayResolver"/>, which is what turns a client instant into the user's day.
+    /// </summary>
+    public SymptomService NewSymptomService(UserDayInfo? info) =>
+        new(NewContext(), new StubUserDayContext(info), Crypto, DayResolver);
+
+    /// <summary>A <see cref="SymptomService"/> for the harness's primary user at <see cref="Now"/>.</summary>
+    public SymptomService NewSymptomService() => NewSymptomService(DayInfo());
+
+    /// <summary>Seeds a <c>symptoms</c> row directly, for tenant-isolation and no-op assertions.</summary>
+    public Symptom SeedSymptom(
+        string symptomCode,
+        short intensity,
+        DateOnly occurredOn,
+        Guid? userId = null)
+    {
+        var row = new Symptom
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId ?? UserId,
+            SymptomCode = symptomCode,
+            Intensity = intensity,
+            Region = Symptom.Regions.Default,
+            OccurredAt = Now,
+            OccurredOn = occurredOn,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+        };
+        using var db = NewOwnedContext();
+        db.Symptoms.Add(row);
+        db.SaveChanges();
+        return row;
+    }
 
     /// <summary>
     /// Seeds a <c>cycle_day_logs</c> row directly. <see cref="CycleDayLog.Energy"/> and

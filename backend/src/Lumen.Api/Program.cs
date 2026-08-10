@@ -7,6 +7,7 @@ using Lumen.Api.Auth;
 using Lumen.Api.Cycle;
 using Lumen.Api.Hangfire;
 using Lumen.Api.Onboarding;
+using Lumen.Api.Symptoms;
 using Lumen.Api.Time;
 using Lumen.Api.Validation;
 using Lumen.Application.Auth;
@@ -161,6 +162,11 @@ builder.Services.AddScoped<CycleService>();
 // one on the same row.
 builder.Services.AddScoped<CycleDayService>();
 
+// --- symptoms (P4a-T11) ---
+// Scoped: consumes the request-scoped day context (D-12) and crypto context (the note cipher), plus
+// the singleton day resolver, which is what turns a client instant into the user's day.
+builder.Services.AddScoped<SymptomService>();
+
 // Global per-user (else per-IP) rate limit — protects costly endpoints like POST /onboarding/start.
 var permitPerMinute = builder.Configuration.GetValue<int?>("RateLimit:PermitPerMinute") ?? 60;
 // Named per-IP policy layered on top of the global limiter, just for the anonymous onboarding
@@ -281,6 +287,10 @@ app.MapOnboardingEndpoints();
 // --- cycle (P4a) ---
 // Cycle routes live in Lumen.Api/Cycle/CycleEndpoints.cs (T9).
 app.MapCycleEndpoints();
+
+// --- symptoms (P4a) ---
+// Symptom routes live in Lumen.Api/Symptoms/SymptomEndpoints.cs (T11).
+app.MapSymptomEndpoints();
 
 app.MapGet("/me", async (
     ICurrentUserAccessor current,
