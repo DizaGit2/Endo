@@ -616,6 +616,34 @@ public sealed class OnboardingCompletionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_failed_backfill_save_rolls_back_the_completion_stamp_TOGETHER()
+    {
+        // Review finding 1. `CompleteAsync` claims the stamp via a guarded `ExecuteUpdateAsync` and then
+        // backfills the four default sets in one `SaveChangesAsync` — the explicit transaction around
+        // BOTH is what makes a failure in the SECOND half undo the FIRST. Without it the
+        // `ExecuteUpdateAsync` is its own implicit transaction and commits on its own: `GET /me` would
+        // report `onboardingCompleted: true` forever while every default set stayed unwritten.
+        await _harness.NewOnboardingStepsService()
+            .SaveCycleAsync(Cycle(CycleTestHarness.Today.AddDays(-7)), default);
+
+        await using var db = _harness.NewContext(new FailEverySaveInterceptor());
+        var dayContext = new StubUserDayContext(_harness.DayInfo());
+        var service = new OnboardingStepsService(
+            db,
+            dayContext,
+            _harness.Crypto,
+            new DeviceRegistrationService(db, dayContext),
+            new CycleSettingsService(db, dayContext));
+
+        await Should.ThrowAsync<DbUpdateException>(async () => await service.CompleteAsync(default));
+
+        await using var read = _harness.NewContext();
+        (await read.Users.AsNoTracking().SingleAsync(u => u.Id == _harness.UserId))
+            .OnboardingCompletedAt.ShouldBeNull(
+                "the stamp and the backfill share one transaction; a failed backfill must undo the stamp too");
+    }
+
+    [Fact]
     public async Task An_already_completed_user_with_no_live_period_start_still_gets_200_not_409()
     {
         // The stamp is a fact about the past. A user who completed onboarding and later deleted their
@@ -771,6 +799,32 @@ public sealed class OnboardingCompletionTests : IDisposable
         StateOf(await _harness.NewOnboardingStepsService().ReadStateAsync(default))
             .LastPeriodStart.ShouldBe(
                 CycleTestHarness.Today.AddDays(-12), "a retracted row is not the user's last period start");
+    }
+
+    [Fact]
+    public async Task A_completed_users_MissingMandatorySteps_stays_empty_even_if_the_anchor_is_later_retracted()
+    {
+        // Review finding 2. `MissingMandatorySteps` must never disagree with `completed`: the DTO doc
+        // says this is "the same list a premature POST /onboarding/complete returns in its 409", and a
+        // completed account never gets that 409 (see
+        // An_already_completed_user_with_no_live_period_start_still_gets_200_not_409, which pins the
+        // /complete side of the same claim). A P4b client that pre-empts the 409 on this field alone
+        // must not be sent back to screen 3.
+        var seeded = _harness.SeedEvent(CycleEvent.Kinds.PeriodStart, CycleTestHarness.Today.AddDays(-7));
+        CompletedOf(await _harness.NewOnboardingStepsService().CompleteAsync(default));
+
+        await using (var arrange = _harness.NewContext())
+        {
+            var row = await arrange.CycleEvents.SingleAsync(e => e.Id == seeded.Id);
+            row.DeletedAt = CycleTestHarness.Now;
+            await arrange.SaveChangesAsync();
+        }
+
+        var state = StateOf(await _harness.NewOnboardingStepsService().ReadStateAsync(default));
+        state.Completed.ShouldBeTrue();
+        state.CycleProvided.ShouldBeFalse("the anchor really is gone; only the MANDATORY list is gated");
+        state.MissingMandatorySteps.ShouldBeEmpty(
+            "a completed user is never sent back to screen 3, even if the anchor is later retracted");
     }
 
     [Fact]

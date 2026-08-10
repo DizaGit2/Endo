@@ -410,6 +410,9 @@ public record OnboardingCompleteResponse(DateTimeOffset CompletedAt, bool Alread
 /// <param name="MissingMandatorySteps">
 /// The mandatory steps still unanswered — <c>["cycle"]</c> or empty. The same list a premature
 /// <c>POST /onboarding/complete</c> returns in its 409, so the client can pre-empt that conflict.
+/// <b>Gated on <see cref="Completed"/></b>: once the account is stamped, this is always empty, even if
+/// the underlying anchor is later retracted (<c>CycleProvided</c> can still go back to <see
+/// langword="false"/> — only this list, and the 409 it mirrors, are frozen by completion).
 /// </param>
 /// <param name="CycleProvided">Whether the user has at least one live <c>period_start</c> — by either route.</param>
 /// <param name="BaselineProvided">

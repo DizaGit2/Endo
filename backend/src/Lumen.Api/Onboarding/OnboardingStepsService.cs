@@ -933,7 +933,12 @@ public sealed class OnboardingStepsService(
         return new OnboardingStateResult.Found(new OnboardingStateResponse(
             Completed: user.OnboardingCompletedAt is not null,
             CompletedAt: user.OnboardingCompletedAt,
-            MissingMandatorySteps: lastPeriodStart is null ? OnboardingSteps.Mandatory : Array.Empty<string>(),
+            // Review finding 2: gated on completion. `MissingMandatorySteps` must never disagree with
+            // `Completed` — once the account is stamped, `/complete` answers 200 forever (never the 409
+            // this list mirrors), so a later-retracted anchor must not resurrect the list here either.
+            MissingMandatorySteps: user.OnboardingCompletedAt is null && lastPeriodStart is null
+                ? OnboardingSteps.Mandatory
+                : Array.Empty<string>(),
             CycleProvided: lastPeriodStart is not null,
             BaselineProvided: baselineProvided,
             GoalsProvided: goalsProvided,
