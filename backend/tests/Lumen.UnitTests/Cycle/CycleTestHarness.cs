@@ -1,4 +1,5 @@
 using Lumen.Api.Cycle;
+using Lumen.Api.CycleSettings;
 using Lumen.Api.Symptoms;
 using Lumen.Api.Time;
 using Lumen.Application.Crypto;
@@ -155,8 +156,15 @@ internal sealed class CycleTestHarness : IDisposable
         return db;
     }
 
-    public UserDayInfo DayInfo(Guid? userId = null, DateTimeOffset? now = null) =>
-        new(userId ?? UserId, Today, Floor, Madrid, now ?? Now);
+    /// <summary>
+    /// A day context for the given user and instant. <paramref name="today"/> is separate from
+    /// <paramref name="now"/> on purpose: <see cref="Today"/> is a fixed constant here, so a test that
+    /// only advanced <paramref name="now"/> would leave the user's calendar day unchanged and could not
+    /// observe anything day-keyed moving (T14's pause spans close on the user's TODAY, not on an
+    /// instant). Supply both when the point of the test is that a later day behaves differently.
+    /// </summary>
+    public UserDayInfo DayInfo(Guid? userId = null, DateTimeOffset? now = null, DateOnly? today = null) =>
+        new(userId ?? UserId, today ?? Today, Floor, Madrid, now ?? Now);
 
     /// <summary>A service over a fresh context, for the given day info (<see langword="null"/> = erased user).</summary>
     public CycleService NewService(UserDayInfo? info, IInterceptor? interceptor = null) =>
@@ -197,6 +205,23 @@ internal sealed class CycleTestHarness : IDisposable
 
     /// <summary>A <see cref="SymptomService"/> for the harness's primary user at <see cref="Now"/>.</summary>
     public SymptomService NewSymptomService() => NewSymptomService(DayInfo());
+
+    /// <summary>
+    /// A <see cref="CycleSettingsService"/> over a fresh context (T14), for the given day info
+    /// (<see langword="null"/> = erased user). It takes NO <see cref="IUserCryptoContext"/>: every
+    /// column on <c>user_cycle_settings</c> is plaintext by design (§D — the P6 estimator queries
+    /// them in SQL), so there is nothing here to encrypt and the missing dependency keeps it that way.
+    /// </summary>
+    /// <remarks>
+    /// Tests that need to reach the service's OWN context — the composability guards around
+    /// <c>ApplyOnboardingCycleAsync</c> — construct it directly over <see cref="NewContext"/> instead,
+    /// because staging a foreign write on the same context is the whole point of those assertions.
+    /// </remarks>
+    public CycleSettingsService NewCycleSettingsService(UserDayInfo? info) =>
+        new(NewContext(), new StubUserDayContext(info));
+
+    /// <summary>A <see cref="CycleSettingsService"/> for the harness's primary user at <see cref="Now"/>.</summary>
+    public CycleSettingsService NewCycleSettingsService() => NewCycleSettingsService(DayInfo());
 
     /// <summary>
     /// Seeds a <c>symptoms</c> row directly, for tenant-isolation, list-ordering and no-op assertions.
@@ -329,6 +354,70 @@ internal sealed class CycleTestHarness : IDisposable
         };
         using var db = NewOwnedContext();
         db.CyclePhaseOverrides.Add(row);
+        db.SaveChanges();
+        return row;
+    }
+
+    /// <summary>
+    /// Seeds the user's <c>user_cycle_settings</c> row directly (T14). Every column is settable so a
+    /// test can arrange a state the endpoint would not itself produce — a divergent pause triple, a
+    /// self-report outside the sanity band — which is what makes the reconciliation assertions real.
+    /// </summary>
+    public UserCycleSettings SeedCycleSettings(
+        Guid? userId = null,
+        short avgCycleLengthDays = UserCycleSettings.DefaultAvgCycleLengthDays,
+        short? avgPeriodLengthDays = null,
+        string? regularity = null,
+        bool phasePredictionEnabled = true,
+        bool autoDetectPeriodStartEnabled = true,
+        bool showFertilityWindowEnabled = false,
+        bool trackingPaused = false,
+        string? pauseReason = null,
+        DateOnly? pausedSince = null)
+    {
+        var row = new UserCycleSettings
+        {
+            UserId = userId ?? UserId,
+            AvgCycleLengthDays = avgCycleLengthDays,
+            AvgPeriodLengthDays = avgPeriodLengthDays,
+            Regularity = regularity ?? UserCycleSettings.RegularityValues.Default,
+            PhasePredictionEnabled = phasePredictionEnabled,
+            AutoDetectPeriodStartEnabled = autoDetectPeriodStartEnabled,
+            ShowFertilityWindowEnabled = showFertilityWindowEnabled,
+            TrackingPaused = trackingPaused,
+            PauseReason = pauseReason,
+            PausedSince = pausedSince,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+        };
+        using var db = NewOwnedContext();
+        db.CycleSettings.Add(row);
+        db.SaveChanges();
+        return row;
+    }
+
+    /// <summary>
+    /// Seeds one <c>cycle_tracking_pause_spans</c> row directly (T14). <paramref name="endedOn"/> null
+    /// is an OPEN span — at most one per user, enforced by the partial unique index.
+    /// </summary>
+    public CycleTrackingPauseSpan SeedPauseSpan(
+        string reason,
+        DateOnly startedOn,
+        DateOnly? endedOn = null,
+        Guid? userId = null)
+    {
+        var row = new CycleTrackingPauseSpan
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId ?? UserId,
+            Reason = reason,
+            StartedOn = startedOn,
+            EndedOn = endedOn,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+        };
+        using var db = NewOwnedContext();
+        db.CycleTrackingPauseSpans.Add(row);
         db.SaveChanges();
         return row;
     }

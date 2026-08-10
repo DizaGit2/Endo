@@ -233,6 +233,124 @@ public class OpenApiContractTests(LumenApiFactory factory) : IClassFixture<Lumen
         }
     }
 
+    // --- T14: the cycle-settings resource, and the nullable members that must carry no default ----
+
+    [Fact]
+    public async Task OpenApi_documents_both_cycle_settings_operations()
+    {
+        // Asserted on the EMITTED document, not only on the committed snapshot: dropping
+        // `MapCycleSettingsEndpoints()` from Program.cs must fail here rather than produce a snapshot
+        // diff somebody regenerates away.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+        var root = doc.RootElement;
+
+        root.GetProperty("paths").TryGetProperty("/settings/cycle", out var settings)
+            .ShouldBeTrue("GET/PATCH /settings/cycle must be documented (§C.9)");
+
+        settings.GetProperty("get").GetProperty("responses").GetProperty("200")
+            .GetProperty("content").GetProperty("application/json").GetProperty("schema")
+            .GetProperty("$ref").GetString().ShouldBe("#/components/schemas/CycleSettingsResponse");
+
+        var patch = settings.GetProperty("patch");
+        patch.GetProperty("responses").GetProperty("200")
+            .GetProperty("content").GetProperty("application/json").GetProperty("schema")
+            .GetProperty("$ref").GetString().ShouldBe(
+                "#/components/schemas/CycleSettingsResponse",
+                "the PATCH answers the full resource, not 204: the body carries the §G7 warnings and " +
+                "the derived phasesUnavailable flag an online-only client would otherwise re-fetch");
+
+        var responses = patch.GetProperty("responses");
+        responses.TryGetProperty("400", out var badRequest).ShouldBeTrue();
+        AssertIsValidationProblemSchema(
+            root,
+            badRequest.GetProperty("content").GetProperty("application/problem+json").GetProperty("schema"),
+            "PATCH /settings/cycle");
+        responses.TryGetProperty("404", out _).ShouldBeTrue(
+            "an erased user's still-valid token gets the shared 404 from both routes");
+
+        // The pause triple must be writable, or the C-12 state machine is unreachable from the client.
+        var request = root.GetProperty("components").GetProperty("schemas")
+            .GetProperty("UpdateCycleSettingsRequest").GetProperty("properties");
+        foreach (var member in new[]
+                 {
+                     "avgCycleLengthDays", "avgPeriodLengthDays", "regularity", "phasePredictionEnabled",
+                     "autoDetectPeriodStartEnabled", "showFertilityWindowEnabled",
+                     "trackingPaused", "pauseReason", "pausedSince",
+                 })
+        {
+            request.TryGetProperty(member, out _).ShouldBeTrue($"PATCH /settings/cycle must accept '{member}'");
+        }
+    }
+
+    [Fact]
+    public async Task OpenApi_cycle_settings_response_carries_the_derived_flag_and_the_warnings_and_nothing_clinical()
+    {
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+
+        var response = doc.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("CycleSettingsResponse").GetProperty("properties");
+
+        response.GetProperty("phasesUnavailable").GetProperty("type").GetString().ShouldBe(
+            "boolean",
+            "ARCHITECTURE.md §A:59's explicit 'phases unavailable' state — the client branches on it " +
+            "so a paused user is shown an unavailable state, never a confidently wrong phase");
+        response.GetProperty("warnings").GetProperty("type").GetString().ShouldBe("array");
+
+        // §G6 on the WIRE CONTRACT: P4a computes none of these, and a documented key is exactly how a
+        // not-yet-implemented estimate becomes a clinical fact in a client author's mental model.
+        // `hormoneRangeInterpretationEnabled` is additionally barred: it would encode the
+        // clinician-UNSIGNED C-12 pregnancy rule, whose only consumers (P6/P7b) do not exist.
+        foreach (var forbidden in new[]
+                 {
+                     "phase", "cycleDay", "confidence", "dataCompleteness",
+                     "nextPeriodPredictedOn", "hormoneRangeInterpretationEnabled",
+                 })
+        {
+            response.TryGetProperty(forbidden, out _).ShouldBeFalse(
+                $"CycleSettingsResponse must not document '{forbidden}' (§G6)");
+        }
+    }
+
+    [Fact]
+    public async Task OpenApi_no_nullable_cycle_settings_member_declares_a_default()
+    {
+        // The T13 defect, generalised. A schema `default` on a NULLABLE member is a client-side lie in
+        // this toolchain: openapi-generator's dart-dio + built_value output turns it into a builder
+        // default and its deserializer SKIPS explicit nulls (`if (valueDes == null) continue;`), so the
+        // client could never observe null on that field again. `createdAt`/`updatedAt` are null exactly
+        // when no row has been saved — the one signal that GET's defaults answer is not a stored row —
+        // and `pausedSince` is null exactly when the user is not paused. A default on any of them would
+        // make the client unable to read either state.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+        var schemas = doc.RootElement.GetProperty("components").GetProperty("schemas");
+
+        foreach (var (schema, member) in new[]
+                 {
+                     ("CycleSettingsResponse", "avgPeriodLengthDays"),
+                     ("CycleSettingsResponse", "pauseReason"),
+                     ("CycleSettingsResponse", "pausedSince"),
+                     ("CycleSettingsResponse", "createdAt"),
+                     ("CycleSettingsResponse", "updatedAt"),
+                     ("UpdateCycleSettingsRequest", "avgCycleLengthDays"),
+                     ("UpdateCycleSettingsRequest", "avgPeriodLengthDays"),
+                     ("UpdateCycleSettingsRequest", "regularity"),
+                     ("UpdateCycleSettingsRequest", "phasePredictionEnabled"),
+                     ("UpdateCycleSettingsRequest", "autoDetectPeriodStartEnabled"),
+                     ("UpdateCycleSettingsRequest", "showFertilityWindowEnabled"),
+                     ("UpdateCycleSettingsRequest", "trackingPaused"),
+                     ("UpdateCycleSettingsRequest", "pauseReason"),
+                     ("UpdateCycleSettingsRequest", "pausedSince"),
+                 })
+        {
+            schemas.GetProperty(schema).GetProperty("properties").GetProperty(member)
+                .TryGetProperty("default", out _)
+                .ShouldBeFalse(
+                    $"{schema}.{member} is nullable, so a schema default becomes a built_value builder " +
+                    $"default an explicit null can never clear — on the PATCH request that would turn " +
+                    $"'leave unchanged' into an unavoidable write");
+        }
+    }
+
     /// <summary>
     /// Asserts the response schema is the validation-problem one (the shape carrying the
     /// <c>errors</c> map) rather than the bare <c>ProblemDetails</c>. Matched on the referenced

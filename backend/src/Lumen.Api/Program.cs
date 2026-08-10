@@ -5,6 +5,7 @@ using Hangfire.PostgreSql;
 using Lumen.Api;
 using Lumen.Api.Auth;
 using Lumen.Api.Cycle;
+using Lumen.Api.CycleSettings;
 using Lumen.Api.Hangfire;
 using Lumen.Api.Onboarding;
 using Lumen.Api.Symptoms;
@@ -170,6 +171,14 @@ builder.Services.AddScoped<CycleCalendarService>();
 // the singleton day resolver, which is what turns a client instant into the user's day.
 builder.Services.AddScoped<SymptomService>();
 
+// --- cycle settings (P4a-T14) ---
+// GET/PATCH /settings/cycle plus the C-12 tracking-pause state machine. Scoped for the request-scoped
+// day context alone: it takes NO crypto context, because every column on `user_cycle_settings` is
+// plaintext by design (§D — the P6 estimator queries them in SQL), so there is nothing to encrypt.
+// Also the home of ApplyOnboardingCycleAsync, which T18's POST /onboarding/cycle calls rather than
+// duplicating (§G12).
+builder.Services.AddScoped<CycleSettingsService>();
+
 // Global per-user (else per-IP) rate limit — protects costly endpoints like POST /onboarding/start.
 var permitPerMinute = builder.Configuration.GetValue<int?>("RateLimit:PermitPerMinute") ?? 60;
 // Named per-IP policy layered on top of the global limiter, just for the anonymous onboarding
@@ -294,6 +303,10 @@ app.MapCycleEndpoints();
 // --- symptoms (P4a) ---
 // Symptom routes live in Lumen.Api/Symptoms/SymptomEndpoints.cs (T11).
 app.MapSymptomEndpoints();
+
+// --- cycle settings (P4a) ---
+// GET/PATCH /settings/cycle live in Lumen.Api/CycleSettings/CycleSettingsEndpoints.cs (T14).
+app.MapCycleSettingsEndpoints();
 
 app.MapGet("/me", async (
     ICurrentUserAccessor current,
