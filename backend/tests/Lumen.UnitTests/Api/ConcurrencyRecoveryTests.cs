@@ -1,8 +1,10 @@
 using Lumen.Api.Cycle;
 using Lumen.Api.Devices;
+using Lumen.Api.Onboarding;
 using Lumen.Api.Persistence;
 using Lumen.Api.Symptoms;
 using Lumen.Domain.Entities;
+using Lumen.Domain.Reference;
 using Lumen.UnitTests.Cycle;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -198,6 +200,102 @@ public sealed class ConcurrencyRecoveryTests : IDisposable
             .Where(d => d.UserId == _harness.UserId).ToList();
         rows.Count.ShouldBe(1, "the loser's staged insert must not reach the database");
         rows[0].LastSeenAt.ShouldBe(CycleTestHarness.Now);
+    }
+
+    // --- POST /onboarding/goals, /hormones, /notifications (T17 review fix) ---------------------
+    //
+    // T17 shipped three more ConcurrencyRetry actions — the full-replace preference steps — and its
+    // review found none of their db.ChangeTracker.Clear() lines pinned: the suite stayed green with
+    // all three deleted. The shape here is the same double-tap that motivates every test above,
+    // transposed onto a full-replace batch: two copies of the same "Continue" tap both miss the
+    // (UserId, <Code>) lookup for a given code because neither row exists yet, one commits, the
+    // other's retry must apply ITS OWN request onto the row that won — not re-attempt its own insert
+    // — for every code in the vocabulary, not just the one that collided.
+
+    [Fact]
+    public async Task A_lost_race_on_the_goals_step_recovers_onto_the_winners_row()
+    {
+        // The winner seeds ONE row (manage_symptoms, selected). This request's own answer omits that
+        // code, so recovery must DESELECT the winner's row rather than leave it alone or duplicate it
+        // — full replace applies to every code, including the one that raced.
+        UserGoal? winner = null;
+        var interceptor = new LostRaceOnFirstSaveInterceptor(() =>
+            winner = _harness.SeedGoal(UserGoal.Codes.ManageSymptoms, selected: true));
+
+        var result = await _harness.NewOnboardingStepsService(_harness.DayInfo(), interceptor).SaveGoalsAsync(
+            new SaveGoalsRequest([UserGoal.Codes.PlanFertility, UserGoal.Codes.JustCurious]),
+            CancellationToken.None);
+
+        interceptor.Saves.ShouldBe(2, "one failed save, one that recovered");
+        var saved = result.ShouldBeOfType<SaveGoalsResult.Saved>().Goals.Goals;
+        saved.Single(g => g.Code == UserGoal.Codes.ManageSymptoms).Selected.ShouldBeFalse(
+            "the second attempt applied THIS request onto the winner's row, deselecting it");
+        saved.Where(g => g.Selected).Select(g => g.Code).ShouldBe(
+            [UserGoal.Codes.PlanFertility, UserGoal.Codes.JustCurious], Case.Sensitive);
+
+        var rows = _harness.NewContext().UserGoals.Where(g => g.UserId == _harness.UserId).ToList();
+        rows.Count.ShouldBe(5, "the loser's staged insert must not reach the database as a duplicate row");
+        rows.Single(r => r.GoalCode == UserGoal.Codes.ManageSymptoms).Id.ShouldBe(winner!.Id);
+    }
+
+    [Fact]
+    public async Task A_lost_race_on_the_hormones_step_recovers_onto_the_winners_row()
+    {
+        UserHormonePref? winner = null;
+        var interceptor = new LostRaceOnFirstSaveInterceptor(() =>
+            winner = _harness.SeedHormonePref(HormoneCatalog.Codes.Estradiol, charted: true));
+
+        var result = await _harness.NewOnboardingStepsService(_harness.DayInfo(), interceptor)
+            .SaveHormonePrefsAsync(
+                new SaveHormonePrefsRequest([HormoneCatalog.Codes.Lh, HormoneCatalog.Codes.Fsh]),
+                CancellationToken.None);
+
+        interceptor.Saves.ShouldBe(2, "one failed save, one that recovered");
+        var saved = result.ShouldBeOfType<SaveHormonePrefsResult.Saved>().Hormones.Hormones;
+        saved.Single(h => h.Code == HormoneCatalog.Codes.Estradiol).Charted.ShouldBeFalse(
+            "the second attempt applied THIS request onto the winner's row, un-charting it");
+        saved.Where(h => h.Charted).Select(h => h.Code).ShouldBe(
+            [HormoneCatalog.Codes.Lh, HormoneCatalog.Codes.Fsh], Case.Sensitive);
+
+        var rows = _harness.NewContext().UserHormonePrefs.Where(p => p.UserId == _harness.UserId).ToList();
+        rows.Count.ShouldBe(7, "the loser's staged insert must not reach the database as a duplicate row");
+        rows.Single(r => r.HormoneCode == HormoneCatalog.Codes.Estradiol).Id.ShouldBe(winner!.Id);
+    }
+
+    [Fact]
+    public async Task A_lost_race_on_the_notifications_step_recovers_onto_the_winners_row_with_its_composed_device()
+    {
+        // This is T17's COMPOSING action (§G12): the retried closure stages the four preference rows
+        // AND, in the same unit of work, the device row behind a push token. A token is included here
+        // so the recovery is proven on the full shape, not a slice of it — a Clear() bug here would
+        // discard a real device registration alongside the preference rows.
+        const string PushToken = "fcm-token-onboarding-raced-00000000000";
+
+        UserNotificationPref? winner = null;
+        var interceptor = new LostRaceOnFirstSaveInterceptor(() => winner = _harness.SeedNotificationPref(
+            HormoneCatalog.NotificationCategories.DailyCheckin, enabled: true));
+
+        var result = await _harness.NewOnboardingStepsService(_harness.DayInfo(), interceptor)
+            .SaveNotificationPrefsAsync(
+                new SaveNotificationPrefsRequest(
+                    [HormoneCatalog.NotificationCategories.PeriodPrediction], PushToken, UserDevice.Platforms.Ios),
+                CancellationToken.None);
+
+        interceptor.Saves.ShouldBe(2, "one failed save, one that recovered");
+        var saved = result.ShouldBeOfType<SaveNotificationPrefsResult.Saved>().Notifications;
+        saved.DeviceRegistered.ShouldBeTrue();
+        saved.Categories.Single(c => c.Code == HormoneCatalog.NotificationCategories.DailyCheckin).Enabled
+            .ShouldBeFalse("the second attempt applied THIS request onto the winner's row, disabling it");
+        saved.Categories.Where(c => c.Enabled).Select(c => c.Code).ShouldBe(
+            [HormoneCatalog.NotificationCategories.PeriodPrediction], Case.Sensitive);
+
+        using var db = _harness.NewContext();
+        var rows = db.UserNotificationPrefs.Where(p => p.UserId == _harness.UserId).ToList();
+        rows.Count.ShouldBe(4, "the loser's staged insert must not reach the database as a duplicate row");
+        rows.Single(r => r.CategoryCode == HormoneCatalog.NotificationCategories.DailyCheckin).Id
+            .ShouldBe(winner!.Id);
+        db.UserDevices.Count(d => d.UserId == _harness.UserId).ShouldBe(
+            1, "the composed device write survives the retry alongside the preference rows");
     }
 
     private List<CycleDayLog> AllDayLogs() =>

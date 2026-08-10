@@ -297,6 +297,70 @@ internal sealed class CycleTestHarness : IDisposable
     }
 
     /// <summary>
+    /// Seeds a <c>user_goals</c> row directly (T17 review fix) — the row a concurrent "winner"
+    /// request is imagined to have already committed, for <c>ConcurrencyRecoveryTests</c>'
+    /// goals-step lost-race test. Mirrors <see cref="SeedDevice"/>'s role for T15's device test.
+    /// </summary>
+    public UserGoal SeedGoal(string goalCode, bool selected, Guid? userId = null)
+    {
+        var row = new UserGoal
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId ?? UserId,
+            GoalCode = goalCode,
+            Selected = selected,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+        };
+        using var db = NewOwnedContext();
+        db.UserGoals.Add(row);
+        db.SaveChanges();
+        return row;
+    }
+
+    /// <summary>
+    /// Seeds a <c>user_hormone_prefs</c> row directly (T17 review fix), same purpose as
+    /// <see cref="SeedGoal"/>.
+    /// </summary>
+    public UserHormonePref SeedHormonePref(string hormoneCode, bool charted, Guid? userId = null)
+    {
+        var row = new UserHormonePref
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId ?? UserId,
+            HormoneCode = hormoneCode,
+            Charted = charted,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+        };
+        using var db = NewOwnedContext();
+        db.UserHormonePrefs.Add(row);
+        db.SaveChanges();
+        return row;
+    }
+
+    /// <summary>
+    /// Seeds a <c>user_notification_prefs</c> row directly (T17 review fix), same purpose as
+    /// <see cref="SeedGoal"/>.
+    /// </summary>
+    public UserNotificationPref SeedNotificationPref(string categoryCode, bool enabled, Guid? userId = null)
+    {
+        var row = new UserNotificationPref
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId ?? UserId,
+            CategoryCode = categoryCode,
+            Enabled = enabled,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+        };
+        using var db = NewOwnedContext();
+        db.UserNotificationPrefs.Add(row);
+        db.SaveChanges();
+        return row;
+    }
+
+    /// <summary>
     /// Seeds a <c>symptoms</c> row directly, for tenant-isolation, list-ordering and no-op assertions.
     /// </summary>
     /// <remarks>

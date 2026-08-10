@@ -37,10 +37,13 @@ namespace Lumen.Api.Persistence;
 /// <para><b>The recovery is proven, not assumed — and it is a separate claim from the retry
 /// policy.</b> <c>ConcurrencyRetryTests</c> covers THIS type: one retry on <c>23505</c>, nothing else
 /// ever. It cannot reach the recovery mechanism at all, because a fake delegate has no change
-/// tracker. <c>ConcurrencyRecoveryTests</c> covers the other half: it stages a lost race with an EF
-/// interceptor and fails if <c>ChangeTracker.Clear()</c> is deleted from any of the three actions
-/// that stage an insert. Neither file's coverage stands in for the other's, and "the helper is fully
-/// unit-tested" says nothing about whether a retry recovers.</para>
+/// tracker. <c>ConcurrencyRecoveryTests</c> covers the other half, and the RULE it holds every caller
+/// to rather than a count of them (the call-site count only grows): <b>every action that stages an
+/// insert must clear the tracker before its retry re-runs, and each such action is pinned by its own
+/// recovery test</b> — one test per call site, staged with an EF interceptor that scripts a lost
+/// race, so deleting the <c>Clear()</c> from any one action fails that action's test and no other's.
+/// Neither file's coverage stands in for the other's, and "the helper is fully unit-tested" says
+/// nothing about whether a retry recovers.</para>
 ///
 /// <para><b>WARNING — the action must own the WHOLE unit of work in its scope.</b>
 /// <c>ChangeTracker.Clear()</c> is a whole-CONTEXT operation on a request-scoped
