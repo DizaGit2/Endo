@@ -250,11 +250,21 @@ internal sealed class CycleTestHarness : IDisposable
     /// </summary>
     /// <remarks>
     /// Tests that need to reach the service's OWN context — the unit-of-work guards around
-    /// <c>SaveBaselineAsync</c> — construct it directly over <see cref="NewContext"/> instead, because
-    /// observing the shared change tracker is the whole point of those assertions.
+    /// <c>SaveBaselineAsync</c> and the one-save guard around <c>SaveNotificationPrefsAsync</c> —
+    /// construct it directly over <see cref="NewContext"/> instead, because observing the shared change
+    /// tracker (or counting saves on it) is the whole point of those assertions.
+    ///
+    /// <para>The <see cref="DeviceRegistrationService"/> it is given shares <b>the same</b>
+    /// <c>LumenDbContext</c> and day context, exactly as the scoped DI registrations do in production
+    /// (T17): the notification step composes that service's STAGING half into its own single unit of
+    /// work, which only works because both sides sit on one change tracker.</para>
     /// </remarks>
-    public OnboardingStepsService NewOnboardingStepsService(UserDayInfo? info, IInterceptor? interceptor = null) =>
-        new(NewContext(interceptor), new StubUserDayContext(info), Crypto);
+    public OnboardingStepsService NewOnboardingStepsService(UserDayInfo? info, IInterceptor? interceptor = null)
+    {
+        var db = NewContext(interceptor);
+        var dayContext = new StubUserDayContext(info);
+        return new OnboardingStepsService(db, dayContext, Crypto, new DeviceRegistrationService(db, dayContext));
+    }
 
     /// <summary>An <see cref="OnboardingStepsService"/> for the harness's primary user at <see cref="Now"/>.</summary>
     public OnboardingStepsService NewOnboardingStepsService() => NewOnboardingStepsService(DayInfo());

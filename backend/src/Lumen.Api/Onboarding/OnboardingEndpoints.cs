@@ -68,6 +68,85 @@ public static class OnboardingEndpoints
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status404NotFound);
 
+        // The three D-02 preference steps (screens 5, 6, 7). All authenticated, all 200 on both the
+        // insert and the update path, and all three answer with the COMPLETE stored set in the frozen
+        // §G10 order rather than an echo of the request.
+        //
+        // POST-COMPLETION POLICY, decided for all three at once: they stay callable AFTER
+        // `/onboarding/complete`. They are the same writes the settings screens will make, and the
+        // endpoints that would replace them do not ship for several phases (`/settings/hormones` → P6,
+        // `/settings/notifications` → P9a), so 409-ing them would leave the data uneditable. Only
+        // `POST /onboarding/cycle` is 409'd after completion (T18).
+
+        // Screen 5. `goals` is required and must carry at least one member (D-14).
+        app.MapPost("/onboarding/goals", async (
+            SaveGoalsRequest request,
+            OnboardingStepsService steps,
+            CancellationToken ct) =>
+        {
+            var result = await steps.SaveGoalsAsync(request, ct);
+            return result switch
+            {
+                SaveGoalsResult.Saved saved => Results.Ok(saved.Goals),
+                SaveGoalsResult.Invalid invalid => Problem(invalid.Errors),
+                SaveGoalsResult.UserNotFound => NotFoundProblem.Result(),
+                _ => throw new UnreachableException($"Unhandled {nameof(SaveGoalsResult)}: {result.GetType()}"),
+            };
+        })
+        .RequireAuthorization()
+        .Produces<GoalsResponse>(StatusCodes.Status200OK)
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
+        // Screen 6. `chartedHormones` is required but may be empty — charting nothing is a real answer,
+        // and it hides series without stopping extraction (D-14: hidden ≠ not-extracted).
+        app.MapPost("/onboarding/hormones", async (
+            SaveHormonePrefsRequest request,
+            OnboardingStepsService steps,
+            CancellationToken ct) =>
+        {
+            var result = await steps.SaveHormonePrefsAsync(request, ct);
+            return result switch
+            {
+                SaveHormonePrefsResult.Saved saved => Results.Ok(saved.Hormones),
+                SaveHormonePrefsResult.Invalid invalid => Problem(invalid.Errors),
+                SaveHormonePrefsResult.UserNotFound => NotFoundProblem.Result(),
+                _ => throw new UnreachableException(
+                    $"Unhandled {nameof(SaveHormonePrefsResult)}: {result.GetType()}"),
+            };
+        })
+        .RequireAuthorization()
+        .Produces<HormonePrefsResponse>(StatusCodes.Status200OK)
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
+        // Screen 7. Two writes in one request: the four category rows, and — behind "Allow & finish" —
+        // the `user_devices` row §C.1 lists among onboarding's writes. The token pair is OPTIONAL,
+        // because a user may decline the OS permission prompt and must still be able to say what they
+        // want to be notified about.
+        app.MapPost("/onboarding/notifications", async (
+            SaveNotificationPrefsRequest request,
+            OnboardingStepsService steps,
+            CancellationToken ct) =>
+        {
+            var result = await steps.SaveNotificationPrefsAsync(request, ct);
+            return result switch
+            {
+                SaveNotificationPrefsResult.Saved saved => Results.Ok(saved.Notifications),
+                SaveNotificationPrefsResult.Invalid invalid => Problem(invalid.Errors),
+                SaveNotificationPrefsResult.UserNotFound => NotFoundProblem.Result(),
+                _ => throw new UnreachableException(
+                    $"Unhandled {nameof(SaveNotificationPrefsResult)}: {result.GetType()}"),
+            };
+        })
+        .RequireAuthorization()
+        .Produces<NotificationPrefsResponse>(StatusCodes.Status200OK)
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
         return app;
     }
 

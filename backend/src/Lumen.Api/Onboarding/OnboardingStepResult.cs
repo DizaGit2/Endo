@@ -42,6 +42,60 @@ public abstract record SaveBaselineResult
     public sealed record UserNotFound : SaveBaselineResult;
 }
 
+/// <summary>Outcome of <see cref="OnboardingStepsService.SaveGoalsAsync"/>.</summary>
+/// <remarks>
+/// Same three cases, and the same absence of a created/updated distinction, as
+/// <see cref="SaveBaselineResult"/>: D-02 makes the step revisitable and the client does nothing
+/// differently on the first save.
+/// </remarks>
+public abstract record SaveGoalsResult
+{
+    /// <summary>All five rows were written. → <b>200 with the complete stored set</b>.</summary>
+    public sealed record Saved(GoalsResponse Goals) : SaveGoalsResult;
+
+    /// <summary>Nothing was written; every field error found is listed. → 400.</summary>
+    public sealed record Invalid(IReadOnlyList<OnboardingFieldError> Errors) : SaveGoalsResult;
+
+    /// <summary>
+    /// The token's <c>sub</c> has no live <c>users</c> row — it never existed, or the account was
+    /// crypto-shredded. → 404, decided <b>before</b> validation and before any write.
+    /// </summary>
+    public sealed record UserNotFound : SaveGoalsResult;
+}
+
+/// <summary>Outcome of <see cref="OnboardingStepsService.SaveHormonePrefsAsync"/>.</summary>
+public abstract record SaveHormonePrefsResult
+{
+    /// <summary>All seven rows were written. → <b>200 with the complete stored set</b>.</summary>
+    public sealed record Saved(HormonePrefsResponse Hormones) : SaveHormonePrefsResult;
+
+    /// <summary>Nothing was written; every field error found is listed. → 400.</summary>
+    public sealed record Invalid(IReadOnlyList<OnboardingFieldError> Errors) : SaveHormonePrefsResult;
+
+    /// <summary>The caller's <c>users</c> row is gone or was never there. → 404, before validation.</summary>
+    public sealed record UserNotFound : SaveHormonePrefsResult;
+}
+
+/// <summary>Outcome of <see cref="OnboardingStepsService.SaveNotificationPrefsAsync"/>.</summary>
+public abstract record SaveNotificationPrefsResult
+{
+    /// <summary>
+    /// All four rows were written — and, when the request carried a token/platform pair, the
+    /// <c>user_devices</c> row alongside them <b>in the same save</b>. → <b>200</b>.
+    /// </summary>
+    public sealed record Saved(NotificationPrefsResponse Notifications) : SaveNotificationPrefsResult;
+
+    /// <summary>Nothing was written; every field error found is listed. → 400.</summary>
+    public sealed record Invalid(IReadOnlyList<OnboardingFieldError> Errors) : SaveNotificationPrefsResult;
+
+    /// <summary>
+    /// The caller's <c>users</c> row is gone or was never there. → 404, decided before validation
+    /// <b>and before the cross-user device detach</b>, so an erased token can never be used as an
+    /// unregister lever against a live account.
+    /// </summary>
+    public sealed record UserNotFound : SaveNotificationPrefsResult;
+}
+
 /// <summary>
 /// The <b>structural type-domain</b> of the baseline's two free measurements — the only thing on
 /// <c>heightCm</c> and <c>weightKg</c> that can produce a 400 beyond a missing body.
@@ -161,4 +215,27 @@ public static class OnboardingValidationMessages
     /// message and the format it names cannot diverge.
     /// </summary>
     public const string NotAMonth = "value must be a month in the form " + UserProfileEnc.DiagnosedOnFormat;
+
+    /// <summary>
+    /// <c>POST /onboarding/goals</c> arrived with <c>goals: []</c>. Reported under <c>goals</c> rather
+    /// than <see cref="Validation.ValidationProblemBuilder.RequestKey"/> because the fault belongs to
+    /// that one field and the client has an input to attach it to.
+    ///
+    /// <para>Stated as its own message rather than reusing
+    /// <see cref="Validation.ValidationMessages.Required"/>: the field <i>was</i> supplied, and telling
+    /// a user who deselected every chip that the value "is required" would send them looking for a
+    /// missing field instead of at the chips.</para>
+    /// </summary>
+    public const string GoalsEmpty = "select at least one goal";
+
+    /// <summary>
+    /// <c>POST /onboarding/notifications</c> carried exactly one of <c>pushToken</c> / <c>platform</c>.
+    /// Reported under <see cref="Validation.ValidationProblemBuilder.RequestKey"/> because it belongs
+    /// to the <b>combination</b>: each field is individually fine, and neither is required on its own.
+    ///
+    /// <para>This is the one message in the file that names its own fields, and it has to — the
+    /// <c>errors</c> map key here is <c>request</c>, which names nothing, so the sentence is the only
+    /// thing that can tell the client which two inputs to look at.</para>
+    /// </summary>
+    public const string DeviceFieldsIncomplete = "pushToken and platform must be provided together";
 }

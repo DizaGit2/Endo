@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Lumen.Api.Devices;
 using Lumen.Api.Onboarding;
 using Lumen.Api.Validation;
 using Lumen.Domain.Entities;
@@ -752,7 +753,9 @@ public sealed class OnboardingBaselineTests : IDisposable
         // own single ConcurrencyRetry action — the two 23505 hazards are real (the user_profile_enc PK
         // on a first save, and the body_metrics filtered unique key on a double-tapped Continue).
         await using var db = _harness.NewContext();
-        var service = new OnboardingStepsService(db, new StubUserDayContext(_harness.DayInfo()), _harness.Crypto);
+        var dayContext = new StubUserDayContext(_harness.DayInfo());
+        var service = new OnboardingStepsService(
+            db, dayContext, _harness.Crypto, new DeviceRegistrationService(db, dayContext));
 
         await service.SaveBaselineAsync(Full(), default);
 
@@ -776,7 +779,9 @@ public sealed class OnboardingBaselineTests : IDisposable
         // documents that about `RegisterAsync` but never tested it; this pins it, so a later task that
         // tries to compose the baseline step fails here instead of shipping a lost onboarding answer.
         await using var db = _harness.NewContext();
-        var service = new OnboardingStepsService(db, new StubUserDayContext(_harness.DayInfo()), _harness.Crypto);
+        var dayContext = new StubUserDayContext(_harness.DayInfo());
+        var service = new OnboardingStepsService(
+            db, dayContext, _harness.Crypto, new DeviceRegistrationService(db, dayContext));
 
         var stagedElsewhere = new CycleEvent
         {

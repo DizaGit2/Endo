@@ -134,3 +134,164 @@ public record BaselineResponse(
     int? RasrmStage,
     string? DiagnosedOn,
     decimal? LatestWeightKg);
+
+// --- T17: the three D-02 preference steps (screens 5, 6, 7) ---------------------------------------
+//
+// Three rules bind every DTO below.
+//
+// 1. NO `[DefaultValue]`, for the same reason as the baseline block above — and here the temptation is
+//    sharper, because each of these sets HAS a documented default (§G10). Documenting it as a schema
+//    `default` would put it on a NULLABLE member, which is exactly T13's defect: openapi-generator's
+//    dart-dio + built_value output turns a schema `default` into a builder default and its deserializer
+//    skips explicit nulls, so `goals: null` would become un-observable in the generated client forever
+//    and "the user has not answered" would arrive as "the user picked the defaults".
+//
+// 2. THE DEFAULTS ARE SEEDS, NOT IMPLICIT STATE. A skipped step writes NO rows, and the seed is applied
+//    by the READ projection (`OnboardingStepsService.ReadGoalsAsync` and friends). That is the whole
+//    reason "no row" and "row with the flag false" are different states: the entities say so
+//    ("records that the user was asked and said no, which is a different fact from never having seen
+//    the question"), and one shared projection is what stops T18's `/onboarding/complete` and any later
+//    `GET` from disagreeing about what "skipped" means.
+//
+// 3. EVERY RESPONSE LISTS THE COMPLETE VOCABULARY, in the frozen §G10 order, with a boolean per code —
+//    never "the selected ones". The client renders these as a fixed list of toggles, and a sparse
+//    answer would make it re-derive the vocabulary locally and drift from the server on the first
+//    append.
+
+/// <summary>
+/// Body of <c>POST /onboarding/goals</c> — screen 5's multi-select.
+/// </summary>
+/// <remarks>
+/// <para><b>FULL REPLACE, not merge.</b> The body is the row set's whole desired state: a goal the user
+/// leaves out is <b>deselected</b>, not left standing. Decided the way T11 decided <c>symptoms</c> and
+/// on the same test §G12 names — <i>how many surfaces write the row</i>, not the verb. Exactly one
+/// surface writes <c>user_goals</c> (screen 5 now, its settings twin later, never both in one request),
+/// and <b>clearing is the affordance</b>: the goals are toggle chips, so under a merge a goal would be
+/// addable but never removable. <c>POST</c> is semantically neutral (§C.3), so <c>POST</c> = replace
+/// misleads nobody the way <c>PATCH</c> = replace would.</para>
+/// </remarks>
+/// <param name="Goals">
+/// The selected goal codes, from <see cref="UserGoal.Codes"/>. <b>Required, and at least one</b> (D-14):
+/// unlike hormones and notifications, "none" is not a state screen 5 can produce, and a user with no
+/// goal at all has nothing for P6's insight copy to address. Duplicates are de-duplicated silently —
+/// chip order and repetition are UI noise — and there is no maximum, because the maximum is the
+/// vocabulary. Matched case-sensitively; an unknown code is a 400 keyed <c>goals[i]</c>.
+/// </param>
+public record SaveGoalsRequest(IReadOnlyList<string>? Goals);
+
+/// <summary>
+/// The 200 body of <c>POST /onboarding/goals</c>, and the projection T18's <c>GET /onboarding/state</c>
+/// reads: <b>all five</b> ratified goals in frozen order, each with its stored (or seeded) flag.
+/// </summary>
+/// <param name="Goals">Every code in <see cref="UserGoal.Codes.All"/> order, never only the selected ones.</param>
+public record GoalsResponse(IReadOnlyList<GoalSelection> Goals);
+
+/// <summary>One goal code and whether the user currently has it selected.</summary>
+/// <param name="Code">A member of <see cref="UserGoal.Codes"/> — the wire/DB code, never a display label.</param>
+/// <param name="Selected">
+/// <see langword="false"/> is a real answer ("asked, said no"), not an absence. A user who has never
+/// answered the step reads back <see cref="UserGoal.DefaultSelected"/> instead.
+/// </param>
+public record GoalSelection(string Code, bool Selected);
+
+/// <summary>
+/// Body of <c>POST /onboarding/hormones</c> — screen 6's chart selection.
+/// </summary>
+/// <remarks>
+/// <para><b>Charted ≠ extracted (D-14), and that is the load-bearing semantic of this whole step.</b>
+/// The flag decides only whether a series is <i>drawn</i>. P7b still extracts every one of the seven
+/// hormones from every lab, so un-charting one hides a line on a chart and destroys nothing — which is
+/// why an empty selection is allowed here and a 400 on goals.</para>
+///
+/// <para><b>FULL REPLACE</b>, for the same reason as <see cref="SaveGoalsRequest"/>.</para>
+/// </remarks>
+/// <param name="ChartedHormones">
+/// The hormone codes to chart, from <see cref="Lumen.Domain.Reference.HormoneCatalog.Codes"/>.
+/// <b>Required, but an empty array is valid</b> — "chart nothing" is a real answer and is not the same
+/// state as skipping the step. The codes are <c>estradiol</c> and <c>glp1</c>; the display labels
+/// "Estrogen" and "GLP-1" are i18n source strings and are never accepted here (B16).
+/// </param>
+public record SaveHormonePrefsRequest(IReadOnlyList<string>? ChartedHormones);
+
+/// <summary>
+/// The 200 body of <c>POST /onboarding/hormones</c>: <b>all seven</b> hormones in frozen order, each
+/// with its stored (or seeded) charted flag.
+/// </summary>
+/// <param name="Hormones">Every code in the §G10 display order, never only the charted ones.</param>
+public record HormonePrefsResponse(IReadOnlyList<HormoneSelection> Hormones);
+
+/// <summary>One hormone code and whether its series is drawn.</summary>
+/// <param name="Code">A member of <see cref="Lumen.Domain.Reference.HormoneCatalog.Codes"/>.</param>
+/// <param name="Charted">
+/// Whether the series is drawn. <b>Never whether the hormone is extracted</b> — P7b extracts all seven
+/// regardless.
+/// </param>
+public record HormoneSelection(string Code, bool Charted);
+
+/// <summary>
+/// Body of <c>POST /onboarding/notifications</c> — screen 7, which is two things at once: the
+/// category preferences, and (behind "Allow &amp; finish") the push-token registration §C.1 lists among
+/// onboarding's writes.
+/// </summary>
+/// <remarks>
+/// <para><b>The two halves are SEPARABLE.</b> A user may decline the OS permission prompt, or the
+/// client may not have a token yet, and either way the categories they chose must still be recorded —
+/// so <see cref="PushToken"/> and <see cref="Platform"/> are optional. What they may not be is
+/// <i>half</i> supplied: a token with no platform is a device P9a could never dispatch to, and a
+/// platform with no token is not a registration at all, so one without the other is a 400 under
+/// <c>request</c>.</para>
+///
+/// <para><b>When both are present the write is COMPOSED with T15's device upsert</b>, in one unit of
+/// work: the four preference rows and the <c>user_devices</c> row commit or roll back together. See
+/// <see cref="OnboardingStepsService.SaveNotificationPrefsAsync"/>.</para>
+/// </remarks>
+/// <param name="EnabledCategories">
+/// The categories that may notify, from
+/// <see cref="Lumen.Domain.Reference.HormoneCatalog.NotificationCategories"/>. <b>Required, but an empty
+/// array is valid</b> — muting everything is a real answer. The code is <c>phase_shift</c>, singular;
+/// screen 7's plural "Phase shifts" is display drift and the canonical label is "Phase shift" (B16).
+/// </param>
+/// <param name="PushToken">
+/// The FCM/APNs registration token, 1–<see cref="UserDevice.PushTokenMaxLength"/> characters (the
+/// existing column's width — <b>not a P4a invention</b>, §G11). Optional; blank counts as absent.
+/// <b>PII (§F):</b> never logged, never echoed back — there is deliberately no corresponding member on
+/// <see cref="NotificationPrefsResponse"/>.
+/// </param>
+/// <param name="Platform">
+/// One of <see cref="UserDevice.Platforms"/> — <c>ios</c> or <c>android</c>. Optional, but required
+/// whenever <paramref name="PushToken"/> is present; anything outside the vocabulary is a 400, because
+/// the code decides which provider P9a dispatches through.
+/// </param>
+public record SaveNotificationPrefsRequest(
+    IReadOnlyList<string>? EnabledCategories,
+    string? PushToken,
+    string? Platform);
+
+/// <summary>
+/// The 200 body of <c>POST /onboarding/notifications</c>: <b>all four</b> categories in frozen order,
+/// plus whether this call also registered a device.
+/// </summary>
+/// <remarks>
+/// <b>There is no <c>pushToken</c> member and there must never be one</b> — the same rule
+/// <c>RegisterDeviceResponse</c> follows (§F): the caller already holds the token, and echoing it would
+/// put PII into client logs, proxy traces and every HAR file a support ticket carries.
+/// </remarks>
+/// <param name="Categories">Every code in the screen-7 order, never only the enabled ones.</param>
+/// <param name="DeviceRegistered">
+/// Whether a <c>user_devices</c> row was written by this call. <see langword="false"/> whenever the
+/// request carried no token — which is a normal outcome, not a failure, so it is reported rather than
+/// rejected.
+/// </param>
+public record NotificationPrefsResponse(
+    IReadOnlyList<NotificationCategorySelection> Categories,
+    bool DeviceRegistered);
+
+/// <summary>One notification category and whether it may notify.</summary>
+/// <param name="Code">
+/// A member of <see cref="Lumen.Domain.Reference.HormoneCatalog.NotificationCategories"/>.
+/// </param>
+/// <param name="Enabled">
+/// Whether the category may notify. <b>P4a stores this and dispatches nothing</b> (§G14); the rows
+/// exist so D-19's per-user schedule has something to read.
+/// </param>
+public record NotificationCategorySelection(string Code, bool Enabled);
