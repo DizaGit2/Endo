@@ -614,6 +614,35 @@ public class CycleSettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Re_pausing_while_paused_with_a_NEW_pausedSince_moves_the_open_spans_StartedOn()
+    {
+        // Pins the reconciliation's most fragile line (CycleSettingsService.ReconcilePauseAsync,
+        // `openSpan.StartedOn = startedOn;` in the "already open" branch). Every OTHER re-pause test in
+        // this file either omits `pausedSince` or repeats the value already on the row, so `startedOn`
+        // always equals the open span's existing `StartedOn` and deleting that one assignment does not
+        // fail a single one of them. This is the one case where they differ: an already-paused user
+        // PATCHes a `pausedSince` on a DIFFERENT day. If the span does not move with it,
+        // `user_cycle_settings.PausedSince` and `cycle_tracking_pause_spans.StartedOn` silently
+        // diverge in exactly the history P6 estimates from — caught below by the shared
+        // AssertPauseStateIsConsistentAsync invariant, not a hand-rolled equality.
+        var originalStart = CycleTestHarness.Today.AddDays(-10);
+        _harness.SeedCycleSettings(
+            trackingPaused: true,
+            pauseReason: UserCycleSettings.PauseReasons.Surgical,
+            pausedSince: originalStart);
+        _harness.SeedPauseSpan(UserCycleSettings.PauseReasons.Surgical, originalStart);
+
+        // `trackingPaused`/`pauseReason` omitted on purpose — this is the brief's "or `pausedSince`
+        // alone" variant, and merge keeps the already-paused user paused with the same reason.
+        var newStart = CycleTestHarness.Today.AddDays(-3);
+        var moved = await _harness.NewCycleSettingsService()
+            .UpdateAsync(new UpdateCycleSettingsRequest(PausedSince: newStart), default);
+
+        moved.ShouldBeOfType<CycleSettingsUpdateResult.Saved>().Settings.PausedSince.ShouldBe(newStart);
+        await AssertPauseStateIsConsistentAsync();
+    }
+
+    [Fact]
     public async Task Changing_the_reason_while_paused_updates_the_open_span_in_place()
     {
         await _harness.NewCycleSettingsService().UpdateAsync(
