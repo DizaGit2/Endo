@@ -6,6 +6,7 @@ using Lumen.Api;
 using Lumen.Api.Auth;
 using Lumen.Api.Cycle;
 using Lumen.Api.CycleSettings;
+using Lumen.Api.Devices;
 using Lumen.Api.Hangfire;
 using Lumen.Api.Onboarding;
 using Lumen.Api.Symptoms;
@@ -179,6 +180,14 @@ builder.Services.AddScoped<SymptomService>();
 // duplicating (§G12).
 builder.Services.AddScoped<CycleSettingsService>();
 
+// --- push devices (P4a-T15) ---
+// POST /me/devices. Scoped for the request-scoped day context alone: it takes NO crypto context,
+// because `user_devices.push_token` is stored in plaintext (at-rest encryption is an open P9a
+// precondition, out of scope here), so there is nothing on this path to encrypt. Also the home of
+// StageRegistrationAsync, which T17's POST /onboarding/notifications calls rather than duplicating
+// (§G12).
+builder.Services.AddScoped<DeviceRegistrationService>();
+
 // Global per-user (else per-IP) rate limit — protects costly endpoints like POST /onboarding/start.
 var permitPerMinute = builder.Configuration.GetValue<int?>("RateLimit:PermitPerMinute") ?? 60;
 // Named per-IP policy layered on top of the global limiter, just for the anonymous onboarding
@@ -307,6 +316,10 @@ app.MapSymptomEndpoints();
 // --- cycle settings (P4a) ---
 // GET/PATCH /settings/cycle live in Lumen.Api/CycleSettings/CycleSettingsEndpoints.cs (T14).
 app.MapCycleSettingsEndpoints();
+
+// --- push devices (P4a) ---
+// POST /me/devices lives in Lumen.Api/Devices/DeviceEndpoints.cs (T15).
+app.MapDeviceEndpoints();
 
 app.MapGet("/me", async (
     ICurrentUserAccessor current,

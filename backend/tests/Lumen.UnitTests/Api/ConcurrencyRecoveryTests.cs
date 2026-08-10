@@ -1,4 +1,5 @@
 using Lumen.Api.Cycle;
+using Lumen.Api.Devices;
 using Lumen.Api.Persistence;
 using Lumen.Api.Symptoms;
 using Lumen.Domain.Entities;
@@ -168,6 +169,35 @@ public sealed class ConcurrencyRecoveryTests : IDisposable
         rows.Count.ShouldBe(1, "the loser's staged insert must not reach the database");
         rows[0].Id.ShouldBe(winner!.Id);
         rows[0].OccurredOn.ShouldBe(corrected, "the second attempt applied the correction to the winner's row");
+    }
+
+    // --- POST /me/devices (T15) -----------------------------------------------------------------
+
+    [Fact]
+    public async Task A_lost_race_on_a_device_registration_recovers_onto_the_winners_row()
+    {
+        // The single most race-prone write in P4a: the client calls this on every push-token refresh
+        // for the life of the install, and two app processes waking together (a notification tap while
+        // the app cold-starts) both miss the (UserId, PushToken) lookup and both insert. The loser gets
+        // 23505 on a unique index the user cannot see and has no way to work around.
+        const string PushToken = "fcm-token-raced-0000000000000000";
+
+        UserDevice? winner = null;
+        var interceptor = new LostRaceOnFirstSaveInterceptor(() =>
+            winner = _harness.SeedDevice(PushToken, platform: UserDevice.Platforms.Ios));
+
+        var result = await _harness.NewDeviceRegistrationService(_harness.DayInfo(), interceptor)
+            .RegisterAsync(new RegisterDeviceRequest(UserDevice.Platforms.Android, PushToken), CancellationToken.None);
+
+        interceptor.Saves.ShouldBe(2, "one failed save, one that recovered");
+        var device = result.ShouldBeOfType<DeviceRegistrationResult.Saved>().Device;
+        device.DeviceId.ShouldBe(winner!.Id, "the response must describe the row that actually exists");
+        device.Platform.ShouldBe("android", "the second attempt applied this request to the winner's row");
+
+        var rows = _harness.NewContext().UserDevices
+            .Where(d => d.UserId == _harness.UserId).ToList();
+        rows.Count.ShouldBe(1, "the loser's staged insert must not reach the database");
+        rows[0].LastSeenAt.ShouldBe(CycleTestHarness.Now);
     }
 
     private List<CycleDayLog> AllDayLogs() =>

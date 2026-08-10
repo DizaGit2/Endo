@@ -351,6 +351,87 @@ public class OpenApiContractTests(LumenApiFactory factory) : IClassFixture<Lumen
         }
     }
 
+    // --- T15: the device-registration upsert, and the token that must not appear in the contract ---
+
+    [Fact]
+    public async Task OpenApi_documents_the_device_registration_endpoint()
+    {
+        // Asserted on the EMITTED document, not only on the committed snapshot: dropping
+        // `MapDeviceEndpoints()` from Program.cs must fail here rather than produce a snapshot diff
+        // somebody regenerates away.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+        var root = doc.RootElement;
+
+        root.GetProperty("paths").TryGetProperty("/me/devices", out var devices)
+            .ShouldBeTrue("POST /me/devices must be documented (§C.9)");
+
+        var post = devices.GetProperty("post");
+        post.GetProperty("responses").GetProperty("200")
+            .GetProperty("content").GetProperty("application/json").GetProperty("schema")
+            .GetProperty("$ref").GetString().ShouldBe(
+                "#/components/schemas/RegisterDeviceResponse",
+                "an upsert has no actionable created/updated distinction, so both paths answer 200");
+
+        var responses = post.GetProperty("responses");
+        responses.TryGetProperty("400", out var badRequest).ShouldBeTrue();
+        AssertIsValidationProblemSchema(
+            root,
+            badRequest.GetProperty("content").GetProperty("application/problem+json").GetProperty("schema"),
+            "POST /me/devices");
+        responses.TryGetProperty("401", out _).ShouldBeTrue();
+        responses.TryGetProperty("404", out _).ShouldBeTrue(
+            "an erased user's still-valid token gets the shared 404 from this route too");
+
+        var request = root.GetProperty("components").GetProperty("schemas")
+            .GetProperty("RegisterDeviceRequest").GetProperty("properties");
+        request.TryGetProperty("platform", out _).ShouldBeTrue();
+        request.TryGetProperty("pushToken", out _).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task OpenApi_device_response_never_documents_the_push_token()
+    {
+        // §F on the WIRE CONTRACT: a documented `pushToken` on the RESPONSE would make the generated
+        // Dart client bind and hold it, putting the token into client logs and support HAR files for
+        // no gain — the caller already has it. The response carries the row's identity and nothing else.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+
+        var response = doc.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("RegisterDeviceResponse").GetProperty("properties");
+
+        foreach (var forbidden in new[] { "pushToken", "token", "push_token" })
+            response.TryGetProperty(forbidden, out _).ShouldBeFalse($"RegisterDeviceResponse must not document '{forbidden}'");
+
+        response.GetProperty("deviceId").GetProperty("type").GetString().ShouldBe("string");
+        response.GetProperty("platform").GetProperty("type").GetString().ShouldBe("string");
+    }
+
+    [Fact]
+    public async Task OpenApi_no_device_member_declares_a_default()
+    {
+        // The T13 defect, generalised (see the cycle-settings case above). Nothing on either device
+        // schema may carry a schema `default`: on the REQUEST both members are nullable so a default
+        // would become a built_value builder default the caller cannot clear, and a defaulted
+        // `platform` would silently register every device as one platform.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+        var schemas = doc.RootElement.GetProperty("components").GetProperty("schemas");
+
+        foreach (var (schema, member) in new[]
+                 {
+                     ("RegisterDeviceRequest", "platform"),
+                     ("RegisterDeviceRequest", "pushToken"),
+                     ("RegisterDeviceResponse", "deviceId"),
+                     ("RegisterDeviceResponse", "platform"),
+                     ("RegisterDeviceResponse", "lastSeenAt"),
+                     ("RegisterDeviceResponse", "createdAt"),
+                 })
+        {
+            schemas.GetProperty(schema).GetProperty("properties").GetProperty(member)
+                .TryGetProperty("default", out _)
+                .ShouldBeFalse($"{schema}.{member} must not carry a schema default");
+        }
+    }
+
     /// <summary>
     /// Asserts the response schema is the validation-problem one (the shape carrying the
     /// <c>errors</c> map) rather than the bare <c>ProblemDetails</c>. Matched on the referenced

@@ -238,6 +238,12 @@ public class VocabularyTests
         UserProfileEnc.EndoStatuses.All.ShouldBe(["diagnosed", "suspected", "not_applicable"]);
 
     [Fact]
+    public void Device_platforms_are_the_two_ratified_members() =>
+        // definitions.md:24-33 / §G10. Two members and no third: `web` is not a Lumen delivery target
+        // in any planned phase, and a code stored here decides which provider P9a dispatches through.
+        UserDevice.Platforms.All.ShouldBe(["ios", "android"]);
+
+    [Fact]
     public void Unit_system_has_the_single_reserved_metric_member()
     {
         // D-06: metric-only v1. The column is reserved for a future imperial *display* toggle and
@@ -282,6 +288,7 @@ public class VocabularyTests
             .. BodyMetric.Metrics.All, .. BodyMetric.Sources.All,
             .. UserProfileEnc.EndoStatuses.All, .. User.UnitSystems.All,
             .. UserInsightSnapshot.ComputedByValues.All,
+            .. UserDevice.Platforms.All,
         ];
 
         foreach (var member in all)
@@ -313,6 +320,7 @@ public class VocabularyTests
         foreach (var s in BodyMetric.Sources.All) s.Length.ShouldBeLessThanOrEqualTo(16);
         foreach (var u in User.UnitSystems.All) u.Length.ShouldBeLessThanOrEqualTo(8);
         foreach (var c in UserInsightSnapshot.ComputedByValues.All) c.Length.ShouldBeLessThanOrEqualTo(24);
+        foreach (var p in UserDevice.Platforms.All) p.Length.ShouldBeLessThanOrEqualTo(16);
         // UserProfileEnc.EndoStatuses has no column length to fit: the code is stored as AES-GCM
         // ciphertext in endo_status_enc (bytea), not as a varchar.
     }

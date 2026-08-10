@@ -1,5 +1,6 @@
 using Lumen.Api.Cycle;
 using Lumen.Api.CycleSettings;
+using Lumen.Api.Devices;
 using Lumen.Api.Symptoms;
 using Lumen.Api.Time;
 using Lumen.Application.Crypto;
@@ -222,6 +223,50 @@ internal sealed class CycleTestHarness : IDisposable
 
     /// <summary>A <see cref="CycleSettingsService"/> for the harness's primary user at <see cref="Now"/>.</summary>
     public CycleSettingsService NewCycleSettingsService() => NewCycleSettingsService(DayInfo());
+
+    /// <summary>
+    /// A <see cref="DeviceRegistrationService"/> over a fresh context (T15), for the given day info
+    /// (<see langword="null"/> = erased user). It takes NO <see cref="IUserCryptoContext"/>:
+    /// <c>user_devices.push_token</c> is stored in plaintext (at-rest encryption is an open P9a
+    /// precondition, out of scope here), so there is nothing on this path to encrypt.
+    /// </summary>
+    /// <remarks>
+    /// Tests that need to reach the service's OWN context — the composability guards around
+    /// <c>StageRegistrationAsync</c> — construct it directly over <see cref="NewContext"/> instead,
+    /// because staging a foreign write on the same context is the whole point of those assertions.
+    /// </remarks>
+    public DeviceRegistrationService NewDeviceRegistrationService(UserDayInfo? info, IInterceptor? interceptor = null) =>
+        new(NewContext(interceptor), new StubUserDayContext(info));
+
+    /// <summary>A <see cref="DeviceRegistrationService"/> for the harness's primary user at <see cref="Now"/>.</summary>
+    public DeviceRegistrationService NewDeviceRegistrationService() => NewDeviceRegistrationService(DayInfo());
+
+    /// <summary>
+    /// Seeds a <c>user_devices</c> row directly (T15). <paramref name="lastSeenAt"/> defaults to
+    /// <see langword="null"/> — the state a row written before this endpoint existed is in — so a test
+    /// can prove the upsert stamps it rather than inheriting a value the seed already set.
+    /// </summary>
+    public UserDevice SeedDevice(
+        string pushToken,
+        string? platform = null,
+        Guid? userId = null,
+        DateTimeOffset? lastSeenAt = null,
+        DateTimeOffset? createdAt = null)
+    {
+        var row = new UserDevice
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId ?? UserId,
+            Platform = platform ?? UserDevice.Platforms.Ios,
+            PushToken = pushToken,
+            LastSeenAt = lastSeenAt,
+            CreatedAt = createdAt ?? Now.AddDays(-30),
+        };
+        using var db = NewOwnedContext();
+        db.UserDevices.Add(row);
+        db.SaveChanges();
+        return row;
+    }
 
     /// <summary>
     /// Seeds a <c>symptoms</c> row directly, for tenant-isolation, list-ordering and no-op assertions.

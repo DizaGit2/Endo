@@ -81,7 +81,9 @@ public class LumenDbContext(DbContextOptions<LumenDbContext> options) : DbContex
             e.ToTable("user_devices");
             e.HasKey(x => x.Id);
             e.Property(x => x.Platform).IsRequired().HasMaxLength(16);
-            e.Property(x => x.PushToken).IsRequired().HasMaxLength(512);
+            // Off the entity constant, never a second copy of the number: T15's validator states the
+            // same limit inside a wire string the client renders, and two literals could only drift.
+            e.Property(x => x.PushToken).IsRequired().HasMaxLength(UserDevice.PushTokenMaxLength);
             e.HasIndex(x => new { x.UserId, x.PushToken }).IsUnique();
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
