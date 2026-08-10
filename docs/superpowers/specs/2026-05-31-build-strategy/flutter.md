@@ -182,7 +182,7 @@ Phase legend (walking-skeleton order; infra brought up incrementally):
 | 9 | quick_checkin | Home/logging | Symptoms | `POST /checkin/quick` | P3 | P3 |
 | 10 | cycle_calendar | Home/logging | Cycle | `GET /cycle/calendar?from&to` | P3 | P3 |
 | 11 | day_detail | Home/logging | Cycle | `GET /cycle/day/{date}`, `POST /cycle/day/{date}`, `POST /cycle/events` | P3 | P3 |
-| 12 | symptom_form | Home/logging | Symptoms | `POST /symptoms`, `PATCH /symptoms/{id}`, `DELETE /symptoms/{id}` | P3 | P3 |
+| 12 | symptom_form | Home/logging | Symptoms | `POST /symptoms`, `PUT /symptoms/{id}`, `DELETE /symptoms/{id}` | P3 | P3 |
 | 13 | body_map | Home/logging | Symptoms | `POST /symptoms` (region enum + intensity 1–5) | P3 | P3 |
 | 14 | phase_correction | Home/logging | Cycle | `POST /cycle/phase-override` | P3 (write) + P4 (shows recomputed confidence) | P3 write, P4 confidence display |
 | 15 | hormone_chart (+L) | Hormones | Hormones | `GET /hormones/series?hormone&from&to` (mv_hormone_series_daily) | P4 (matview) | P4 |

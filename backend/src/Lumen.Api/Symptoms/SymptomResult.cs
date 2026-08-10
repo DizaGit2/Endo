@@ -45,3 +45,56 @@ public abstract record SymptomCreateResult
     /// </summary>
     public sealed record UserNotFound : SymptomCreateResult;
 }
+
+/// <summary>Outcome of <see cref="SymptomService.ListAsync"/>.</summary>
+public abstract record SymptomListResult
+{
+    /// <summary>
+    /// The window was read — possibly empty. → 200. There is deliberately no "nothing in range" case:
+    /// a month with no symptoms in it is a legitimate question whose answer is an empty page, and 404
+    /// on this route means "no such user" and nothing else (§G12).
+    /// </summary>
+    public sealed record Found(SymptomListResponse Page) : SymptomListResult;
+
+    /// <summary>The window or the paging arguments were out of contract; nothing was read. → 400.</summary>
+    public sealed record Invalid(IReadOnlyList<SymptomFieldError> Errors) : SymptomListResult;
+
+    /// <summary>
+    /// The token's <c>sub</c> has no live <c>users</c> row — it never existed, or the account was
+    /// crypto-shredded. → 404, checked before the arguments are even looked at.
+    /// </summary>
+    public sealed record UserNotFound : SymptomListResult;
+}
+
+/// <summary>Outcome of <see cref="SymptomService.ReplaceAsync"/>.</summary>
+public abstract record SymptomReplaceResult
+{
+    /// <summary>The row now equals the request. → 200, carrying the stored row.</summary>
+    public sealed record Saved(SymptomResponse Symptom) : SymptomReplaceResult;
+
+    /// <summary>Nothing was written; every field error found is listed. → 400.</summary>
+    public sealed record Invalid(IReadOnlyList<SymptomFieldError> Errors) : SymptomReplaceResult;
+
+    /// <summary>
+    /// No live row of the caller's has that id. → 404. Covers all four cases on purpose: an unknown
+    /// id, an already-deleted one (a <c>PUT</c> must not resurrect a tombstone), <b>another user's
+    /// id</b> — tenant isolation is 404, never 403, because a 403 would itself confirm the id exists —
+    /// and an erased caller.
+    /// </summary>
+    public sealed record NotFound : SymptomReplaceResult;
+}
+
+/// <summary>Outcome of <see cref="SymptomService.DeleteAsync"/>.</summary>
+public abstract record SymptomDeleteResult
+{
+    /// <summary>The row was tombstoned (D-13 soft delete, never a row removal). → 204.</summary>
+    public sealed record Deleted : SymptomDeleteResult;
+
+    /// <summary>
+    /// No live row of the caller's has that id. → 404, covering the same four cases as
+    /// <see cref="SymptomReplaceResult.NotFound"/>. A second delete lands here because the query
+    /// filter hides the tombstone — P4b treats that as success, since the user's intent is already
+    /// satisfied.
+    /// </summary>
+    public sealed record NotFound : SymptomDeleteResult;
+}

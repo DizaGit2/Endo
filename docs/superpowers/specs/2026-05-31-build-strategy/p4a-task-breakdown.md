@@ -78,7 +78,7 @@ D-13 verbatim: *"No future dates for symptom/body/activity/lab entries (max = us
 | Write | Rule |
 |---|---|
 | `POST /cycle/events`, `POST /onboarding/cycle` (`lastPeriodStart`) | `<= user-local today` **and** `>= BackdateFloor` |
-| `POST /cycle/day/{date}`, `POST /checkin/quick`, `POST /symptoms`, `PATCH /symptoms/{id}`, `POST /onboarding/baseline` (`dob`) | `<= user-local today` **only — no floor** |
+| `POST /cycle/day/{date}`, `POST /checkin/quick`, `POST /symptoms`, `PUT /symptoms/{id}`, `POST /onboarding/baseline` (`dob`) | `<= user-local today` **only — no floor** |
 
 `UserDayInfo.BackdateFloor` exists but its XML doc states it is cycle-events-only. Applying it elsewhere would reject legitimate historical logging D-13 permits.
 
@@ -380,7 +380,7 @@ Backend only — no Flutter screens (P4b); the regenerated Dart client is the on
 
 ---
 
-### T12 — Symptoms read/update/delete: `GET /symptoms`, `PATCH /symptoms/{id}`, `DELETE /symptoms/{id}`
+### T12 — Symptoms read/update/delete: `GET /symptoms`, `PUT /symptoms/{id}`, `DELETE /symptoms/{id}`
 
 - **Goal:** the rest of §C.3, consuming T11's validator unchanged.
 - **Tests first**
@@ -389,7 +389,7 @@ Backend only — no Flutter screens (P4b); the regenerated Dart client is the on
   - **Coverage checkpoint (no gate):** second trajectory data point pasted in the commit body.
 - **Production changes**
   - `GET /symptoms?from&to&limit&offset` — `from`/`to` **required**, inclusive user-local dates converted to UTC instants; future `to` allowed (a month view spans forward); D-13 pagination `limit` default 50 / min 1 / max 100, `offset >= 0`; `ORDER BY OccurredAt DESC, Id DESC` (the `Id` tiebreak keeps offset paging stable when a body-map save writes N rows at one instant); `total` from a matching `CountAsync`.
-  - `PATCH /symptoms/{id}` — may change `intensity, region, side, painTypes, triggers, occurredAt, notes`. **`symptomCode` is immutable by construction**: re-coding a `bloating` row into `pain` rewrites a P6 series' identity; the user action is delete + create. Re-encryption uses a fresh nonce.
+  - `PUT /symptoms/{id}` (renamed from `PATCH` — see the §G12 write-semantics row; §C.3 amended in the same commit) — replaces `intensity, region, side, painTypes, triggers, occurredAt, notes`. An omitted field with an *unclassified* state is CLEARED; `intensity` and `occurredAt` have none and are therefore REQUIRED, so an edit can never fabricate an observation time. **`symptomCode` is immutable by construction**: re-coding a `bloating` row into `pain` rewrites a P6 series' identity; the user action is delete + create. Re-encryption uses a fresh nonce.
   - `DELETE /symptoms/{id}` — soft-delete only (`DeletedAt`), **204**; never `ExecuteDeleteAsync`. Second call **404**.
   - Both JSON snapshots regenerated.
 - **LiveStack?** Yes — **[UNIT]** + **[LIVE]**.
@@ -526,7 +526,7 @@ Backend only — no Flutter screens (P4b); the regenerated Dart client is the on
 - **Goal:** a drift guard a future regression cannot silently dodge, and an honest coverage number against a defensible denominator.
 - **Tests first / evidence**
   - **This is not a TDD-red task.** By §G3 the contract is already current, so the new spine assertions pass on the first run. **Prove they bite instead:** temporarily delete one path from `backend/contract/openapi.json`, watch the test fail, revert — record the demonstration in the commit body.
-  - `backend/tests/Lumen.IntegrationTests/OpenApiSnapshotTests.cs` — extend `AssertSpineEndpoints` with the P4a spine: `/onboarding/{baseline,goals,hormones,notifications,cycle,complete}` post, `/onboarding/state` get, `/cycle/calendar` get, `/cycle/day/{date}` get+post, `/cycle/events` post, `/cycle/events/{id}` delete, `/cycle/phase-override` post, `/checkin/quick` post, `/symptoms` get+post, `/symptoms/{id}` patch+delete, `/settings/cycle` get+patch, `/me/devices` post; plus `components.schemas` contains the validation-problem schema and `OnboardingStartResponse`. Keep the existing `/onboarding/start`, `/health`, `/me` assertions intact.
+  - `backend/tests/Lumen.IntegrationTests/OpenApiSnapshotTests.cs` — extend `AssertSpineEndpoints` with the P4a spine: `/onboarding/{baseline,goals,hormones,notifications,cycle,complete}` post, `/onboarding/state` get, `/cycle/calendar` get, `/cycle/day/{date}` get+post, `/cycle/events` post, `/cycle/events/{id}` delete, `/cycle/phase-override` post, `/checkin/quick` post, `/symptoms` get+post, `/symptoms/{id}` put+delete, `/settings/cycle` get+patch, `/me/devices` post; plus `components.schemas` contains the validation-problem schema and `OnboardingStartResponse`. Keep the existing `/onboarding/start`, `/health`, `/me` assertions intact.
 - **Production changes**
   - **`backend/coverlet.runsettings` (new, committed)** — `ExcludeByFile` for `**/Persistence/Migrations/*.cs` and `**/LumenDbContextModelSnapshot.cs`. Without it the ≥70 % exit criterion is arithmetically unreachable: today ~49 % of `backend/src` is generated migration code, and P4a adds three more migrations covering eleven tables (each with a full `.Designer.cs` + a regenerated snapshot). `Migration.Up/Down` and `BuildTargetModel`/`BuildModel` are never executed by any test — LiveStack applies migrations out-of-process via `dotnet ef` — so they report 0 hits forever. **The stated denominator is `Lumen.Api` + `Lumen.Application` + `Lumen.Domain` + `Lumen.Infrastructure`, minus migrations and the model snapshot.**
   - Command, pasted verbatim into STATUS with its output:

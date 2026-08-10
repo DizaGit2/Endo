@@ -10,8 +10,9 @@ namespace Lumen.Api.Symptoms;
 // Schema ids are the bare type names and are namespace-INDEPENDENT (§G12, verified in T9), so the
 // `namespace` above is a style choice. The real hazard is a short-type-name COLLISION across feature
 // folders, which throws a duplicate-schemaId error at document generation: `QuickCheckinRequest`,
-// `QuickCheckinResponse`, `CreateSymptomsRequest`, `SymptomEntryInput`, `CreateSymptomsResponse` and
-// `SymptomResponse` are each unique across the whole API.
+// `QuickCheckinResponse`, `CreateSymptomsRequest`, `SymptomEntryInput`, `CreateSymptomsResponse`,
+// `SymptomResponse`, `ReplaceSymptomRequest` and `SymptomListResponse` are each unique across the
+// whole API.
 
 /// <summary>
 /// Body of <c>POST /checkin/quick</c> (screen 9, "How's today?") — the app's most-tapped write.
@@ -97,12 +98,47 @@ public static class SymptomBatch
 }
 
 /// <summary>
+/// The D-13 pagination bounds for <c>GET /symptoms</c>. <b>Not a P4a invention</b> — §G11 lists what
+/// is, and these are not on it: D-13 states 50 default / 100 max for paginated reads.
+/// </summary>
+/// <remarks>
+/// They live in the symptoms feature rather than in <see cref="Validation.FieldLimits"/> because
+/// <c>GET /symptoms</c> is P4a's only paginated read, and that file's own rule is that a limit one
+/// endpoint owns stays at that endpoint. <b>The second paginated read hoists them</b>, exactly as
+/// <c>MaxNotesLength</c> was hoisted out of <c>CycleService</c> when <c>cycle_day_logs</c> became its
+/// second caller — one number stated by one decision must not exist in two places.
+/// </remarks>
+public static class SymptomPaging
+{
+    /// <summary>Rows returned when the client asks for no particular page size.</summary>
+    public const int DefaultLimit = 50;
+
+    /// <summary>A page must contain at least one row; <c>limit=0</c> is a client bug, not an empty page.</summary>
+    public const int MinLimit = 1;
+
+    /// <summary>
+    /// The inclusive ceiling: 100 is accepted, 101 is a <b>400</b>. Deliberately never a silent clamp
+    /// — a client that asked for 500 and received 100 without being told cannot tell "that is all of
+    /// them" from "you were truncated", and would render a partial symptom history as a complete one.
+    /// </summary>
+    public const int MaxLimit = 100;
+}
+
+/// <summary>
 /// Messages owned by the symptoms endpoints alone (§G12: only genuinely cross-cutting strings belong
 /// on <see cref="Validation.ValidationMessages"/>). These are <b>wire strings</b> asserted verbatim
 /// against their literals in the unit suites — rewording one is a contract change, not a copy edit.
 /// </summary>
 public static class SymptomValidationMessages
 {
+    /// <summary>
+    /// <c>GET /symptoms</c> arrived with <c>to</c> before <c>from</c>. Reported on <c>to</c> — the
+    /// later of the two, and the one the client most likely got wrong. An inverted window is answered
+    /// with a 400 rather than an empty page because <c>[]</c> is indistinguishable from "you logged
+    /// nothing that month", which is the reading that hides the client bug forever.
+    /// </summary>
+    public const string RangeEndBeforeStart = "date must not be before the start of the range";
+
     /// <summary>
     /// A quick check-in supplied neither pain nor mood. Reported under
     /// <see cref="Validation.ValidationProblemBuilder.RequestKey"/> because it belongs to the
@@ -165,7 +201,7 @@ public record CreateSymptomsRequest(
 /// <b>id-addressed and single-writer</b>: it is created by one save and thereafter edited only by
 /// re-opening it in the form that owns it. Nothing else ever writes an existing row, so the body
 /// genuinely does describe the row's whole desired state — and an omitted or <see langword="null"/>
-/// classification field on T12's <c>PATCH /symptoms/{id}</c> <b>CLEARS</b> the stored value
+/// classification field on T12's <c>PUT /symptoms/{id}</c> <b>CLEARS</b> the stored value
 /// (<see cref="Side"/> → null, <see cref="PainTypes"/>/<see cref="Triggers"/> → empty,
 /// <see cref="Notes"/> → null, <see cref="Region"/> → <c>unspecified</c>).</para>
 ///
@@ -175,9 +211,13 @@ public record CreateSymptomsRequest(
 /// classification would be one-way and permanently wrong. That is the opposite of
 /// <c>cycle_day_logs</c>, where merging costs nothing precisely because screens 9 and 11 offer no
 /// clear affordance to lose. <b>So: <c>POST /cycle/events</c> full-upsert, <c>POST /cycle/day/{date}</c>
-/// and <c>POST /checkin/quick</c> merge, <c>POST</c>/<c>PATCH /symptoms</c> full-replace.</b> Note
-/// the verb tension deliberately: §C.3 names the update <c>PATCH</c>, and its semantics are still
-/// full replace, because the verb was never the test.</para>
+/// and <c>POST /checkin/quick</c> merge, <c>POST /symptoms</c> + <c>PUT /symptoms/{id}</c>
+/// full-replace.</b>
+/// <b>The verb was renamed in T12 as a consequence</b>: §C.3 originally named the update
+/// <c>PATCH</c>, and <c>PATCH</c> has a defined meaning that full replace <i>contradicts</i> — a
+/// client author who sent only the changed field would get silent data loss. <c>POST</c> is
+/// semantically neutral, so <c>POST</c>=upsert and <c>POST</c>=merge mislead nobody; <c>PATCH</c>
+/// would. §C.3 is amended in the same commit. See <see cref="ReplaceSymptomRequest"/>.</para>
 ///
 /// <para>The rule is <b>invisible in the generated Dart client</b> — every field is a nullable member
 /// on a <c>built_value</c> class and nothing on the wire says which one clears — which is why it is
@@ -273,3 +313,102 @@ public record SymptomResponse(
     string? Notes,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
+
+/// <summary>
+/// The 200 body of <c>GET /symptoms?from&amp;to&amp;limit&amp;offset</c>: one page of the user's
+/// symptom history, <b>newest first</b>.
+/// </summary>
+/// <remarks>
+/// The window is stated in <b>user-local days</b> and both ends are inclusive, matched against the
+/// stored <c>occurredOn</c> — the column D-12 exists to provide, so a month view is a day-keyed index
+/// scan rather than a per-row timezone conversion. A <c>to</c> in the <i>future</i> is legitimate here
+/// and only here: every WRITE in this phase is capped by today, but a calendar shows the rest of the
+/// month and rejecting that would make the client clamp the window it had just rendered.
+/// </remarks>
+/// <param name="Items">
+/// The page, ordered by <c>occurredAt</c> descending with the row id as a tiebreak. That tiebreak is
+/// not defensive: D-09 makes several rows share one instant on <i>every</i> body-map save, and without
+/// it the database may order the tied rows differently per query — so page 2 could repeat a row from
+/// page 1 and drop another entirely, silently losing a symptom from the user's history.
+/// </param>
+/// <param name="Total">
+/// How many live rows match the window, <b>ignoring the page</b> — what the client needs to render
+/// "12 of 40" and to know whether to fetch again. Tombstoned rows (D-13) are excluded from this count
+/// as well as from <see cref="Items"/>; a total that included them would page into rows that never
+/// arrive.
+/// </param>
+/// <param name="Limit">The page size actually applied, echoed so a client that sent none knows the default.</param>
+/// <param name="Offset">The offset actually applied.</param>
+public record SymptomListResponse(
+    IReadOnlyList<SymptomResponse> Items,
+    int Total,
+    int Limit,
+    int Offset);
+
+/// <summary>
+/// Body of <c>PUT /symptoms/{id}</c> — the edit behind re-opening a saved symptom on screen 12 or 13.
+///
+/// <para><b>This is a FULL REPLACE, and the verb says so on purpose.</b> §C.3 originally named this
+/// update <c>PATCH</c>; T12 renamed it (and amended §C.3) because <c>PATCH</c> has a defined meaning
+/// that full replace contradicts. A client author who reads <c>PATCH</c> correctly assumes an omitted
+/// field is untouched — here it is <b>cleared</b> — so the verb is a safety affordance, not a naming
+/// preference. Keeping <c>PATCH</c> as a true merge was the alternative, and it is not available: with
+/// no way to express "clear this field" it would need a tri-state DTO the generated <c>built_value</c>
+/// Dart client cannot represent, and MERGE would make every toggle chip addable but never removable.</para>
+///
+/// <para><b>The replace rule has exactly two halves.</b> A field that has an <i>unclassified</i>
+/// state is <b>CLEARED</b> when omitted: <see cref="Region"/> → <c>unspecified</c>,
+/// <see cref="Side"/> → null, <see cref="PainTypes"/>/<see cref="Triggers"/> → empty,
+/// <see cref="Notes"/> → null. A field with <b>no</b> unclassified state is <b>REQUIRED</b>:
+/// <see cref="Intensity"/> and <see cref="OccurredAt"/>. That second half is what stops an edit from
+/// fabricating data — defaulting an absent instant to the request's <c>now</c> would silently re-date
+/// a transcribed five-year-old entry to today, and the edit's clock is not the episode's clock.</para>
+///
+/// <para><b>CLIENT OBLIGATION — read this before wiring screen 12 (P4b).</b> Because the body is the
+/// row's whole desired state, <b>the client must re-hydrate the row and send every field back</b>,
+/// not just the ones the user touched. The sharp edge is <see cref="Side"/>: screen 12
+/// (<c>symptom_form</c>) has <b>no front/back control at all</b> — its only path to a side is a
+/// drill-in to screen 13 (<c>body_map</c>) — so a row located on the body map and then edited from
+/// screen 12 <b>loses its side</b> unless screen 12 echoes back the value it was given. The duty is
+/// cheap to meet: <see cref="SymptomResponse"/> carries <c>side</c>, and it is what
+/// <c>GET /symptoms</c>, <c>POST /symptoms</c> and this endpoint all return. Exempting
+/// <see cref="Side"/> from the clear was considered and rejected — it would make one field on a
+/// full-replace DTO silently merge, with nothing on the wire and nothing in the generated Dart client
+/// to say which, and it would leave <c>side</c> settable but never un-settable.</para>
+///
+/// <para><b><see cref="SymptomEntryInput.SymptomCode"/> is absent by construction, not ignored.</b>
+/// Re-coding a <c>bloating</c> row into <c>pain</c> rewrites the identity of a series the P6 engine
+/// will read, so there is deliberately no wire representation of the change and no client can express
+/// it. The user action for that is delete and re-create.</para>
+/// </summary>
+/// <param name="Intensity">
+/// <b>Required.</b> Severity on the 0–10 NRS-11 scale (D-08); <b>0 is a real datum</b>. Typed
+/// <c>int?</c> rather than <c>short?</c> for the same reason as on create: an out-of-range 40000 must
+/// reach the validator and come back attached to this field, not be rejected as an unreadable body.
+/// </param>
+/// <param name="Region">One of the 9 ratified regions (§G10). Absent or blank <b>resets</b> to <c>unspecified</c>.</param>
+/// <param name="Side">
+/// Anatomical <c>front</c>/<c>back</c> — <b>not</b> laterality. Absent or blank <b>CLEARS</b> it; see
+/// the client obligation above.
+/// </param>
+/// <param name="PainTypes">
+/// The complete set of pain qualities after the edit. <b>Replaces, never merges</b> — an absent or
+/// empty array clears every stored quality, which is precisely how a user un-taps a chip.
+/// De-duplicated and re-ordered into canonical vocabulary order before storage.
+/// </param>
+/// <param name="Triggers">The complete set of triggers after the edit. Same rule as <see cref="PainTypes"/>.</param>
+/// <param name="OccurredAt">
+/// <b>Required</b> (unlike on create, where absent means "now" because the user is logging as it
+/// happens). Normalised to UTC before storage, and the stored day key is re-derived from it server-side
+/// via <c>IUserDayResolver</c> (D-12). <b>Capped by the user's local today and NOTHING ELSE (§G8)</b> —
+/// there is no backdate floor here, so an edit may legitimately move an episode years into the past.
+/// </param>
+/// <param name="Notes">Optional free text, ≤ 2000 characters after trimming (D-13). Absent or blank <b>CLEARS</b> the stored note. Re-encrypted with a fresh nonce.</param>
+public record ReplaceSymptomRequest(
+    int? Intensity,
+    string? Region,
+    string? Side,
+    IReadOnlyList<string>? PainTypes,
+    IReadOnlyList<string>? Triggers,
+    DateTimeOffset? OccurredAt,
+    string? Notes);

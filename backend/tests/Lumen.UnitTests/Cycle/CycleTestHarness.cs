@@ -11,6 +11,8 @@ using Lumen.UnitTests.Time;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Lumen.UnitTests.Cycle;
@@ -49,6 +51,42 @@ internal sealed class TestUserCryptoContext : IUserCryptoContext
         Task.FromResult(_cipher.DecryptString(blob, _dek));
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+/// <summary>
+/// Makes every <see cref="DateTimeOffset"/> column <b>sortable on Sqlite</b>, which the provider
+/// otherwise refuses: <c>ORDER BY</c> on a <c>DateTimeOffset</c> throws
+/// <c>NotSupportedException</c> because the default mapping is text carrying an offset, and
+/// lexicographic order over mixed offsets is wrong.
+/// </summary>
+/// <remarks>
+/// <b>This is a TEST-PROVIDER workaround and must stay one.</b> Postgres stores these columns as
+/// <c>timestamptz</c> and orders them natively, so <c>GET /symptoms</c>'s
+/// <c>ORDER BY OccurredAt DESC, Id DESC</c> (T12) is correct in production; degrading that query to
+/// something Sqlite can sort — dropping to day granularity, say — would reorder a user's history to
+/// suit a database the app never runs on. Applying the converter here instead keeps the real query
+/// under test on the real model, and leaves <c>LumenDbContext</c> with no knowledge of the unit
+/// suite's provider.
+///
+/// <para><b>Cost, stated so it cannot surprise anyone:</b>
+/// <see cref="DateTimeOffsetToBinaryConverter"/> round-trips to <b>millisecond</b> precision. Every
+/// instant this harness deals in comes from <see cref="CycleTestHarness.Now"/> or an offset of it, all
+/// whole seconds, so nothing is lost today — but a future test asserting tick-precision equality on a
+/// round-tripped timestamp would fail here and nowhere else.</para>
+/// </remarks>
+internal sealed class SqliteSortableTimestamps(ModelCustomizerDependencies dependencies)
+    : ModelCustomizer(dependencies)
+{
+    public override void Customize(ModelBuilder modelBuilder, DbContext context)
+    {
+        base.Customize(modelBuilder, context); // runs LumenDbContext.OnModelCreating first
+
+        var timestamps = modelBuilder.Model.GetEntityTypes()
+            .SelectMany(entity => entity.GetProperties())
+            .Where(p => p.ClrType == typeof(DateTimeOffset) || p.ClrType == typeof(DateTimeOffset?));
+
+        foreach (var property in timestamps) property.SetValueConverter(new DateTimeOffsetToBinaryConverter());
+    }
 }
 
 /// <summary>
@@ -148,12 +186,28 @@ internal sealed class CycleTestHarness : IDisposable
     /// <summary>A <see cref="SymptomService"/> for the harness's primary user at <see cref="Now"/>.</summary>
     public SymptomService NewSymptomService() => NewSymptomService(DayInfo());
 
-    /// <summary>Seeds a <c>symptoms</c> row directly, for tenant-isolation and no-op assertions.</summary>
+    /// <summary>
+    /// Seeds a <c>symptoms</c> row directly, for tenant-isolation, list-ordering and no-op assertions.
+    /// </summary>
+    /// <remarks>
+    /// Every classification field is settable (T12) because the replace surface must be proven to
+    /// CLEAR each one, and a row seeded with everything null could not tell a clear from a no-op.
+    /// <paramref name="occurredAt"/> defaults to <see cref="Now"/> rather than being derived from
+    /// <paramref name="occurredOn"/>: the list orders by the instant and tie-breaks on the id, so the
+    /// paging tests need several rows to share one instant while sitting on different days.
+    /// </remarks>
     public Symptom SeedSymptom(
         string symptomCode,
         short intensity,
         DateOnly occurredOn,
-        Guid? userId = null)
+        Guid? userId = null,
+        DateTimeOffset? occurredAt = null,
+        string? region = null,
+        string? side = null,
+        IEnumerable<string>? painTypes = null,
+        IEnumerable<string>? triggers = null,
+        byte[]? notesEnc = null,
+        DateTimeOffset? deletedAt = null)
     {
         var row = new Symptom
         {
@@ -161,11 +215,16 @@ internal sealed class CycleTestHarness : IDisposable
             UserId = userId ?? UserId,
             SymptomCode = symptomCode,
             Intensity = intensity,
-            Region = Symptom.Regions.Default,
-            OccurredAt = Now,
+            Region = region ?? Symptom.Regions.Default,
+            Side = side,
+            PainTypes = painTypes?.ToList() ?? [],
+            Triggers = triggers?.ToList() ?? [],
+            OccurredAt = occurredAt ?? Now,
             OccurredOn = occurredOn,
+            NotesEnc = notesEnc,
             CreatedAt = Now,
             UpdatedAt = Now,
+            DeletedAt = deletedAt,
         };
         using var db = NewOwnedContext();
         db.Symptoms.Add(row);
@@ -264,7 +323,12 @@ internal sealed class CycleTestHarness : IDisposable
 
     private LumenDbContext NewOwnedContext(IInterceptor? interceptor = null)
     {
-        var options = new DbContextOptionsBuilder<LumenDbContext>().UseSqlite(_connection);
+        var options = new DbContextOptionsBuilder<LumenDbContext>()
+            .UseSqlite(_connection)
+            // See SqliteSortableTimestamps: without it, ORDER BY on a DateTimeOffset throws on Sqlite
+            // and GET /symptoms could not be unit-tested at all.
+            .ReplaceService<IModelCustomizer, SqliteSortableTimestamps>();
+
         if (interceptor is not null) options.AddInterceptors(interceptor);
         return new LumenDbContext(options.Options);
     }
