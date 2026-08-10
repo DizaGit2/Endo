@@ -341,12 +341,42 @@ public class OnboardingBaselineLiveTests(LumenApiFactory factory) : IClassFixtur
 
     // ------------------------------------------------------------------ helpers
 
+    // AES-GCM blob framing per AesGcmFieldCipher: nonce(12) ‖ ciphertext(n) ‖ tag(16). The nonce and
+    // tag are random bytes, not derived from the plaintext, so any single byte value has a 1/256
+    // chance of turning up at any of their 28 positions "by accident" — nothing to do with whether
+    // the field is really encrypted.
+    private const int GcmNonceSize = 12;
+    private const int GcmTagSize = 16;
+
+    // Below this many plaintext UTF-8 bytes, a substring search across the 28 random nonce+tag bytes
+    // has a non-negligible chance of a false hit (a single byte: ~10.7%; two or more: well under
+    // 0.1%). Only RasrmStageEnc's "3" is this short today — see task-16 review fix.
+    private const int MinPlaintextBytesForSubstringCheck = 2;
+
     private static void AssertOpaque(byte[]? cipher, string plaintext, string column)
     {
         cipher.ShouldNotBeNull(column);
-        Encoding.UTF8.GetString(cipher!).ShouldNotContain(
-            plaintext, Case.Sensitive, $"{column} must be AES-GCM ciphertext, never the plaintext");
-        cipher!.ShouldNotBe(Encoding.UTF8.GetBytes(plaintext), column);
+        var plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
+
+        // Framing: the blob is exactly nonce + ciphertext-the-same-length-as-the-plaintext + tag.
+        // Deterministic, and it would catch a regression that stored the plaintext alongside (or
+        // instead of) the ciphertext, which a pure length check on its own would not.
+        cipher!.Length.ShouldBe(
+            GcmNonceSize + plaintextBytes.Length + GcmTagSize,
+            $"{column} must be framed as a {GcmNonceSize}-byte nonce + ciphertext + {GcmTagSize}-byte tag");
+
+        cipher.ShouldNotBe(plaintextBytes, column);
+
+        // The substring claim only carries information when a chance byte match in the random
+        // nonce/tag is negligible. For a one-character plaintext it is not (~10.7%) — the framing and
+        // byte-inequality assertions above already prove opacity for that case without gambling on 28
+        // random bytes. (The decrypt round trip for this same value is proven separately, via the
+        // GET /me response asserted earlier in the caller.)
+        if (plaintextBytes.Length >= MinPlaintextBytesForSubstringCheck)
+        {
+            Encoding.UTF8.GetString(cipher).ShouldNotContain(
+                plaintext, Case.Sensitive, $"{column} must be AES-GCM ciphertext, never the plaintext");
+        }
     }
 
     private HttpClient Authed(string token)

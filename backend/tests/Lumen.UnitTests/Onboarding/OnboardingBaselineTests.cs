@@ -430,6 +430,18 @@ public sealed class OnboardingBaselineTests : IDisposable
 
     // ---------------------------------------------------------------- ciphertext at rest
 
+    // AES-GCM blob framing per AesGcmFieldCipher: nonce(12) ‖ ciphertext(n) ‖ tag(16). The nonce and
+    // tag are random bytes, not derived from the plaintext, so any single byte value has a 1/256
+    // chance of turning up at any of their 28 positions "by accident" — nothing to do with whether
+    // the field is really encrypted.
+    private const int GcmNonceSize = 12;
+    private const int GcmTagSize = 16;
+
+    // Below this many plaintext UTF-8 bytes, a substring search across the 28 random nonce+tag bytes
+    // has a non-negligible chance of a false hit (a single byte: ~10.7%; two or more: well under
+    // 0.1%). Only RasrmStageEnc's "3" is this short today — see task-16 review fix.
+    private const int MinPlaintextBytesForSubstringCheck = 2;
+
     [Fact]
     public async Task Every_encrypted_column_this_step_writes_holds_ciphertext_at_rest()
     {
@@ -452,9 +464,27 @@ public sealed class OnboardingBaselineTests : IDisposable
         foreach (var (name, bytes, plaintext) in columns)
         {
             bytes.ShouldNotBeNull(name);
-            Encoding.UTF8.GetString(bytes).ShouldNotContain(
-                plaintext, Case.Sensitive, $"{name} must be AES-GCM ciphertext, never the plaintext");
-            bytes.ShouldNotBe(Encoding.UTF8.GetBytes(plaintext), name);
+            var plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
+
+            // Framing: the blob is exactly nonce + ciphertext-the-same-length-as-the-plaintext + tag.
+            // Deterministic, and it would catch a regression that stored the plaintext alongside (or
+            // instead of) the ciphertext, which a pure length check on its own would not.
+            bytes.Length.ShouldBe(
+                GcmNonceSize + plaintextBytes.Length + GcmTagSize,
+                $"{name} must be framed as a {GcmNonceSize}-byte nonce + ciphertext + {GcmTagSize}-byte tag");
+
+            bytes.ShouldNotBe(plaintextBytes, name);
+
+            // The substring claim only carries information when a chance byte match in the random
+            // nonce/tag is negligible. For a one-character plaintext it is not (~10.7%, measured at
+            // 2/16 in the review that flagged this test as flaky) — the framing, byte-inequality and
+            // decrypt-round-trip assertions above and below already prove opacity for that case
+            // without gambling on 28 random bytes.
+            if (plaintextBytes.Length >= MinPlaintextBytesForSubstringCheck)
+            {
+                Encoding.UTF8.GetString(bytes).ShouldNotContain(
+                    plaintext, Case.Sensitive, $"{name} must be AES-GCM ciphertext, never the plaintext");
+            }
 
             // And it is real, reversible ciphertext rather than an opaque blob nobody can read back.
             (await _harness.Crypto.DecryptStringAsync(bytes)).ShouldBe(plaintext, name);
