@@ -79,6 +79,11 @@ public sealed class CycleCalendarServiceTests : IDisposable
         // The ONE reason this endpoint may say anything phase-shaped at all. P6 ships the engine;
         // until then the honest answer is "not implemented", stated once for the whole window rather
         // than guessed per day.
+        //
+        // This is where the CODE is pinned — at the point it is produced. It is deliberately NOT
+        // pinned in the OpenAPI contract: the schema owes the client the FIELD (a nullable string),
+        // and documenting the value there as a `default` would make the generated Dart client unable
+        // to read `unavailableReason: null` when P6 ships. See OpenApiContractTests.
         var calendar = Found(await GetAsync());
 
         calendar.Phase.Available.ShouldBeFalse();
@@ -88,8 +93,9 @@ public sealed class CycleCalendarServiceTests : IDisposable
     [Fact]
     public void The_unavailable_reason_is_the_frozen_wire_string()
     {
-        // §G12: asserted against the LITERAL, never through the constant — this string reaches the
-        // Flutter client through the generated contract, so rewording it is a contract change.
+        // §G12: asserted against the LITERAL, never through the constant — the Flutter client sees
+        // this string as a VALUE in the response body and may branch on it, so rewording it breaks a
+        // shipped client just as surely as renaming the field would.
         CyclePhaseAvailability.PhaseEngineNotImplemented.ShouldBe("phase_engine_not_implemented");
     }
 

@@ -321,11 +321,14 @@ public record CycleCalendarResponse(
 /// key.</b></para>
 ///
 /// <para><b>Why it is in the P4a contract at all, given P4a computes nothing.</b> The Dart client is
-/// generated exactly once in this phase (T21). Shipping the envelope now means P6 can start emitting
-/// real phase data — and the other three reserved reasons on
-/// <see cref="CyclePhaseAvailability"/> — without a client-visible vocabulary change. A DTO is the
-/// only thing that carries a constant into the generated client, so this record is how those codes get
-/// there.</para>
+/// generated exactly once in this phase (T21). <b>What buys P6 its freedom is that these two members
+/// EXIST</b>: <see cref="UnavailableReason"/> is a plain nullable string, so P6 answering
+/// <c>tracking_paused</c> — or <see langword="null"/> alongside <c>available: true</c> — is a change
+/// of VALUE on a field the client already binds, not a schema change, and no regeneration is needed.
+/// The reason codes themselves are backend constants (<see cref="CyclePhaseAvailability"/>) and are
+/// <b>not</b> exported to Dart: the generated client has no symbol for any of them and compares the
+/// string it receives. Nothing in this record should try to smuggle one into the schema — see the
+/// remark on <see cref="UnavailableReason"/>.</para>
 /// </remarks>
 /// <param name="Available">
 /// <b>Always <see langword="false"/> in P4a.</b> When P6 ships the engine this becomes true and
@@ -335,12 +338,19 @@ public record CycleCalendarResponse(
 /// <param name="UnavailableReason">
 /// One of <see cref="CyclePhaseAvailability"/> when <see cref="Available"/> is
 /// <see langword="false"/>; <see langword="null"/> when it is true. <b>P4a can only ever answer
-/// <see cref="CyclePhaseAvailability.PhaseEngineNotImplemented"/></b> — declared as the schema default
-/// so the code reaches the generated client and the committed contract, not merely this file.
+/// <see cref="CyclePhaseAvailability.PhaseEngineNotImplemented"/></b>, which the service sets at its
+/// one construction site.
+///
+/// <para><b>This member must never carry a <c>[DefaultValue]</c>.</b> A schema <c>default</c> on a
+/// nullable member is a lie in this toolchain: openapi-generator's dart-dio + built_value output turns
+/// it into a builder default and its deserializer skips explicit nulls, so the client could never
+/// observe <see langword="null"/> here and would keep reading the P4a code after P6 shipped —
+/// contradicting the sentence above it. Pinned by
+/// <c>OpenApiContractTests.OpenApi_unavailable_reason_declares_no_default_so_null_survives_into_the_client</c>.</para>
 /// </param>
 public record CyclePhaseAvailabilityResponse(
     [property: DefaultValue(false)] bool Available,
-    [property: DefaultValue(CyclePhaseAvailability.PhaseEngineNotImplemented)] string? UnavailableReason);
+    string? UnavailableReason);
 
 /// <summary>
 /// One day of the calendar that has something on it: the day log's headline scales, plus how many
@@ -384,18 +394,20 @@ public record CycleCalendarDay(
 /// reports <c>phase: { available: false, unavailableReason: "phase_engine_not_implemented" }</c> and
 /// no day row carries a <c>phase</c>, <c>cycleDay</c> or <c>confidence</c> key at all.
 ///
-/// <para>The other three are declared now and <b>reserved for P6</b>, deliberately: the codes reach
-/// the Flutter client through the generated contract, which P4a regenerates exactly once (T21), so
-/// declaring the full set here means P6 can start emitting them without a client-visible vocabulary
-/// change. They are a <b>P4a invention</b> (§G11), not part of the 2026-07-08 ratification block.
+/// <para>The other three are declared now and <b>reserved for P6</b>, deliberately: fixing the whole
+/// vocabulary up front is what stops P6 from inventing a fifth spelling of a reason P4a already had a
+/// word for. They are a <b>P4a invention</b> (§G11), not part of the 2026-07-08 ratification block.
 /// Append-only, like every other vocabulary in this codebase.</para>
 ///
-/// <para><b>T13 is what makes that true rather than aspirational.</b> A constant reaches the generated
-/// client only if a DTO carries it, and until <c>GET /cycle/calendar</c> shipped, this class had zero
-/// consumers and <c>phase_engine_not_implemented</c> appeared nowhere in
-/// <c>backend/contract/openapi.json</c>. <see cref="CyclePhaseAvailabilityResponse"/> is the DTO that
-/// carries it, and it declares the value as the schema default so the string is in the committed
-/// contract and not only in this file.</para>
+/// <para><b>These are BACKEND constants and none of them is exported to Dart.</b> The generated
+/// client's window into this vocabulary is
+/// <see cref="CyclePhaseAvailabilityResponse.UnavailableReason"/> — a plain nullable string — so P6
+/// emitting <see cref="TrackingPaused"/> is a change of value on a field the T21-generated client
+/// already binds, and needs no regeneration. That is the entire mechanism; the strings below reach no
+/// Dart symbol, and a client that wants to branch on one compares the literal it received. (The
+/// earlier claim that a schema <c>default</c> carried the code into the client was wrong twice over:
+/// a default is not an exported constant, and on a nullable member it makes the client unable to read
+/// <see langword="null"/> at all — see <see cref="CyclePhaseAvailabilityResponse.UnavailableReason"/>.)</para>
 /// </summary>
 public static class CyclePhaseAvailability
 {

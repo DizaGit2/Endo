@@ -145,14 +145,19 @@ public class OpenApiContractTests(LumenApiFactory factory) : IClassFixture<Lumen
     // --- T13: the §G6 phase envelope, and the absence of everything else phase-shaped -------------
 
     [Fact]
-    public async Task OpenApi_carries_the_phase_engine_not_implemented_code_into_the_contract()
+    public async Task OpenApi_calendar_200_documents_the_phase_availability_envelope()
     {
-        // The POINT of CyclePhaseAvailability is that P6 can start emitting real phase data without a
-        // client-visible vocabulary change — and a constant reaches the generated Dart client only if
-        // a DTO carries it into the contract. The Dart client is regenerated exactly once, in T21, so
-        // GET /cycle/calendar is the last chance to put this code there. Asserted on the emitted
-        // document rather than only on the committed snapshot, so deleting the attribute fails here
-        // instead of merely producing a snapshot diff somebody regenerates away.
+        // What actually buys P6 its freedom is that the FIELD EXISTS on the calendar's 200: a client
+        // generated in T21 against `{ available, unavailableReason }` binds any future reason code
+        // without being regenerated, because a new code is a value on an existing `string?`, not a
+        // schema change. So the contract obligation worth pinning is the envelope's SHAPE — asserted
+        // on the emitted document rather than only on the committed snapshot, so dropping the member
+        // fails here instead of producing a snapshot diff somebody regenerates away.
+        //
+        // The reason CODES are deliberately NOT asserted here: they are backend constants
+        // (CyclePhaseAvailability) with no representation in the generated Dart client, and the value
+        // P4a emits at runtime is pinned where it is actually produced — CycleCalendarServiceTests
+        // (unit) and CycleCalendarLiveTests (over real HTTP).
         using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
         var root = doc.RootElement;
 
@@ -169,13 +174,44 @@ public class OpenApiContractTests(LumenApiFactory factory) : IClassFixture<Lumen
         var phase = root.GetProperty("components").GetProperty("schemas")
             .GetProperty(phaseRef.Split('/')[^1]).GetProperty("properties");
 
-        phase.GetProperty("available").GetProperty("type").GetString().ShouldBe("boolean");
+        phase.TryGetProperty("available", out var available).ShouldBeTrue(
+            "the client branches on `phase.available`, so it must be in the contract");
+        available.GetProperty("type").GetString().ShouldBe("boolean");
 
-        phase.GetProperty("unavailableReason").TryGetProperty("default", out var reason).ShouldBeTrue(
-            "the §G6 reason code must reach the generated client through the CONTRACT, not just exist " +
-            "as a C# constant with no consumer — `unavailableReason` documents no value, so the " +
-            "[DefaultValue] on CyclePhaseAvailabilityResponse is gone");
-        reason.GetString().ShouldBe("phase_engine_not_implemented");
+        phase.TryGetProperty("unavailableReason", out var reason).ShouldBeTrue(
+            "`unavailableReason` existing is the whole mechanism: P6 emits a new code as a VALUE on " +
+            "this field, and a client generated in T21 reads it without regeneration. Remove the " +
+            "member and P6 becomes a breaking contract change.");
+        reason.GetProperty("type").GetString().ShouldBe("string");
+        reason.GetProperty("nullable").GetBoolean().ShouldBeTrue(
+            "`available: true` must be expressible with no reason, so the member is nullable");
+    }
+
+    [Fact]
+    public async Task OpenApi_unavailable_reason_declares_no_default_so_null_survives_into_the_client()
+    {
+        // A schema `default` on a NULLABLE member is a client-side lie in this toolchain. The pinned
+        // generator (openapi-generator-cli 7.11.0, dart-dio + built_value) turns a `default` into a
+        // builder default:
+        //
+        //     static void _defaults(CyclePhaseAvailabilityResponseBuilder b) => b
+        //         ..unavailableReason = 'phase_engine_not_implemented';
+        //
+        // and its deserializer SKIPS explicit nulls (`if (valueDes == null) continue;`). So a
+        // documented default here would mean the Dart client can NEVER observe null on this field —
+        // when P6 answers `{ "available": true, "unavailableReason": null }` (or omits the key) the
+        // client would still read "phase_engine_not_implemented", contradicting the DTO's own doc and
+        // the flag the client is told to branch on.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+
+        var phase = doc.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("CyclePhaseAvailabilityResponse").GetProperty("properties");
+
+        phase.GetProperty("unavailableReason").TryGetProperty("default", out _).ShouldBeFalse(
+            "a [DefaultValue] on the nullable UnavailableReason becomes a built_value builder default " +
+            "that an explicit null cannot clear — the client would read the P4a code forever. The " +
+            "reason codes belong on CyclePhaseAvailability (backend constants); the contract only owes " +
+            "the client the FIELD.");
     }
 
     [Fact]

@@ -341,7 +341,10 @@ public class VocabularyTests
     {
         // §G6/§G11: P4a ships zero clinical inference, so the calendar can only ever answer
         // `phase_engine_not_implemented`. The other three are declared now and reserved for P6 so
-        // the wire vocabulary the Dart client is generated against does not change under it later.
+        // that phase cannot invent a second spelling of a reason P4a already had a word for. These
+        // are BACKEND constants — none is exported to Dart; the generated client sees only the
+        // nullable `unavailableReason` string, which is what lets P6 emit a new code without a
+        // client regeneration.
         CyclePhaseAvailability.PhaseEngineNotImplemented.ShouldBe("phase_engine_not_implemented");
         CyclePhaseAvailability.TrackingPaused.ShouldBe("tracking_paused");
         CyclePhaseAvailability.InsufficientData.ShouldBe("insufficient_data");

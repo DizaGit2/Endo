@@ -196,7 +196,6 @@
             "type": "boolean"
           },
           "unavailableReason": {
-            "default": "phase_engine_not_implemented",
             "nullable": true,
             "type": "string"
           }
