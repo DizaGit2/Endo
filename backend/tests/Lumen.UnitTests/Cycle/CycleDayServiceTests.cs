@@ -13,13 +13,15 @@ namespace Lumen.UnitTests.Cycle;
 /// <see cref="CycleDayService"/> against the real model on Sqlite with the real
 /// <c>AesGcmFieldCipher</c> and a frozen clock.
 ///
-/// <para>Three facts here are load-bearing beyond this endpoint. <b>§G9:</b> <c>cycle_day_logs</c>
+/// <para>Four facts here are load-bearing beyond this endpoint. <b>§G9:</b> <c>cycle_day_logs</c>
 /// carries an UNFILTERED unique index on <c>(UserId, Day)</c>, so the upsert revives a tombstone
 /// rather than inserting a second row. <b>§G8:</b> this write is capped by the user's today and has
 /// <b>no backdate floor</b> — the floor is <c>cycle_events</c>-only, and applying it here would
 /// reject the historical logging D-13 explicitly permits. <b>D-08:</b> <c>pain = 0</c> is a real
 /// datum ("none today"), never "absent", so it must satisfy the "at least one field" rule and be
-/// stored as 0.</para>
+/// stored as 0. <b>MERGE:</b> this row has several writers, so an absent or <see langword="null"/>
+/// field is left unchanged — the opposite of <c>POST /cycle/events</c>, whose row has one writer and
+/// is a full upsert. The two rules sit side by side on their DTOs in <c>CycleContracts.cs</c>.</para>
 /// </summary>
 public sealed class CycleDayServiceTests : IDisposable
 {
@@ -257,32 +259,83 @@ public sealed class CycleDayServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task A_second_post_that_omits_a_field_CLEARS_it()
+    public async Task A_second_post_that_omits_a_field_LEAVES_IT_UNCHANGED()
     {
-        // FULL-UPSERT semantics, matching T9's LogCycleEventRequest: the body describes the row's
-        // desired FINAL state. `int?`/`string?` on a positional record cannot distinguish "absent"
-        // from "explicit null" under System.Text.Json, so there is no third state to express "leave
-        // this one alone" — POST /cycle/day/{date} is the day-detail screen submitting the whole day.
-        // POST /checkin/quick is the deliberate partial counterpart (see QuickCheckinServiceTests).
+        // MERGE semantics, and the opposite of T9's `POST /cycle/events` on purpose. `cycle_day_logs`
+        // is a MULTI-WRITER row: the quick check-in writes pain+mood, the day-detail form writes pain,
+        // mood and the note, and D-10's energy/libido land on it later. A body read as "the row's
+        // desired FINAL state" would let whichever screen posted last silently destroy what the other
+        // one recorded — the same wipe `POST /checkin/quick` was already special-cased to avoid.
+        // The cost is that P4a ships NO way to clear an individual field, which is an explicit,
+        // documented limitation (and matches screens 9 and 11, neither of which offers a clear
+        // affordance) rather than an invisible cross-surface data loss.
         await PostAsync(Request(pain: 8, mood: 1, notes: "mal día"));
 
         var result = await PostAsync(Request(mood: 4));
 
         var log = result.ShouldBeOfType<CycleDayResult.Saved>().Log;
         log.Mood.ShouldBe(4);
-        log.Pain.ShouldBeNull();
-        log.Notes.ShouldBeNull();
+        log.Pain.ShouldBe(8, "an omitted field is left alone, never cleared");
+        log.Notes.ShouldBe("mal día", "the 200 body echoes the stored row, not only what this request supplied");
         var row = StoredRow();
-        row.Pain.ShouldBeNull();
-        row.NotesEnc.ShouldBeNull();
+        row.Pain.ShouldBe((short)8);
+        row.NotesEnc.ShouldNotBeNull();
+        (await _harness.Crypto.DecryptStringAsync(row.NotesEnc!)).ShouldBe("mal día");
         AllDayLogCount().ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Posting_only_pain_leaves_every_other_column_another_writer_filled()
+    {
+        // The multi-writer survival case stated end to end, because it is the whole reason the rule
+        // is MERGE: one row, several surfaces, none of which re-sends the others' fields.
+        var notesEnc = await _harness.Crypto.EncryptStringAsync("cólicos leves");
+        _harness.SeedDayLog(
+            CycleTestHarness.Today,
+            pain: 2,
+            mood: CycleDayLog.MoodScale.Steady,
+            energy: 4,
+            libido: 2,
+            notesEnc: notesEnc);
+
+        var result = await PostAsync(Request(pain: 7));
+
+        var log = result.ShouldBeOfType<CycleDayResult.Saved>().Log;
+        log.Pain.ShouldBe(7, "the field the user supplied moves");
+        log.Mood.ShouldBe(CycleDayLog.MoodScale.Steady);
+        log.Notes.ShouldBe("cólicos leves");
+        var row = StoredRow();
+        row.Mood.ShouldBe(CycleDayLog.MoodScale.Steady);
+        row.Energy.ShouldBe((short)4);
+        row.Libido.ShouldBe((short)2);
+        (await _harness.Crypto.DecryptStringAsync(row.NotesEnc!)).ShouldBe("cólicos leves");
+        AllDayLogCount().ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_second_post_of_pain_zero_overwrites_the_stored_pain_because_zero_is_SUPPLIED()
+    {
+        // D-08 gets SHARPER under merge, not softer. "Absent means leave alone" has to be tested with
+        // `is null` and never with falsiness: `pain: 0` is a supplied datum ("none today") and must
+        // overwrite this morning's 8, while everything the request did not name survives. A
+        // `row.Pain = request.Pain ?? row.Pain` written over a truthiness check would keep every other
+        // test in this file green and lose exactly this value.
+        await PostAsync(Request(pain: 8, mood: 2));
+
+        var result = await PostAsync(Request(pain: 0));
+
+        var log = result.ShouldBeOfType<CycleDayResult.Saved>().Log;
+        log.Pain.ShouldBe(0, "0 is a supplied value, not an absence");
+        log.Mood.ShouldBe(2, "and it is the only field this request supplied");
+        StoredRow().Pain.ShouldBe((short)0);
     }
 
     [Fact]
     public async Task The_full_form_never_touches_the_deferred_energy_and_libido_columns()
     {
-        // D-10 defers both scales: there is no DTO field, so a full upsert must leave whatever is in
-        // those columns alone rather than "completing" the row with nulls.
+        // D-10 defers both scales: there is no DTO field at all, so neither write path may "complete"
+        // the row with nulls. Distinct from the merge rule above — a field that cannot be sent is a
+        // stronger guarantee than a field that may be omitted.
         _harness.SeedDayLog(CycleTestHarness.Today, energy: 3, libido: 2);
 
         await PostAsync(Request(pain: 5));

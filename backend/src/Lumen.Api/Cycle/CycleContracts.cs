@@ -14,9 +14,21 @@ namespace Lumen.Api.Cycle;
 /// <summary>
 /// Body of <c>POST /cycle/events</c> — an upsert keyed on <c>(user, kind, occurredOn)</c>, not an
 /// append. Re-posting the same kind and day updates that one row (which is what makes the
-/// online-only client's retry safe), so every member describes the row's desired final state: a
-/// <see langword="null"/> <see cref="Notes"/> or <see cref="FlowIntensity"/> clears the stored value
-/// rather than leaving it alone.
+/// online-only client's retry safe).
+///
+/// <para><b>FULL-UPSERT semantics — one of the two write rules in this phase.</b> Every member
+/// describes the row's desired FINAL state: a <see langword="null"/> <see cref="Notes"/> or
+/// <see cref="FlowIntensity"/> <b>clears</b> the stored value rather than leaving it alone. That is
+/// safe here and only here, because <c>cycle_events</c> is a <b>single-writer, small row</b> — one
+/// screen (screen 10/11's period controls) owns all four fields and always submits them together, so
+/// the body genuinely does describe the row's whole state, and clearing is the only way the user can
+/// take a flow level back off an event.</para>
+///
+/// <para><b>The other rule is on <see cref="LogCycleDayRequest"/> (<c>POST /cycle/day/{date}</c>),
+/// which MERGES</b> — an omitted field there is left alone. The two are deliberately different and
+/// the difference is invisible in the generated Dart client (both are nullable members on a
+/// <c>built_value</c> class), so it is stated on both DTOs rather than in one place. The deciding
+/// question is not the HTTP verb, it is <b>how many surfaces write the row</b>.</para>
 /// </summary>
 /// <param name="Kind">One of the three ratified cycle-event kinds (§G10).</param>
 /// <param name="OccurredOn">
@@ -58,26 +70,35 @@ public record CycleEventResponse(
 /// Body of <c>POST /cycle/day/{date}</c> (screen 11, day detail) — the one-row-per-day upsert of
 /// D-11. The day itself is the route parameter, never a field here.
 ///
-/// <para><b>FULL-UPSERT semantics, exactly like <see cref="LogCycleEventRequest"/>: every member
-/// describes the row's desired FINAL state, so an omitted field CLEARS the stored value rather than
-/// leaving it alone.</b> There is no third state available to express "leave this one alone":
+/// <para><b>MERGE semantics — the other of the two write rules in this phase, and the opposite of
+/// <see cref="LogCycleEventRequest"/>. An absent or <see langword="null"/> member leaves the stored
+/// value UNCHANGED; only a supplied value writes.</b> <c>cycle_day_logs</c> is a <b>multi-writer
+/// row</b>: <c>POST /checkin/quick</c> writes pain and mood, this endpoint writes pain, mood and the
+/// note, and D-10's <c>energy</c>/<c>libido</c> scales land on the same row later. Under full-upsert,
+/// any screen that posted without re-sending every field would silently destroy what the user entered
+/// on another screen — which is exactly why the check-in had to be special-cased as partial in the
+/// first place. Merging makes the two consistent instead of leaving one endpoint as the exception.</para>
+///
+/// <para><b>The documented cost: P4a ships no way to clear an individual field.</b>
 /// <c>int?</c>/<c>string?</c> on a positional record cannot distinguish an absent property from an
-/// explicit <c>null</c> under <c>System.Text.Json</c>, and inventing a wrapper type to do so would
-/// put an <c>Optional&lt;T&gt;</c> in the generated Dart client for a distinction the day-detail
-/// screen does not make — it submits the whole day. <b><c>POST /checkin/quick</c> is the deliberate
-/// partial counterpart</b> and is the endpoint to use when only pain or mood changed; it never
-/// clears a note this one wrote.</para>
+/// explicit <c>null</c> under <c>System.Text.Json</c> (and <c>built_value</c> omits nulls on the
+/// wire), so "leave alone" and "clear" cannot both be expressed without an <c>Optional&lt;T&gt;</c>
+/// wrapper in the generated Dart client. Screens 9 and 11 offer no clear affordance, so nothing is
+/// lost today — and a limitation the user can see beats a wipe they cannot. A blank or whitespace-only
+/// <see cref="Notes"/> is absent text, not an erase instruction.</para>
 ///
 /// <para>The two columns this DTO does <i>not</i> expose — <c>energy</c> and <c>libido</c> — are
-/// untouched by either endpoint. D-10 defers both scales, so P4a has no writer for them at all
-/// (§D), and "final state" means the final state of the fields below, not of the row.</para>
+/// untouched by either endpoint for a stronger reason still: D-10 defers both scales, so P4a has no
+/// writer for them at all (§D).</para>
 ///
 /// <para>At least one of <see cref="Pain"/>, <see cref="Mood"/> and <see cref="Notes"/> must be
-/// present, so an empty body can never blank a day by accident.</para>
+/// present: under merge an empty body would be a pure no-op that still stamped <c>updatedAt</c> and
+/// revived a tombstone, so it is a 400 rather than a silently successful write of nothing.</para>
 /// </summary>
 /// <param name="Pain">
 /// Headline pain on the 0–10 NRS-11 scale (D-08). <b>0 is a real datum</b> ("none today"): it
-/// satisfies the at-least-one rule and is stored as 0. Only <see langword="null"/> is "not recorded".
+/// satisfies the at-least-one rule, and because it is <i>supplied</i> it overwrites a stored value
+/// like any other. Only <see langword="null"/> means "leave whatever is recorded alone".
 /// </param>
 /// <param name="Mood">Mood on the 1–4 scale {low, tired, steady, bright} (§G10).</param>
 /// <param name="Notes">Optional free text, ≤ 2000 characters after trimming (D-13). Stored encrypted.</param>

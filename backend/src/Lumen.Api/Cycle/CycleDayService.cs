@@ -42,11 +42,18 @@ namespace Lumen.Api.Cycle;
 /// a well user taps. Only <see langword="null"/> means "not recorded", so every check below tests
 /// <c>is null</c> and never falsiness.</para>
 ///
-/// <para><b>6. The two write paths differ on purpose.</b> <see cref="UpsertDayAsync"/> is a FULL
-/// upsert — the day-detail screen submits the whole day, so an omitted field clears (matching T9's
-/// <see cref="CycleService.LogEventAsync"/>). <see cref="QuickCheckinAsync"/> is PARTIAL — the sheet
-/// only ever offers pain and mood, so it writes only what the user supplied and never touches the
-/// note. Neither writes <c>Energy</c>/<c>Libido</c> (D-10 defers both scales) and neither writes a
+/// <para><b>6. Both write paths MERGE, and that is the opposite of T9.</b> <c>cycle_day_logs</c> is a
+/// <b>multi-writer row</b>: <see cref="QuickCheckinAsync"/> writes pain and mood, <see cref="UpsertDayAsync"/>
+/// writes pain, mood and the note, and D-10's energy/libido scales land on it later. So on both, an
+/// absent or <see langword="null"/> field <b>leaves the stored value unchanged</b> and only a supplied
+/// value writes. Reading either body as "the row's desired final state" would let whichever screen
+/// posted last silently destroy what the other one recorded — an invisible cross-surface wipe, where
+/// the cost of merging is only that <b>P4a ships no way to clear an individual field</b>, an explicit
+/// and documented limitation matching screens 9 and 11 (neither offers a clear affordance).
+/// <see cref="CycleService.LogEventAsync"/> (<c>POST /cycle/events</c>) is the deliberate contrast: a
+/// single-writer row whose body genuinely does describe its whole state, so an omitted field there
+/// clears. Both rules are stated side by side on their DTOs in <c>CycleContracts.cs</c>. Neither path
+/// here writes <c>Energy</c>/<c>Libido</c> — no DTO carries them at all (D-10) — and neither writes a
 /// <c>symptoms</c> row (D-11: classified episodes come from the full form, T11).</para>
 /// </remarks>
 public sealed class CycleDayService(LumenDbContext db, IUserDayContext dayContext, IUserCryptoContext crypto)
@@ -94,10 +101,24 @@ public sealed class CycleDayService(LumenDbContext db, IUserDayContext dayContex
             var row = await ResolveRowAsync(day.UserId, date, now, token);
 
             row.DeletedAt = null; // revive in place: same Id, original CreatedAt
-            // FULL upsert: an omitted field is an explicit null on the wire and clears the column.
-            row.Pain = ToScale(request.Pain);
-            row.Mood = ToScale(request.Mood);
-            row.NotesEnc = notesEnc;
+            // MERGE: only a supplied value writes (see remark 6). A blank or whitespace-only note is
+            // absent text, not an instruction to erase — the same rule the at-least-one check applies.
+            MergeScales(row, request.Pain, request.Mood);
+
+            string? storedNotes;
+            if (notesEnc is not null)
+            {
+                row.NotesEnc = notesEnc;
+                storedNotes = notes;
+            }
+            else
+            {
+                // The 200 body is the STORED row, so an unsupplied note is echoed from the column
+                // rather than reported as null — reporting null would render the day as note-less on
+                // the very screen that wrote the note, which is the read half of the same wipe.
+                storedNotes = await DecryptAsync(row.NotesEnc, token);
+            }
+
             row.UpdatedAt = now;
             // Energy/Libido are deliberately absent: no DTO, no writer (D-10).
 
@@ -107,7 +128,7 @@ public sealed class CycleDayService(LumenDbContext db, IUserDayContext dayContex
                 row.Day,
                 row.Pain,
                 row.Mood,
-                notes is { Length: > 0 } ? notes : null,
+                storedNotes,
                 row.CreatedAt,
                 row.UpdatedAt));
         }, ct);
@@ -144,11 +165,11 @@ public sealed class CycleDayService(LumenDbContext db, IUserDayContext dayContex
             var row = await ResolveRowAsync(day.UserId, day.Today, now, token);
 
             row.DeletedAt = null;
-            // PARTIAL write: only the supplied fields move. Tapping the mood chip must not erase this
-            // morning's pain score, and nothing here may touch NotesEnc/Energy/Libido — the note on
-            // the day-detail screen belongs to a different write and must survive this one.
-            if (request.Pain is { } pain) row.Pain = (short)pain;
-            if (request.Mood is { } mood) row.Mood = (short)mood;
+            // MERGE, exactly as on the full form: only the supplied fields move. Tapping the mood chip
+            // must not erase this morning's pain score, and nothing here may touch NotesEnc/Energy/
+            // Libido — the note on the day-detail screen belongs to a different write and must survive
+            // this one. The sheet offers no note field, so this path never has one to merge.
+            MergeScales(row, request.Pain, request.Mood);
             row.UpdatedAt = now;
 
             await db.SaveChangesAsync(token);
@@ -279,7 +300,21 @@ public sealed class CycleDayService(LumenDbContext db, IUserDayContext dayContex
         }
     }
 
-    private static short? ToScale(int? value) => value is { } number ? (short)number : null;
+    /// <summary>
+    /// Merges the two scales onto the row: a supplied value writes, an absent one is left alone.
+    /// Shared by both write paths so the endpoints cannot drift apart on the rule.
+    /// </summary>
+    /// <remarks>
+    /// <c>is { }</c> and never a falsiness test: <c>pain = 0</c> is a supplied datum (D-08) and must
+    /// overwrite a stored 8, while <see langword="null"/> alone means "not recorded". A
+    /// <c>?? row.Pain</c> written over a truthiness check would look identical and silently drop every
+    /// pain-free day out of the series P6 reads.
+    /// </remarks>
+    private static void MergeScales(CycleDayLog row, int? pain, int? mood)
+    {
+        if (pain is { } painValue) row.Pain = (short)painValue;
+        if (mood is { } moodValue) row.Mood = (short)moodValue;
+    }
 
     private async Task<string?> DecryptAsync(byte[]? blob, CancellationToken ct) =>
         blob is { Length: > 0 } ? await crypto.DecryptStringAsync(blob, ct) : null;

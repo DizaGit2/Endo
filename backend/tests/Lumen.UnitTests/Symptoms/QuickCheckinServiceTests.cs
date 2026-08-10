@@ -202,8 +202,8 @@ public sealed class QuickCheckinServiceTests : IDisposable
     public async Task An_omitted_field_is_left_unchanged_rather_than_cleared()
     {
         // The partial half of the contract, stated on its own: tapping only the mood chip must not
-        // erase this morning's pain score. This is the documented difference from
-        // POST /cycle/day/{date}, where an omitted field DOES clear.
+        // erase this morning's pain score. POST /cycle/day/{date} merges too (both write the same
+        // multi-writer row); the endpoint that genuinely replaces its row is POST /cycle/events.
         await CheckinAsync(pain: 6, mood: CycleDayLog.MoodScale.Low);
 
         var result = await CheckinAsync(mood: CycleDayLog.MoodScale.Bright);

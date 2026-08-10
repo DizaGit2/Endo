@@ -235,6 +235,76 @@ public class CycleDayLiveTests(LumenApiFactory factory) : IClassFixture<LumenApi
         }
     }
 
+    // --- MERGE semantics on POST /cycle/day/{date} -------------------------------------------------
+
+    [Fact]
+    public async Task A_pain_only_day_post_leaves_the_mood_note_energy_and_libido_another_writer_filled()
+    {
+        // The unit suite constructs `LogCycleDayRequest` directly, so it can only prove that a null
+        // member merges. THIS proves the rule the client actually exercises: `built_value` omits nulls,
+        // so the fields below are genuinely ABSENT from the JSON on the wire, and they still must not
+        // clear the row. `cycle_day_logs` is written by the day-detail form, by the quick check-in and
+        // (once D-10 lifts) by the energy/libido scales — under full-upsert, any screen posting
+        // without re-sending every field would silently destroy the others' data.
+        Guid userId = default;
+        try
+        {
+            (userId, var token) = await OnboardAndLoginAsync($"day-merge-{Guid.NewGuid():N}@example.com");
+            var authed = Authed(token);
+
+            (await authed.PostAsJsonAsync($"/cycle/day/{Day()}", new { pain = 2, mood = 3, notes = Note }))
+                .StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            // Energy/libido have no writer in P4a (D-10 defers both scales), so they are seeded
+            // directly — they stand in for any future writer of a column this DTO does not carry.
+            await using (var seed = TestFixtures.NewDb())
+            {
+                var row = await seed.CycleDayLogs.SingleAsync(l => l.UserId == userId);
+                row.Energy = 4;
+                row.Libido = 2;
+                await seed.SaveChangesAsync();
+            }
+
+            var painOnly = await authed.PostAsJsonAsync($"/cycle/day/{Day()}", new { pain = 7 });
+            painOnly.StatusCode.ShouldBe(HttpStatusCode.OK);
+            var body = await painOnly.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("pain").GetInt32().ShouldBe(7);
+            body.GetProperty("mood").GetInt32().ShouldBe(3, "an omitted field is left alone");
+            body.GetProperty("notes").GetString().ShouldBe(Note, "the 200 body echoes the stored row");
+
+            await using var db = TestFixtures.NewDb();
+            var after = await db.CycleDayLogs.AsNoTracking().SingleAsync(l => l.UserId == userId);
+            after.Pain.ShouldBe((short)7);
+            after.Mood.ShouldBe((short)3, "mood survived a post that did not name it");
+            after.Energy.ShouldBe((short)4, "energy survived");
+            after.Libido.ShouldBe((short)2, "libido survived");
+            after.NotesEnc.ShouldNotBeNull("the note survived");
+            (await db.CycleDayLogs.IgnoreQueryFilters().CountAsync(l => l.UserId == userId)).ShouldBe(1);
+
+            // And the read agrees with the columns.
+            var read = await authed.GetAsync($"/cycle/day/{Day()}");
+            var log = (await read.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("log");
+            log.GetProperty("pain").GetInt32().ShouldBe(7);
+            log.GetProperty("mood").GetInt32().ShouldBe(3);
+            log.GetProperty("notes").GetString().ShouldBe(Note);
+
+            // D-08 under merge: `pain: 0` is SUPPLIED and overwrites the 7; the rest still survives.
+            var zero = await authed.PostAsJsonAsync($"/cycle/day/{Day()}", new { pain = 0 });
+            zero.StatusCode.ShouldBe(HttpStatusCode.OK);
+            (await zero.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("pain").GetInt32().ShouldBe(0);
+
+            await using var dbZero = TestFixtures.NewDb();
+            var zeroed = await dbZero.CycleDayLogs.AsNoTracking().SingleAsync(l => l.UserId == userId);
+            zeroed.Pain.ShouldBe((short)0, "0 is a datum, never 'not supplied'");
+            zeroed.Mood.ShouldBe((short)3);
+            zeroed.NotesEnc.ShouldNotBeNull();
+        }
+        finally
+        {
+            if (userId != default) await CleanupAsync(userId);
+        }
+    }
+
     // --- tenant isolation --------------------------------------------------------------------------
 
     [Fact]
