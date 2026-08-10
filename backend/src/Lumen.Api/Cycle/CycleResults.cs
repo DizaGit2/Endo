@@ -100,7 +100,7 @@ public abstract record CycleCalendarResult
     /// <summary>The window was read — possibly empty. → 200.</summary>
     public sealed record Found(CycleCalendarResponse Calendar) : CycleCalendarResult;
 
-    /// <summary>The window was inverted or wider than <see cref="CycleCalendarWindow.MaxDays"/>. → 400.</summary>
+    /// <summary>The window was inverted or wider than <see cref="Validation.ReadWindow.MaxDays"/>. → 400.</summary>
     public sealed record Invalid(IReadOnlyList<CycleFieldError> Errors) : CycleCalendarResult;
 
     /// <summary>

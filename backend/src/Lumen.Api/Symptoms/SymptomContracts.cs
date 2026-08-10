@@ -321,6 +321,14 @@ public record SymptomResponse(
 /// scan rather than a per-row timezone conversion. A <c>to</c> in the <i>future</i> is legitimate here
 /// and only here: every WRITE in this phase is capped by today, but a calendar shows the rest of the
 /// month and rejecting that would make the client clamp the window it had just rendered.
+///
+/// <para><b>The span is capped at <see cref="Validation.ReadWindow.MaxDays"/> days (§G11), the same
+/// cap and the same <see cref="Validation.ValidationMessages.MaxWindowDays"/> wire string
+/// <c>GET /cycle/calendar</c> uses (T13).</b> A defect fix, not part of T12's original shipment: the
+/// D-13 <see cref="SymptomPaging"/> bounds page <see cref="Items"/>, but <see cref="Total"/> came from
+/// an unbounded <c>COUNT(*)</c> over whatever window the caller supplied — a wide-open date range was a
+/// full-table count per request on an authenticated endpoint, and the page cap never touched it. The
+/// two windowed reads now state the rule once rather than risk answering it differently.</para>
 /// </remarks>
 /// <param name="Items">
 /// The page, ordered by <c>occurredAt</c> descending with the row id as a tiebreak. That tiebreak is

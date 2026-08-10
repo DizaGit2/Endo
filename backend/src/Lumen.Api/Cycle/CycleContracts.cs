@@ -229,44 +229,19 @@ public static class CycleValidationMessages
     /// </summary>
     public const string DayLogEmpty = "at least one of pain, mood or notes is required";
 
-    /// <summary>
-    /// A <c>GET /cycle/calendar</c> window spanned more than <see cref="CycleCalendarWindow.MaxDays"/>
-    /// days. Reported on <c>to</c>, the same key as
-    /// <see cref="Validation.ValidationMessages.RangeEndBeforeStart"/>, so the client attaches both
-    /// window faults to one input and can clamp the far bound to fix either.
-    /// </summary>
-    /// <remarks>
-    /// Parameterised for the same reason as <see cref="Validation.ValidationMessages.Between"/>: the
-    /// bound is stated inside the sentence, and taking it from the constant is what keeps the two from
-    /// drifting apart silently.
-    /// </remarks>
-    public static string MaxWindowDays(int max) =>
-        // Invariant: a wire string must not vary with the server's thread culture.
-        FormattableString.Invariant($"the range must not exceed {max} days");
+    // `MaxWindowDays` lived here until the T12 defect fix, when `GET /symptoms` became the second
+    // windowed read to need the same 366-day cap. It now lives on
+    // `Validation.ValidationMessages.MaxWindowDays` — the shared home for a message more than one
+    // feature genuinely uses — with the identical literal, so nothing on the wire changed. See
+    // `Validation.ReadWindow` for the constant it used to pair with here.
 }
 
-/// <summary>
-/// The size bound of one <c>GET /cycle/calendar</c> window. <b>A P4a INVENTION (§G11)</b>, recorded
-/// here and in the T22 STATUS block so a later phase does not mistake 366 for a ratified clinical or
-/// product number: it bounds a query, and it means nothing else.
-/// </summary>
-/// <remarks>
-/// <b>This is a bounded DATE WINDOW, not the D-13 50/100 offset page</b> — the reading matters,
-/// because it is why <c>GET /cycle/calendar</c> takes no <c>limit</c>/<c>offset</c> and does not touch
-/// <see cref="Symptoms.SymptomPaging"/>. The response is one sparse row per day that has something on
-/// it, so the window itself is the only thing that can make it large, and a cap on the window is a cap
-/// on the response. Offset paging over a calendar would additionally be meaningless to the screens
-/// that call it: screens 8 and 10 render a whole month or nothing.
-///
-/// <para>366 rather than 365 so a leap year's complete calendar still fits in one request. The cap is
-/// inclusive and both ends of the window count toward it, so the widest legal window is
-/// <c>from + 365</c>.</para>
-/// </remarks>
-public static class CycleCalendarWindow
-{
-    /// <summary>The inclusive ceiling in days: a 366-day window is accepted, a 367-day one is a 400.</summary>
-    public const int MaxDays = 366;
-}
+// `CycleCalendarWindow` lived here until the T12 defect fix, when `GET /symptoms` became the second
+// windowed read to need the same 366-day cap. The constant now lives on `Validation.ReadWindow.MaxDays`
+// — the shared home for a bound more than one feature genuinely uses, the same rule that hoisted
+// `Validation.FieldLimits.MaxNotesLength`. Still a bounded DATE WINDOW, not the D-13 50/100 offset page:
+// `GET /cycle/calendar` takes no `limit`/`offset` and does not touch `Symptoms.SymptomPaging` — the
+// response is one sparse row per day, so the window itself is the only thing that can make it large.
 
 /// <summary>
 /// The 200 body of <c>GET /cycle/calendar?from&amp;to</c> — the bounded, <b>sparse</b> aggregation

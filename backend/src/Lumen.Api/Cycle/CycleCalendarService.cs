@@ -88,11 +88,12 @@ public sealed class CycleCalendarService(LumenDbContext db, IUserDayContext dayC
         {
             errors.Add(new CycleFieldError("to", ValidationMessages.RangeEndBeforeStart));
         }
-        else if (windowEnd.DayNumber - windowStart.DayNumber + 1 > CycleCalendarWindow.MaxDays)
+        else if (windowEnd.DayNumber - windowStart.DayNumber + 1 > ReadWindow.MaxDays)
         {
             // §G11 — a P4a INVENTION, and a bounded DATE WINDOW rather than the D-13 50/100 offset
-            // page. See CycleCalendarWindow for why this read is not paginated at all.
-            errors.Add(new CycleFieldError("to", CycleValidationMessages.MaxWindowDays(CycleCalendarWindow.MaxDays)));
+            // page. Shared with GET /symptoms (T12 defect fix) via Validation.ReadWindow — this read
+            // still takes no limit/offset of its own.
+            errors.Add(new CycleFieldError("to", ValidationMessages.MaxWindowDays(ReadWindow.MaxDays)));
         }
 
         if (errors.Count > 0) return new CycleCalendarResult.Invalid(errors);

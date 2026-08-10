@@ -215,7 +215,7 @@ public sealed class CycleCalendarServiceTests : IDisposable
         // The cap is INCLUSIVE and both ends of the window count, so the widest legal window is
         // `from + 365`. 366 rather than 365 so a leap year's full calendar fits in one request.
         var from = new DateOnly(2026, 1, 1);
-        var to = from.AddDays(CycleCalendarWindow.MaxDays - 1);
+        var to = from.AddDays(ReadWindow.MaxDays - 1);
 
         var calendar = Found(await GetAsync(from: from, to: to));
 
@@ -227,12 +227,12 @@ public sealed class CycleCalendarServiceTests : IDisposable
     public async Task A_window_of_367_days_is_rejected()
     {
         var from = new DateOnly(2026, 1, 1);
-        var to = from.AddDays(CycleCalendarWindow.MaxDays);
+        var to = from.AddDays(ReadWindow.MaxDays);
 
         var result = await GetAsync(from: from, to: to);
 
         MessagesFor(result, "to")
-            .ShouldBe([CycleValidationMessages.MaxWindowDays(CycleCalendarWindow.MaxDays)]);
+            .ShouldBe([ValidationMessages.MaxWindowDays(ReadWindow.MaxDays)]);
     }
 
     [Fact]
@@ -250,15 +250,20 @@ public sealed class CycleCalendarServiceTests : IDisposable
     {
         // §G11: a P4a INVENTION, recorded here and in the T22 STATUS block so a later phase does not
         // mistake it for a ratified clinical or product number. Asserted against the literal (§G12).
-        CycleCalendarWindow.MaxDays.ShouldBe(366);
+        // `Validation.ReadWindow.MaxDays` — shared with GET /symptoms since the T12 defect fix, which
+        // is why this is the ONE place both callers' cap is pinned against the number, not two.
+        ReadWindow.MaxDays.ShouldBe(366);
     }
 
     [Fact]
     public void The_window_messages_are_frozen()
     {
-        // Wire strings the Flutter client renders verbatim.
+        // Wire strings the Flutter client renders verbatim. `MaxWindowDays` is shared with GET
+        // /symptoms since the T12 defect fix (Validation.ValidationMessages, T13's original home was
+        // Cycle-local) — this is the ONE frozen assertion for it, extended rather than duplicated in
+        // SymptomListServiceTests per §G12.
         ValidationMessages.RangeEndBeforeStart.ShouldBe("date must not be before the start of the range");
-        CycleValidationMessages.MaxWindowDays(366).ShouldBe("the range must not exceed 366 days");
+        ValidationMessages.MaxWindowDays(366).ShouldBe("the range must not exceed 366 days");
     }
 
     // --- sparse rows: only days that have something ---------------------------------------------

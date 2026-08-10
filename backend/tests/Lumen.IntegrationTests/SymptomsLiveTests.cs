@@ -238,6 +238,41 @@ public class SymptomsLiveTests(LumenApiFactory factory) : IClassFixture<LumenApi
         }
     }
 
+    // --- the §G11 window cap, at both boundaries — shared with GET /cycle/calendar (T13) --------------
+
+    [Fact]
+    public async Task A_366_day_window_is_accepted_and_a_367_day_one_is_the_shared_400()
+    {
+        Guid userId = default;
+        try
+        {
+            (userId, var token) = await OnboardAndLoginAsync($"sym-cap-{Guid.NewGuid():N}@example.com");
+            var authed = Authed(token);
+
+            // 366 days inclusive: from + 365.
+            (await authed.GetAsync($"/symptoms?from={Day(-365)}&to={Day()}"))
+                .StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            var tooWide = await authed.GetAsync($"/symptoms?from={Day(-366)}&to={Day()}");
+            tooWide.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            tooWide.Content.Headers.ContentType!.MediaType.ShouldBe("application/problem+json");
+            var problem = await tooWide.Content.ReadFromJsonAsync<JsonElement>();
+            problem.GetProperty("detail").GetString().ShouldBe("The request contained invalid data.");
+            problem.GetProperty("errors").GetProperty("to")[0].GetString()
+                .ShouldBe("the range must not exceed 366 days", "the SAME wire string GET /cycle/calendar uses");
+
+            var inverted = await authed.GetAsync($"/symptoms?from={Day()}&to={Day(-1)}");
+            inverted.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            (await inverted.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("errors").GetProperty("to")[0].GetString()
+                .ShouldBe("date must not be before the start of the range");
+        }
+        finally
+        {
+            if (userId != default) await CleanupAsync(userId);
+        }
+    }
+
     // --- paging over rows that share one instant (the D-09 normal case) ------------------------------
 
     [Fact]

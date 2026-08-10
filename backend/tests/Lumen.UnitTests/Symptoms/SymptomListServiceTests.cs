@@ -137,6 +137,49 @@ public sealed class SymptomListServiceTests : IDisposable
         page.Total.ShouldBe(1);
     }
 
+    // --- the §G11 366-day window cap, shared with GET /cycle/calendar (T13) -----------------------
+    //
+    // T12 shipped no cap at all: `total` came from an unbounded `CountAsync` over whatever window the
+    // caller supplied, so `?from=1900-01-01&to=2100-01-01` ran a full-table COUNT(*) per request on an
+    // authenticated endpoint — the D-13 50/100 page cap does not bound `total`. T13 identified this as
+    // a defect (not a mere inconsistency) rather than repeat it for `GET /cycle/calendar`, this closes
+    // it: both windowed reads now share the ONE `ReadWindow.MaxDays` ceiling and the ONE
+    // `ValidationMessages.MaxWindowDays` wire string.
+
+    [Fact]
+    public async Task A_window_of_exactly_366_days_is_accepted()
+    {
+        // The cap is INCLUSIVE and both ends of the window count, so the widest legal window is
+        // `from + 365`. 366 rather than 365 so a leap year's full calendar fits in one request.
+        var from = new DateOnly(2026, 1, 1);
+        var to = from.AddDays(ReadWindow.MaxDays - 1);
+
+        var result = await ListAsync(from: from, to: to);
+
+        result.ShouldBeOfType<SymptomListResult.Found>();
+    }
+
+    [Fact]
+    public async Task A_window_of_367_days_is_rejected()
+    {
+        var from = new DateOnly(2026, 1, 1);
+        var to = from.AddDays(ReadWindow.MaxDays);
+
+        var result = await ListAsync(from: from, to: to);
+
+        MessagesFor(result, "to").ShouldBe([ValidationMessages.MaxWindowDays(ReadWindow.MaxDays)]);
+    }
+
+    [Fact]
+    public async Task An_inverted_window_is_reported_as_inverted_and_not_also_as_too_long()
+    {
+        // A negative span is not a 400,000-day one. Reporting both would give the client two messages
+        // on one field, only one of which is actionable (the same `else if` cascade as T13's).
+        var result = await ListAsync(from: new DateOnly(2026, 8, 1), to: new DateOnly(2020, 1, 1));
+
+        MessagesFor(result, "to").ShouldBe([ValidationMessages.RangeEndBeforeStart]);
+    }
+
     // --- pagination: D-13's 50 / 1 / 100, and NEVER a silent clamp --------------------------------
 
     [Fact]
@@ -384,4 +427,11 @@ public sealed class SymptomListServiceTests : IDisposable
         // the literal is unchanged, which is what this assertion proves.
         ValidationMessages.RangeEndBeforeStart.ShouldBe("date must not be before the start of the range");
     }
+
+    // NOTE: the `MaxWindowDays` wire string this endpoint's 366-day cap uses was already frozen against
+    // its literal in `CycleCalendarServiceTests.The_window_messages_are_frozen` (T13). This endpoint
+    // reuses that exact message via the same `ValidationMessages.MaxWindowDays`/`ReadWindow.MaxDays`
+    // symbols rather than inventing a second literal, so per §G12 that one frozen assertion is extended
+    // (not duplicated) to cover both callers — see the comment there. `SymptomsLiveTests` separately
+    // pins the literal over real HTTP for this endpoint specifically.
 }

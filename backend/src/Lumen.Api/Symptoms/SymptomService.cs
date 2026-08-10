@@ -209,6 +209,15 @@ public sealed class SymptomService(
             errors.Add(new SymptomFieldError("to", ValidationMessages.Required));
         else if (from is { } start && to is { } end && end < start)
             errors.Add(new SymptomFieldError("to", ValidationMessages.RangeEndBeforeStart));
+        else if (from is { } rangeStart && to is { } rangeEnd &&
+                 rangeEnd.DayNumber - rangeStart.DayNumber + 1 > ReadWindow.MaxDays)
+        {
+            // §G11 — a P4a INVENTION, shared with GET /cycle/calendar (T13) via Validation.ReadWindow.
+            // The defect this closes: `total` came from an unbounded CountAsync over whatever window
+            // the caller supplied, so `?from=1900-01-01&to=2100-01-01` ran a full-table COUNT(*) per
+            // request on an authenticated endpoint — the D-13 50/100 page cap never bounded that.
+            errors.Add(new SymptomFieldError("to", ValidationMessages.MaxWindowDays(ReadWindow.MaxDays)));
+        }
 
         var pageSize = limit ?? SymptomPaging.DefaultLimit;
         if (pageSize < SymptomPaging.MinLimit || pageSize > SymptomPaging.MaxLimit)

@@ -75,6 +75,22 @@ public static class ValidationMessages
     public const string RangeEndBeforeStart = "date must not be before the start of the range";
 
     /// <summary>
+    /// A windowed read's span exceeded <see cref="ReadWindow.MaxDays"/>. Reported on the same key as
+    /// <see cref="RangeEndBeforeStart"/> wherever a caller uses it (<c>to</c>, the far bound), so the
+    /// client attaches both window faults to one input and can clamp it to fix either.
+    /// </summary>
+    /// <remarks>
+    /// Parameterised for the same reason as <see cref="Between"/>: the bound is stated inside the
+    /// sentence, and taking it from the constant is what keeps the two from drifting apart silently.
+    /// Hoisted out of <c>Cycle.CycleValidationMessages</c> (T13's original home) in the T12 defect fix
+    /// that gave <c>GET /symptoms</c> the same 366-day cap <c>GET /cycle/calendar</c> already had — the
+    /// literal is unchanged, so nothing on the wire moved.
+    /// </remarks>
+    public static string MaxWindowDays(int max) =>
+        // Invariant: a wire string must not vary with the server's thread culture.
+        FormattableString.Invariant($"the range must not exceed {max} days");
+
+    /// <summary>
     /// The request could not be bound at all — unparseable JSON, a route/query value of the wrong
     /// type, a missing required parameter. Emitted only by <see cref="ProblemExceptionHandler"/>,
     /// under <see cref="ValidationProblemBuilder.RequestKey"/>. Intentionally vague: the framework's

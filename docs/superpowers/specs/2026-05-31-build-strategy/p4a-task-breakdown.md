@@ -121,7 +121,7 @@ Canonical **display labels** (i18n source strings, B16 / §A:61) live in one sha
 
 ### G11. Values P4a **invents** (nothing else may be invented)
 
-Recorded here and in the T22 STATUS block so a later phase does not mistake them for ratified: calendar read window **≤ 366 days**; `POST /symptoms` batch **1–50 entries**; `cycle_events.source` ∈ `{user, onboarding}`; `cycle_phase_overrides.source` ∈ `{user_correction}`; the structural positive-smallint domain of §G7. (`notes` ≤ 2000 chars and pagination 50/100 are D-13, not inventions; `push_token` ≤ 512 is the existing column.)
+Recorded here and in the T22 STATUS block so a later phase does not mistake them for ratified: **windowed-read span ≤ 366 days** (`GET /cycle/calendar`, T13; `GET /symptoms`, T12 — T13 shipped the cap only on the calendar, then flagged in its report that `GET /symptoms` paged `items` but left `total`'s `COUNT(*)` unbounded over an arbitrary `from`/`to`, a defect closed in the same phase by hoisting the shared `Validation.ReadWindow.MaxDays`/`ValidationMessages.MaxWindowDays` both endpoints now use); `POST /symptoms` batch **1–50 entries**; `cycle_events.source` ∈ `{user, onboarding}`; `cycle_phase_overrides.source` ∈ `{user_correction}`; the structural positive-smallint domain of §G7. (`notes` ≤ 2000 chars and pagination 50/100 are D-13, not inventions; `push_token` ≤ 512 is the existing column.)
 
 ### G12. Cross-slice ownership (conflicts resolved once, here)
 
