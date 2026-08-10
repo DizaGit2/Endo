@@ -55,6 +55,16 @@ namespace Lumen.Api.Cycle;
 /// clears. Both rules are stated side by side on their DTOs in <c>CycleContracts.cs</c>. Neither path
 /// here writes <c>Energy</c>/<c>Libido</c> — no DTO carries them at all (D-10) — and neither writes a
 /// <c>symptoms</c> row (D-11: classified episodes come from the full form, T11).</para>
+///
+/// <para><b>7. WARNING — both write paths CLEAR THE WHOLE CHANGE TRACKER, so a caller must not stage
+/// un-saved work before invoking one.</b> <see cref="ResolveRowAsync"/> calls
+/// <c>ChangeTracker.Clear()</c> to make its <see cref="ConcurrencyRetry"/> action re-runnable, and
+/// that acts on the request-scoped <c>LumenDbContext</c> rather than on this action's entities:
+/// anything a caller added or modified earlier in the same scope is <b>silently discarded</b> — no
+/// exception, no failing test. The shape to avoid is a request that composes two writes, which is
+/// exactly what T18's <c>POST /onboarding/cycle</c> plans against
+/// <see cref="CycleService.LogEventAsync"/>. Save each part before invoking the next, or compose the
+/// whole thing into one retried action. See <see cref="ConcurrencyRetry"/>'s remarks.</para>
 /// </remarks>
 public sealed class CycleDayService(LumenDbContext db, IUserDayContext dayContext, IUserCryptoContext crypto)
 {
@@ -251,8 +261,16 @@ public sealed class CycleDayService(LumenDbContext db, IUserDayContext dayContex
     /// the unique index. <b><c>ChangeTracker.Clear()</c></b>: this runs inside
     /// <see cref="ConcurrencyRetry"/>, and a second attempt happens only because the first one's
     /// insert lost a race — that insert is still sitting in the tracker, and re-saving it would fail
-    /// identically. Clearing on every attempt (including the first, which is what keeps this line
-    /// covered by ordinary tests) makes the operation genuinely re-runnable.
+    /// identically. Clearing on every attempt makes the operation genuinely re-runnable.
+    ///
+    /// <para>Deleting that clear breaks recovery and changes <b>nothing else observable</b>, so it is
+    /// pinned by <c>ConcurrencyRecoveryTests</c> — which stages a lost race with an EF interceptor and
+    /// fails when the line is gone. The ordinary tests in <c>CycleDayServiceTests</c> and
+    /// <c>QuickCheckinServiceTests</c> execute it on every first attempt but would not notice its
+    /// absence; executing a line is not covering it.</para>
+    ///
+    /// <para>Because the clear is context-wide, both public write paths inherit the caller
+    /// restriction in remark 7 on this class: no un-saved work may be staged before them.</para>
     /// </remarks>
     private async Task<CycleDayLog> ResolveRowAsync(Guid userId, DateOnly date, DateTimeOffset now, CancellationToken ct)
     {

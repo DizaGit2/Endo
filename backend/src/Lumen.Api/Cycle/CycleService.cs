@@ -14,7 +14,7 @@ namespace Lumen.Api.Cycle;
 /// <see cref="IUserDayContext"/> and <see cref="IUserCryptoContext"/> it depends on.
 /// </summary>
 /// <remarks>
-/// <para><b>Three rules bind every method here.</b></para>
+/// <para><b>Five rules bind every method here.</b></para>
 ///
 /// <para><b>1. A null day context is a 404, before anything else happens.</b> Erasure has no write
 /// fence behind it: a crypto-shred tombstones the <c>users</c> row, but the account's JWT stays
@@ -41,7 +41,19 @@ namespace Lumen.Api.Cycle;
 /// surfaces as a 500 for a request that should simply have updated the winner's row. Because the
 /// action may run twice it must be re-runnable, which is what the <c>ChangeTracker.Clear()</c> at
 /// the top of each one is for — the failed insert is otherwise still staged and the retry fails
-/// identically.</para>
+/// identically. That recovery is pinned by <c>ConcurrencyRecoveryTests</c>, which fails if the clear
+/// is deleted; the ordinary tests below execute the line but do not notice its absence.</para>
+///
+/// <para><b>5. WARNING — every method here CLEARS THE WHOLE CHANGE TRACKER, so a caller must not
+/// stage un-saved work before invoking one.</b> <c>ChangeTracker.Clear()</c> acts on the
+/// request-scoped <c>LumenDbContext</c>, not on this action's entities, so anything a caller added or
+/// modified earlier in the same scope is <b>silently discarded</b> — no exception, no failing test.
+/// The concrete hazard is already planned: T18's <c>POST /onboarding/cycle</c> (B15) calls
+/// <c>CycleSettingsService.ApplyOnboardingCycleAsync</c> (T14) <i>and</i> writes a
+/// <c>cycle_events</c> row for <c>lastPeriodStart</c> through <see cref="LogEventAsync"/>. If it
+/// stages the settings first and logs the event second, onboarding loses the user's cycle answers
+/// without a trace. Save each part before invoking the next, or compose the whole thing into one
+/// retried action that stages everything and saves once.</para>
 /// </remarks>
 public sealed class CycleService(LumenDbContext db, IUserDayContext dayContext, IUserCryptoContext crypto)
 {
@@ -50,6 +62,12 @@ public sealed class CycleService(LumenDbContext db, IUserDayContext dayContext, 
     /// is what makes the online-only client's retry safe — and what keeps two <c>period_start</c> rows
     /// off the same day, a state the P6 estimator has no sane reading of.
     /// </summary>
+    /// <remarks>
+    /// <b>Clears the whole change tracker</b> (rule 5 above). T18's <c>POST /onboarding/cycle</c> is
+    /// the caller this is aimed at: it must not stage <c>user_cycle_settings</c> rows and then call
+    /// this method to record <c>lastPeriodStart</c>, because those staged rows would be discarded in
+    /// silence. Save them first, or write both inside one retried action.
+    /// </remarks>
     public async Task<CycleEventResult> LogEventAsync(LogCycleEventRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -151,6 +169,15 @@ public sealed class CycleService(LumenDbContext db, IUserDayContext dayContext, 
     /// Soft-deletes one cycle event (D-13). A second call answers "not found" because the query filter
     /// hides the tombstone — P4b treats that as success, since the user's intent is already satisfied.
     /// </summary>
+    /// <remarks>
+    /// <b>Clears the whole change tracker</b> (rule 5 above), so a caller must not stage un-saved work
+    /// before calling it. Note the asymmetry: the clear here buys nothing — a soft delete stages an
+    /// UPDATE, never an INSERT, and changes no unique key, so the retry can never fire and a second
+    /// attempt would re-read the same tracked instance and save identically. It is kept only so every
+    /// write on this service has one shape (the next person adding a write copies what is already
+    /// there), and <c>ConcurrencyRecoveryTests</c> says so explicitly rather than pretending to pin
+    /// it. The hazard it creates for a composing caller is real even though its benefit is not.
+    /// </remarks>
     public async Task<CycleEventDeleteResult> DeleteEventAsync(Guid id, CancellationToken ct)
     {
         var day = await dayContext.GetAsync(ct);
@@ -188,6 +215,10 @@ public sealed class CycleService(LumenDbContext db, IUserDayContext dayContext, 
     /// clinician-UNSIGNED, so refusing a user's own correction on that basis would be a clinical entry
     /// blocker in a phase that ships none. Nothing is recomputed either: screen 14's "retrains the
     /// prediction model" copy is a P6 promise.
+    ///
+    /// <para><b>Clears the whole change tracker</b> (rule 5 above), so a caller must not stage
+    /// un-saved work before calling it — anything pending in the same request scope is discarded
+    /// without an error.</para>
     /// </remarks>
     public async Task<PhaseOverrideResult> SavePhaseOverridesAsync(SavePhaseOverridesRequest request, CancellationToken ct)
     {

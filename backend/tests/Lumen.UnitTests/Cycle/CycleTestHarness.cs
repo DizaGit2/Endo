@@ -6,6 +6,7 @@ using Lumen.Infrastructure.Crypto;
 using Lumen.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Lumen.UnitTests.Cycle;
 
@@ -89,10 +90,16 @@ internal sealed class CycleTestHarness : IDisposable
         _connection.Dispose();
     }
 
-    /// <summary>A context the harness tracks and disposes; use it for arrange/assert reads.</summary>
-    public LumenDbContext NewContext()
+    /// <summary>
+    /// A context the harness tracks and disposes; use it for arrange/assert reads.
+    /// </summary>
+    /// <param name="interceptor">
+    /// Optional EF interceptor. Only <c>ConcurrencyRecoveryTests</c> passes one — it is how a lost
+    /// unique-key race is staged deterministically, without two interleaved requests.
+    /// </param>
+    public LumenDbContext NewContext(IInterceptor? interceptor = null)
     {
-        var db = NewOwnedContext();
+        var db = NewOwnedContext(interceptor);
         _contexts.Add(db);
         return db;
     }
@@ -101,16 +108,18 @@ internal sealed class CycleTestHarness : IDisposable
         new(userId ?? UserId, Today, Floor, Madrid, now ?? Now);
 
     /// <summary>A service over a fresh context, for the given day info (<see langword="null"/> = erased user).</summary>
-    public CycleService NewService(UserDayInfo? info) => new(NewContext(), new StubUserDayContext(info), Crypto);
+    public CycleService NewService(UserDayInfo? info, IInterceptor? interceptor = null) =>
+        new(NewContext(interceptor), new StubUserDayContext(info), Crypto);
 
     /// <summary>A service for the harness's primary user at <see cref="Now"/>.</summary>
     public CycleService NewService() => NewService(DayInfo());
 
     /// <summary>
     /// A <see cref="CycleDayService"/> over a fresh context (T10), for the given day info
-    /// (<see langword="null"/> = erased user). Same lifetime story as <see cref="NewService(UserDayInfo?)"/>.
+    /// (<see langword="null"/> = erased user). Same lifetime story as <see cref="NewService(UserDayInfo?,IInterceptor?)"/>.
     /// </summary>
-    public CycleDayService NewDayService(UserDayInfo? info) => new(NewContext(), new StubUserDayContext(info), Crypto);
+    public CycleDayService NewDayService(UserDayInfo? info, IInterceptor? interceptor = null) =>
+        new(NewContext(interceptor), new StubUserDayContext(info), Crypto);
 
     /// <summary>A <see cref="CycleDayService"/> for the harness's primary user at <see cref="Now"/>.</summary>
     public CycleDayService NewDayService() => NewDayService(DayInfo());
@@ -204,8 +213,12 @@ internal sealed class CycleTestHarness : IDisposable
         return row;
     }
 
-    private LumenDbContext NewOwnedContext() =>
-        new(new DbContextOptionsBuilder<LumenDbContext>().UseSqlite(_connection).Options);
+    private LumenDbContext NewOwnedContext(IInterceptor? interceptor = null)
+    {
+        var options = new DbContextOptionsBuilder<LumenDbContext>().UseSqlite(_connection);
+        if (interceptor is not null) options.AddInterceptors(interceptor);
+        return new LumenDbContext(options.Options);
+    }
 
     private static User NewUser(Guid id) => new()
     {

@@ -19,12 +19,29 @@ namespace Lumen.Api.Symptoms;
 /// today and D-11 says a repeat check-in updates today's value. Explicit dates belong to
 /// <c>POST /cycle/day/{date}</c>, which already owns them.</para>
 ///
-/// <para><b>This is a PARTIAL write, unlike <c>POST /cycle/day/{date}</c>.</b> It touches only the
-/// two columns it offers, and only the ones actually supplied: a check-in never clears the
-/// <c>notes</c> the day-detail screen wrote, never touches the deferred <c>energy</c>/<c>libido</c>
-/// columns, and tapping only the mood chip leaves the morning's pain score alone. The full form is
-/// the opposite by design (it submits the whole day, so an omitted field clears), which is why the
-/// two endpoints exist rather than one.</para>
+/// <para><b>This is a PARTIAL write.</b> It touches only the two columns it offers, and only the
+/// ones actually supplied: a check-in never clears the <c>notes</c> the day-detail screen wrote,
+/// never touches the deferred <c>energy</c>/<c>libido</c> columns, and tapping only the mood chip
+/// leaves the morning's pain score alone.</para>
+///
+/// <para><b><c>POST /cycle/day/{date}</c> (<see cref="Cycle.LogCycleDayRequest"/>) applies the SAME
+/// rule — it MERGES.</b> An omitted field there is left UNCHANGED, not cleared, because
+/// <c>cycle_day_logs</c> is the one row both screens write and a full upsert from either would
+/// silently destroy what the user entered on the other. The two endpoints exist because they offer
+/// different fields — this one carries no note and no date — not because they disagree about what an
+/// omission means. <b>The endpoint that genuinely replaces its row is
+/// <c>POST /cycle/events</c></b> (<see cref="Cycle.LogCycleEventRequest"/>): a FULL UPSERT where an
+/// omitted field CLEARS the stored value, which is safe there and only there because
+/// <c>cycle_events</c> is a single-writer, small row and clearing is the only way a user takes a
+/// flow level back off. <b>The deciding question is not the HTTP verb, it is how many surfaces write
+/// the row.</b></para>
+///
+/// <para>The split is <b>invisible in the generated Dart client</b> — every request is nullable
+/// members on a <c>built_value</c> class and nothing on the wire says which one clears — so it is
+/// stated on each DTO rather than in one place. Its documented cost, spelled out on
+/// <see cref="Cycle.LogCycleDayRequest"/>, is that <b>P4a ships no way to clear an individual
+/// field</b> on the day row; screens 9 and 11 offer no clear affordance, so nothing is lost today.
+/// A blank or whitespace-only value is absent input, never an erase instruction.</para>
 ///
 /// <para><b>It writes no <c>symptoms</c> row</b> (D-11 as modified): the day log is the headline
 /// daily series, while <c>symptoms</c> holds classified episodes that only the full form creates.

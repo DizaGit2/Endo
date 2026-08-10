@@ -20,11 +20,16 @@ namespace Lumen.UnitTests.Symptoms;
 /// full form (T11) creates. Writing a symptom row here would double-count every tap of the check-in
 /// sheet in every later aggregate.</para>
 ///
-/// <para><b>It is a PARTIAL write, and that is the one place it differs from
-/// <c>POST /cycle/day/{date}</c>.</b> The full form submits the whole day, so an omitted field
-/// clears it; the check-in sheet only ever offers pain and mood, so it touches only the fields the
-/// user actually supplied and never the note, energy or libido someone else wrote. Both halves are
-/// asserted below, because the difference is invisible in the type signatures.</para>
+/// <para><b>It is a PARTIAL write, and <c>POST /cycle/day/{date}</c> MERGES for the same reason.</b>
+/// The check-in sheet only ever offers pain and mood, so it touches only the fields the user
+/// actually supplied and never the note, energy or libido someone else wrote — and an omitted field
+/// on the day-detail form is likewise left UNCHANGED, because <c>cycle_day_logs</c> is the one row
+/// both screens write. The endpoint that genuinely replaces its row is <c>POST /cycle/events</c>
+/// (<c>LogCycleEventRequest</c>), a FULL UPSERT where an omitted field CLEARS the stored value —
+/// safe there and only there because <c>cycle_events</c> is a single-writer, small row. <b>The
+/// deciding question is not the HTTP verb, it is how many surfaces write the row.</b> Both halves
+/// are asserted below, because the difference is invisible in the type signatures and in the
+/// generated Dart client alike.</para>
 /// </summary>
 public sealed class QuickCheckinServiceTests : IDisposable
 {

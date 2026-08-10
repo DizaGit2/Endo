@@ -17,6 +17,14 @@ namespace Lumen.UnitTests.Api;
 /// fake that throws on demand — no database, no race, no flake — so the retry is proven rather than
 /// hoped for. Untested defensive code on a write path is not acceptable here.</para>
 ///
+/// <para><b>Scope, stated so it is not over-read.</b> Everything here is the retry POLICY — when the
+/// helper runs the action again and when it must not. It says nothing about whether a retry actually
+/// RECOVERS, and it structurally cannot: a fake delegate has no change tracker, so the losing insert
+/// that a real second attempt has to clear does not exist in this file. That half lives in
+/// <see cref="ConcurrencyRecoveryTests"/>, which stages a lost race against the real services and
+/// fails if <c>ChangeTracker.Clear()</c> is deleted from one of them. Do not read a green run here as
+/// "the concurrency handling is covered".</para>
+///
 /// <para>The exception shape is exactly what EF Core surfaces for a duplicate key on Npgsql: a
 /// <see cref="DbUpdateException"/> wrapping <see cref="PostgresException"/> with
 /// <c>SqlState = 23505</c>. Nothing else is retried — an FK violation, a check violation, a
