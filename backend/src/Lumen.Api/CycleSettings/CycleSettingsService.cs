@@ -471,10 +471,15 @@ public sealed class CycleSettingsService(LumenDbContext db, IUserDayContext dayC
     /// when it loads and not only after a save.
     /// </summary>
     /// <remarks>
-    /// Order is fixed (cycle length, then period length) so the client can render them predictably and
-    /// the tests can assert the list rather than its contents in any order.
+    /// <para>Order is fixed (cycle length, then period length) so the client can render them predictably
+    /// and the tests can assert the list rather than its contents in any order.</para>
+    ///
+    /// <para><b>Public because T18's <c>POST /onboarding/cycle</c> answers with the same list</b> — the
+    /// same rule §G12 applies to <see cref="ApplyOnboardingCycleAsync"/>: the second surface that writes
+    /// these two columns calls this rather than restating the band. A second copy of the comparison
+    /// could only ever drift, and it would drift into looking like a clinical bound.</para>
     /// </remarks>
-    private static IReadOnlyList<string> ComputeWarnings(short avgCycleLengthDays, short? avgPeriodLengthDays)
+    public static IReadOnlyList<string> ComputeWarnings(short avgCycleLengthDays, short? avgPeriodLengthDays)
     {
         var warnings = new List<string>(CycleSettingsWarnings.All.Count);
 

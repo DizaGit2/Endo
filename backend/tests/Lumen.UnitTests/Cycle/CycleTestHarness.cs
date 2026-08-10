@@ -254,16 +254,22 @@ internal sealed class CycleTestHarness : IDisposable
     /// construct it directly over <see cref="NewContext"/> instead, because observing the shared change
     /// tracker (or counting saves on it) is the whole point of those assertions.
     ///
-    /// <para>The <see cref="DeviceRegistrationService"/> it is given shares <b>the same</b>
-    /// <c>LumenDbContext</c> and day context, exactly as the scoped DI registrations do in production
-    /// (T17): the notification step composes that service's STAGING half into its own single unit of
-    /// work, which only works because both sides sit on one change tracker.</para>
+    /// <para>The <see cref="DeviceRegistrationService"/> and <see cref="CycleSettingsService"/> it is
+    /// given share <b>the same</b> <c>LumenDbContext</c> and day context, exactly as the scoped DI
+    /// registrations do in production (T17/T18): the notification step composes the first service's
+    /// STAGING half and the cycle step composes the second's, each into its own single unit of work,
+    /// which only works because every side sits on one change tracker.</para>
     /// </remarks>
     public OnboardingStepsService NewOnboardingStepsService(UserDayInfo? info, IInterceptor? interceptor = null)
     {
         var db = NewContext(interceptor);
         var dayContext = new StubUserDayContext(info);
-        return new OnboardingStepsService(db, dayContext, Crypto, new DeviceRegistrationService(db, dayContext));
+        return new OnboardingStepsService(
+            db,
+            dayContext,
+            Crypto,
+            new DeviceRegistrationService(db, dayContext),
+            new CycleSettingsService(db, dayContext));
     }
 
     /// <summary>An <see cref="OnboardingStepsService"/> for the harness's primary user at <see cref="Now"/>.</summary>
@@ -292,6 +298,32 @@ internal sealed class CycleTestHarness : IDisposable
         };
         using var db = NewOwnedContext();
         db.UserDevices.Add(row);
+        db.SaveChanges();
+        return row;
+    }
+
+    /// <summary>
+    /// Seeds a <c>user_profile_enc</c> row directly (T18) — the row a concurrent "winner" request is
+    /// imagined to have already committed, for <c>ConcurrencyRecoveryTests</c>' baseline-step lost-race
+    /// test. The columns are handed in as ciphertext because the caller owns the cipher: the whole point
+    /// of the test is that the retry MERGES onto this row, so at least one column the losing request
+    /// does not supply has to be pre-set.
+    /// </summary>
+    public UserProfileEnc SeedProfile(
+        Guid? userId = null,
+        byte[]? heightCmEnc = null,
+        byte[]? endoStatusEnc = null)
+    {
+        var row = new UserProfileEnc
+        {
+            UserId = userId ?? UserId,
+            HeightCmEnc = heightCmEnc,
+            EndoStatusEnc = endoStatusEnc,
+            CreatedAt = Now.AddDays(-1),
+            UpdatedAt = Now.AddDays(-1),
+        };
+        using var db = NewOwnedContext();
+        db.UserProfiles.Add(row);
         db.SaveChanges();
         return row;
     }

@@ -295,3 +295,148 @@ public record NotificationPrefsResponse(
 /// exist so D-19's per-user schedule has something to read.
 /// </param>
 public record NotificationCategorySelection(string Code, bool Enabled);
+
+// --- T18: the cycle seed (B15), the completion gate and the resume read ---------------------------
+//
+// The no-`[DefaultValue]` rule from the two blocks above binds here too, and the temptation is at its
+// sharpest on `SaveOnboardingCycleRequest`: three of its four members HAVE a documented default. Putting
+// any of them in the schema is T13's defect — dart-dio/built_value turns a schema `default` into a
+// builder default and its deserializer skips explicit nulls, so "the user did not answer the regularity
+// question" would arrive as "the user chose `somewhat`", and the server could never tell them apart.
+// The defaults are applied on the SERVER, from the entity constants, and stated only in these XML docs.
+
+/// <summary>
+/// Body of <c>POST /onboarding/cycle</c> — screen 3, the one <b>mandatory</b> step of D-02.
+///
+/// <para><b>It writes two tables in one unit of work</b> (§G12): the <c>user_cycle_settings</c> row,
+/// through T14's stage-only <c>CycleSettingsService.ApplyOnboardingCycleAsync</c>, and the single
+/// onboarding-seeded <c>cycle_events.period_start</c> row that anchors every cycle the app will ever
+/// draw. They commit or roll back together — a settings row without its anchor would make the user look
+/// onboarded to <c>GET /settings/cycle</c> while <c>/onboarding/complete</c> still refused them.</para>
+///
+/// <para><b>409 after completion.</b> Once <c>POST /onboarding/complete</c> has stamped the account this
+/// endpoint is closed: moving the seeded anchor post-hoc silently re-dates every cycle measured from it.
+/// Post-completion edits go through <c>POST /cycle/events</c> and <c>PATCH /settings/cycle</c>, which
+/// are the surfaces built for exactly that. The other four steps stay open (T17) — this is the only one
+/// that owns a value later data is measured against.</para>
+/// </summary>
+/// <param name="LastPeriodStart">
+/// The day the user's last period began — <b>required</b>, and the only required field on the whole
+/// onboarding flow. <c>default(DateOnly)</c> (0001-01-01, what an unset date binds to) is refused as
+/// "required" rather than as a floor violation, because that is what it means.
+/// <para><b>The floor applies here (§G8).</b> This and <c>POST /cycle/events</c> are the <b>only two</b>
+/// P4a writes bounded below: <c>&gt;= UserDayInfo.BackdateFloor</c> (account creation − 2 y, D-13) as
+/// well as <c>&lt;=</c> the user's local today. Every other dated write is capped by today alone.</para>
+/// </param>
+/// <param name="AvgCycleLengthDays">
+/// The user's self-reported average cycle length. Omitted → the T6 default of <b>28</b>.
+/// <para><b>§G7: this is never clinically validated.</b> The only rejection is structural — a positive
+/// integer that fits the <c>smallint</c> column. A value outside the sanity band is <b>stored</b> and
+/// answered with a non-blocking code in <see cref="OnboardingCycleResponse.Warnings"/>; the C-03
+/// clinical band is clinician-UNSIGNED and has no home in <c>backend/src</c> this phase.</para>
+/// </param>
+/// <param name="AvgPeriodLengthDays">
+/// The user's self-reported average period length. Omitted → <b>null</b>, deliberately and not 5 or any
+/// other figure: screen 3 never asks, and a seeded value would be a self-report the user never made.
+/// </param>
+/// <param name="Regularity">
+/// One of <see cref="UserCycleSettings.RegularityValues"/> — <c>regular</c>, <c>somewhat</c> or
+/// <c>irregular</c>. Omitted → <c>somewhat</c>. Matched case-sensitively; the near-miss "sometimes" is a
+/// 400 rather than data P6 cannot read.
+/// </param>
+public record SaveOnboardingCycleRequest(
+    DateOnly? LastPeriodStart,
+    int? AvgCycleLengthDays,
+    int? AvgPeriodLengthDays,
+    string? Regularity);
+
+/// <summary>
+/// The 200 body of <c>POST /onboarding/cycle</c>: what was <b>stored</b>, with every omitted field
+/// resolved to the default the server applied.
+/// </summary>
+/// <remarks>
+/// Answering with the resolved values rather than echoing the request is what lets screen 3 show the
+/// user the 28 they never typed, and it is how a client learns the defaults without hard-coding them.
+/// </remarks>
+/// <param name="LastPeriodStart">The stored anchor day — the <c>cycle_events.period_start</c> row's date.</param>
+/// <param name="AvgCycleLengthDays">The stored self-report, or the applied default.</param>
+/// <param name="AvgPeriodLengthDays">The stored self-report, or null when it was not asked for.</param>
+/// <param name="Regularity">The stored code, or the applied default.</param>
+/// <param name="Warnings">
+/// Non-blocking sanity codes from <c>CycleSettingsWarnings</c> (§G7) — <b>empty on the common path</b>,
+/// and never a reason the save did not happen. The same list <c>GET/PATCH /settings/cycle</c> returns,
+/// computed by the same method so the two cannot drift.
+/// </param>
+public record OnboardingCycleResponse(
+    DateOnly LastPeriodStart,
+    int AvgCycleLengthDays,
+    int? AvgPeriodLengthDays,
+    string Regularity,
+    IReadOnlyList<string> Warnings);
+
+/// <summary>
+/// The 200 body of <c>POST /onboarding/complete</c> — the D-02 terminal state.
+/// </summary>
+/// <param name="CompletedAt">
+/// When onboarding was completed. On a repeat call this is the <b>original</b> instant, never the
+/// current one: the stamp is claimed under <c>WHERE OnboardingCompletedAt IS NULL</c>, so two
+/// simultaneous "Finish" taps agree on one answer instead of racing the column forward.
+/// </param>
+/// <param name="AlreadyCompleted">
+/// Whether this call found the account already stamped. Reported rather than turned into a 409, because
+/// a repeated <c>/complete</c> is a normal outcome of a retried request and the user's intent is already
+/// satisfied — but the client still needs to know it was not the one that finished the flow.
+/// </param>
+public record OnboardingCompleteResponse(DateTimeOffset CompletedAt, bool AlreadyCompleted);
+
+/// <summary>
+/// The 200 body of <c>GET /onboarding/state</c> — P4b's single <b>resume read</b>: where the user got
+/// to, what is still owed, and the current value of every preference set so a half-finished flow can be
+/// re-rendered without five more calls.
+/// </summary>
+/// <remarks>
+/// <para><b>The three preference lists come from T17's read projections</b>
+/// (<c>OnboardingStepsService.ReadGoalsAsync</c> and friends) and are never re-derived here. Those
+/// projections are the single place "a skipped step" is given a meaning — a skipped step persists no
+/// rows, so the documented seed is applied on read — and a second, independent restatement of it is
+/// exactly the drift they exist to prevent (§G12).</para>
+///
+/// <para><b>§G6: nothing here is computed.</b> There is no phase, no cycle day, no prediction and no
+/// confidence, and there must never be one: every member below is either a stored value or the presence
+/// of a row.</para>
+/// </remarks>
+/// <param name="Completed">Whether <c>users.onboarding_completed_at</c> is set. The same fact <c>GET /me.onboardingCompleted</c> reports.</param>
+/// <param name="CompletedAt">When it was set, or null.</param>
+/// <param name="MissingMandatorySteps">
+/// The mandatory steps still unanswered — <c>["cycle"]</c> or empty. The same list a premature
+/// <c>POST /onboarding/complete</c> returns in its 409, so the client can pre-empt that conflict.
+/// </param>
+/// <param name="CycleProvided">Whether the user has at least one live <c>period_start</c> — by either route.</param>
+/// <param name="BaselineProvided">
+/// Whether screen 4 has been answered: any stored <c>user_profile_enc</c> condition field <b>or</b> a
+/// live <c>body_metrics.weight_kg</c> row (rider 4 keeps weight off the profile, so the profile alone
+/// cannot answer this).
+/// </param>
+/// <param name="GoalsProvided">Whether screen 5 was answered — i.e. whether any <c>user_goals</c> row exists.</param>
+/// <param name="HormonesProvided">Whether screen 6 was answered.</param>
+/// <param name="NotificationsProvided">Whether screen 7 was answered.</param>
+/// <param name="LastPeriodStart">
+/// The most recent <b>live</b> <c>period_start</c> day, or null. A retracted row is not a last period
+/// start, so the soft-delete filter is load-bearing here.
+/// </param>
+/// <param name="Goals">All five goals in frozen order, with the stored — or seeded — flag.</param>
+/// <param name="Hormones">All seven hormones in frozen order, with the stored or seeded charted flag.</param>
+/// <param name="Notifications">All four categories in frozen order, with the stored or seeded flag.</param>
+public record OnboardingStateResponse(
+    bool Completed,
+    DateTimeOffset? CompletedAt,
+    IReadOnlyList<string> MissingMandatorySteps,
+    bool CycleProvided,
+    bool BaselineProvided,
+    bool GoalsProvided,
+    bool HormonesProvided,
+    bool NotificationsProvided,
+    DateOnly? LastPeriodStart,
+    IReadOnlyList<GoalSelection> Goals,
+    IReadOnlyList<HormoneSelection> Hormones,
+    IReadOnlyList<NotificationCategorySelection> Notifications);

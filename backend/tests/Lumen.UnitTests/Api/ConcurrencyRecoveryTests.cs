@@ -298,6 +298,79 @@ public sealed class ConcurrencyRecoveryTests : IDisposable
             1, "the composed device write survives the retry alongside the preference rows");
     }
 
+    // --- POST /onboarding/baseline (T16, pinned in T18) -----------------------------------------
+    //
+    // T16 shipped `SaveBaselineAsync`'s ConcurrencyRetry action with a db.ChangeTracker.Clear() and
+    // pinned only its NON-composability — a different claim, about what a CALLER may do. Nothing
+    // failed when the Clear() itself was deleted, so the recovery was documented rather than proven.
+    // The shape below is the one that motivates it: a double-tapped "Continue" on screen 4, where
+    // `user_profile_enc`'s primary key is the contended key on a first save.
+
+    [Fact]
+    public async Task A_lost_race_on_the_baseline_step_recovers_onto_the_winners_row()
+    {
+        // The winner commits a profile carrying a HEIGHT. This request supplies only a DOB, so recovery
+        // must MERGE onto the winner's row — the baseline step's null-means-unchanged rule applied to a
+        // row this request has never seen. Re-attempting its own insert would be a PK violation instead.
+        var winnerHeight = await _harness.Crypto.EncryptStringAsync(UserProfileEnc.EncodeHeightCm(171));
+
+        UserProfileEnc? winner = null;
+        var interceptor = new LostRaceOnFirstSaveInterceptor(() =>
+            winner = _harness.SeedProfile(heightCmEnc: winnerHeight));
+
+        var dob = new DateOnly(1994, 3, 17);
+        var result = await _harness.NewOnboardingStepsService(_harness.DayInfo(), interceptor)
+            .SaveBaselineAsync(new SaveBaselineRequest(dob, null, null, null, null, null), default);
+
+        interceptor.Saves.ShouldBe(2, "one failed save, one that recovered");
+        var baseline = result.ShouldBeOfType<SaveBaselineResult.Saved>().Baseline;
+        baseline.Dob.ShouldBe(dob);
+        baseline.HeightCm.ShouldBe(
+            171, "the second attempt merged onto the WINNER's row, so its height survived");
+
+        using var db = _harness.NewContext();
+        var rows = db.UserProfiles.Where(p => p.UserId == _harness.UserId).ToList();
+        rows.Count.ShouldBe(1, "the loser's staged insert must not reach the database");
+        rows[0].CreatedAt.ShouldBe(winner!.CreatedAt, "the winner's row was updated, not replaced");
+    }
+
+    // --- POST /onboarding/cycle (T18) -----------------------------------------------------------
+
+    [Fact]
+    public async Task A_lost_race_on_the_onboarding_cycle_step_recovers_onto_the_winners_row()
+    {
+        // T18's retried action is the phase's most composed one: it stages the seeded `cycle_events`
+        // row AND T14's `user_cycle_settings` row, then saves once. Both are inserts on a first run, so
+        // a lost race leaves TWO orphaned Added entries — and recovery has to discard both, not one.
+        var anchor = CycleTestHarness.Today.AddDays(-9);
+
+        CycleEvent? winner = null;
+        var interceptor = new LostRaceOnFirstSaveInterceptor(() =>
+        {
+            winner = _harness.SeedEvent(CycleEvent.Kinds.PeriodStart, anchor, flow: 2);
+            _harness.SeedCycleSettings(avgCycleLengthDays: 26);
+        });
+
+        var result = await _harness.NewOnboardingStepsService(_harness.DayInfo(), interceptor)
+            .SaveCycleAsync(new SaveOnboardingCycleRequest(anchor, 31, null, null), default);
+
+        interceptor.Saves.ShouldBe(2, "one failed save, one that recovered");
+        var saved = result.ShouldBeOfType<SaveOnboardingCycleResult.Saved>().Cycle;
+        saved.LastPeriodStart.ShouldBe(anchor);
+        saved.AvgCycleLengthDays.ShouldBe(31, "the second attempt applied THIS request onto the winner's row");
+
+        using var db = _harness.NewContext();
+        var events = db.CycleEvents.IgnoreQueryFilters().Where(e => e.UserId == _harness.UserId).ToList();
+        events.Count.ShouldBe(1, "the loser's staged event insert must not reach the database");
+        events[0].Id.ShouldBe(winner!.Id, "the winner's row was adopted, keeping its provenance");
+        events[0].Source.ShouldBe(CycleEvent.Sources.User);
+        events[0].FlowIntensity.ShouldBe((short)2, "onboarding never asks for flow, so it clears none");
+
+        var settings = db.CycleSettings.Where(s => s.UserId == _harness.UserId).ToList();
+        settings.Count.ShouldBe(1, "the loser's staged settings insert must not reach the database either");
+        settings[0].AvgCycleLengthDays.ShouldBe((short)31);
+    }
+
     private List<CycleDayLog> AllDayLogs() =>
         _harness.NewContext().CycleDayLogs.IgnoreQueryFilters()
             .Where(l => l.UserId == _harness.UserId).ToList();

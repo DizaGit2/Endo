@@ -147,6 +147,84 @@ public static class OnboardingEndpoints
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status404NotFound);
 
+        // The D-02 MANDATORY step (screen 3, B15) — the one answer onboarding cannot proceed without.
+        // Writes two tables in one unit of work: `user_cycle_settings` (through T14's stage-only
+        // method) and the single onboarding-seeded `cycle_events.period_start` row that anchors every
+        // cycle the app will ever draw.
+        //
+        // Unlike the other four steps this one is 409'd after `/onboarding/complete`: moving the
+        // seeded anchor post-hoc silently re-dates every cycle measured from it, and the surfaces built
+        // for that edit already exist (`POST /cycle/events`, `PATCH /settings/cycle`).
+        app.MapPost("/onboarding/cycle", async (
+            SaveOnboardingCycleRequest request,
+            OnboardingStepsService steps,
+            CancellationToken ct) =>
+        {
+            var result = await steps.SaveCycleAsync(request, ct);
+            return result switch
+            {
+                SaveOnboardingCycleResult.Saved saved => Results.Ok(saved.Cycle),
+                SaveOnboardingCycleResult.Invalid invalid => Problem(invalid.Errors),
+                SaveOnboardingCycleResult.AlreadyCompleted => OnboardingConflict.AlreadyCompleted(),
+                SaveOnboardingCycleResult.UserNotFound => NotFoundProblem.Result(),
+                _ => throw new UnreachableException(
+                    $"Unhandled {nameof(SaveOnboardingCycleResult)}: {result.GetType()}"),
+            };
+        })
+        .RequireAuthorization()
+        .Produces<OnboardingCycleResponse>(StatusCodes.Status200OK)
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict);
+
+        // The D-02 terminal state. NO BODY — there is nothing to send: the mandatory set is checked on
+        // the stored data, not on a client's claim about it. Answers 200 on a repeat call with the
+        // ORIGINAL timestamp rather than 409, because a retried request whose intent is already
+        // satisfied is not an error and the online-only client has no write queue to fall back on.
+        app.MapPost("/onboarding/complete", async (
+            OnboardingStepsService steps,
+            CancellationToken ct) =>
+        {
+            var result = await steps.CompleteAsync(ct);
+            return result switch
+            {
+                CompleteOnboardingResult.Completed completed => Results.Ok(completed.Completion),
+                CompleteOnboardingResult.Incomplete incomplete =>
+                    OnboardingConflict.Incomplete(incomplete.MissingSteps),
+                CompleteOnboardingResult.UserNotFound => NotFoundProblem.Result(),
+                _ => throw new UnreachableException(
+                    $"Unhandled {nameof(CompleteOnboardingResult)}: {result.GetType()}"),
+            };
+        })
+        .RequireAuthorization()
+        .Produces<OnboardingCompleteResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict);
+
+        // The additive resume read (§C.1 amendment, OQ-7b). Always 200 for a live user, at every stage
+        // of the flow — including a brand-new account, whose booleans are all false. §G6: it reports
+        // stored facts and row presence only; there is no phase, cycle day, prediction or confidence
+        // anywhere in the response and there must never be one.
+        app.MapGet("/onboarding/state", async (
+            OnboardingStepsService steps,
+            CancellationToken ct) =>
+        {
+            var result = await steps.ReadStateAsync(ct);
+            return result switch
+            {
+                OnboardingStateResult.Found found => Results.Ok(found.State),
+                OnboardingStateResult.UserNotFound => NotFoundProblem.Result(),
+                _ => throw new UnreachableException(
+                    $"Unhandled {nameof(OnboardingStateResult)}: {result.GetType()}"),
+            };
+        })
+        .RequireAuthorization()
+        .Produces<OnboardingStateResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
         return app;
     }
 

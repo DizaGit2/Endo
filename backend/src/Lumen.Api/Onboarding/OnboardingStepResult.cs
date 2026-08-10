@@ -96,6 +96,148 @@ public abstract record SaveNotificationPrefsResult
     public sealed record UserNotFound : SaveNotificationPrefsResult;
 }
 
+/// <summary>Outcome of <see cref="OnboardingStepsService.SaveCycleAsync"/> (T18).</summary>
+public abstract record SaveOnboardingCycleResult
+{
+    /// <summary>
+    /// The <c>user_cycle_settings</c> row and the seeded <c>cycle_events.period_start</c> row were
+    /// written <b>in one save</b>. → <b>200 with the stored values</b>, defaults resolved.
+    /// </summary>
+    public sealed record Saved(OnboardingCycleResponse Cycle) : SaveOnboardingCycleResult;
+
+    /// <summary>Nothing was written; every field error found is listed. → 400.</summary>
+    public sealed record Invalid(IReadOnlyList<OnboardingFieldError> Errors) : SaveOnboardingCycleResult;
+
+    /// <summary>
+    /// The account is already onboarded, so the cycle anchor is frozen. → <b>409</b>. Decided
+    /// <b>before</b> validation: the step is closed, and a 400 would invite the client to "fix" a body
+    /// that can never be accepted.
+    /// </summary>
+    public sealed record AlreadyCompleted : SaveOnboardingCycleResult;
+
+    /// <summary>The caller's <c>users</c> row is gone or was never there. → 404, before everything else.</summary>
+    public sealed record UserNotFound : SaveOnboardingCycleResult;
+}
+
+/// <summary>Outcome of <see cref="OnboardingStepsService.CompleteAsync"/> (T18).</summary>
+/// <remarks>
+/// There is deliberately <b>no "already completed" failure case</b>: a repeat call is a
+/// <see cref="Completed"/> carrying the original timestamp and <c>alreadyCompleted: true</c>. A retried
+/// request whose intent is already satisfied is not an error, and turning it into one would make the
+/// online-only client's retry policy unsafe on the last screen of the flow.
+/// </remarks>
+public abstract record CompleteOnboardingResult
+{
+    /// <summary>Onboarding is (now, or already) complete. → <b>200</b>.</summary>
+    public sealed record Completed(OnboardingCompleteResponse Completion) : CompleteOnboardingResult;
+
+    /// <summary>
+    /// A mandatory step is unanswered, so nothing was stamped and nothing was backfilled. → <b>409</b>
+    /// with <c>code=onboarding_incomplete</c> and <c>missingSteps</c>.
+    /// </summary>
+    public sealed record Incomplete(IReadOnlyList<string> MissingSteps) : CompleteOnboardingResult;
+
+    /// <summary>The caller's <c>users</c> row is gone or was never there. → 404.</summary>
+    public sealed record UserNotFound : CompleteOnboardingResult;
+}
+
+/// <summary>Outcome of <see cref="OnboardingStepsService.ReadStateAsync"/> (T18).</summary>
+public abstract record OnboardingStateResult
+{
+    /// <summary>The resume read. → <b>200</b>; always available for a live user, at every stage.</summary>
+    public sealed record Found(OnboardingStateResponse State) : OnboardingStateResult;
+
+    /// <summary>The caller's <c>users</c> row is gone or was never there. → 404.</summary>
+    public sealed record UserNotFound : OnboardingStateResult;
+}
+
+/// <summary>
+/// The D-02 step codes that travel on the wire, in <c>missingSteps</c> (the 409) and
+/// <c>missingMandatorySteps</c> (the state read).
+/// </summary>
+/// <remarks>
+/// <para><b>Only the MANDATORY set is named here, and it has exactly one member.</b> D-02 is verbatim
+/// that the mandatory set is "account + last-period date"; the account exists by the time any of these
+/// endpoints can be reached (the 404 fence proves it), so <c>cycle</c> is the whole of what can ever be
+/// missing. The four skippable steps deliberately have no codes: naming them would imply a client could
+/// be told it still "owes" one, which is precisely what D-02's skippability denies.</para>
+///
+/// <para>Append-only, like every other frozen vocabulary in the phase (§G10) — these strings reach the
+/// Flutter client through the contract and are matched, not rendered.</para>
+/// </remarks>
+public static class OnboardingSteps
+{
+    /// <summary>Screen 3: the last-period date that seeds <c>cycle_events</c>. The one mandatory step.</summary>
+    public const string Cycle = "cycle";
+
+    /// <summary>The mandatory set, in the order the client should walk it.</summary>
+    public static readonly IReadOnlyList<string> Mandatory = [Cycle];
+}
+
+/// <summary>
+/// The two 409 bodies the onboarding state machine can produce — the <b>only</b> 409s in P4a outside
+/// <c>ProblemExceptionHandler</c>'s duplicate-identity case.
+/// </summary>
+/// <remarks>
+/// <para>Built here rather than hand-written at each call site for the same reason
+/// <see cref="Validation.NotFoundProblem"/> exists: two endpoints share the title, the machine-readable
+/// <c>code</c> is what the client actually branches on, and a typo in either would be invisible until a
+/// client shipped against it. These are <b>wire strings</b> asserted verbatim in
+/// <c>OnboardingCompletionTests</c> and <c>OnboardingCompletionLiveTests</c>.</para>
+///
+/// <para><b>Why <c>code</c> is an extension rather than the <c>type</c> URI.</b> ProblemDetails' `type`
+/// is a URI the phase does not mint (every other P4a problem leaves it at the RFC default), and the
+/// generated Dart client surfaces unknown top-level members as a map — so a short, stable string under
+/// a predictable key is the shape a client can branch on today without a contract for URIs it would
+/// have to resolve.</para>
+/// </remarks>
+public static class OnboardingConflict
+{
+    /// <summary>The shared 409 title, exposed so callers and tests assert it without retyping it.</summary>
+    public const string Title = "The request conflicts with the current onboarding state.";
+
+    /// <summary>The machine-readable code for a premature <c>POST /onboarding/complete</c>.</summary>
+    public const string IncompleteCode = "onboarding_incomplete";
+
+    /// <summary>The human-readable detail for <see cref="IncompleteCode"/>.</summary>
+    public const string IncompleteDetail =
+        "Onboarding cannot be completed until every mandatory step is answered.";
+
+    /// <summary>The machine-readable code for <c>POST /onboarding/cycle</c> after completion.</summary>
+    public const string AlreadyCompletedCode = "onboarding_already_completed";
+
+    /// <summary>The human-readable detail for <see cref="AlreadyCompletedCode"/>.</summary>
+    public const string AlreadyCompletedDetail =
+        "Onboarding is already complete; the cycle anchor can no longer be moved here.";
+
+    /// <summary>
+    /// The 409 for a premature completion. <paramref name="missingSteps"/> is echoed under
+    /// <c>missingSteps</c> so the client can send the user straight back to the screen that owes an
+    /// answer instead of restarting the flow.
+    /// </summary>
+    public static IResult Incomplete(IReadOnlyList<string> missingSteps) =>
+        TypedResults.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: Title,
+            detail: IncompleteDetail,
+            extensions: new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["code"] = IncompleteCode,
+                ["missingSteps"] = missingSteps,
+            });
+
+    /// <summary>The 409 for a cycle-step write after the account has been stamped.</summary>
+    public static IResult AlreadyCompleted() =>
+        TypedResults.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: Title,
+            detail: AlreadyCompletedDetail,
+            extensions: new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["code"] = AlreadyCompletedCode,
+            });
+}
+
 /// <summary>
 /// The <b>structural type-domain</b> of the baseline's two free measurements — the only thing on
 /// <c>heightCm</c> and <c>weightKg</c> that can produce a 400 beyond a missing body.

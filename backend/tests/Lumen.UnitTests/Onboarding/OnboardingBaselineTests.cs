@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Lumen.Api.CycleSettings;
 using Lumen.Api.Devices;
 using Lumen.Api.Onboarding;
 using Lumen.Api.Validation;
@@ -755,7 +756,11 @@ public sealed class OnboardingBaselineTests : IDisposable
         await using var db = _harness.NewContext();
         var dayContext = new StubUserDayContext(_harness.DayInfo());
         var service = new OnboardingStepsService(
-            db, dayContext, _harness.Crypto, new DeviceRegistrationService(db, dayContext));
+            db,
+            dayContext,
+            _harness.Crypto,
+            new DeviceRegistrationService(db, dayContext),
+            new CycleSettingsService(db, dayContext));
 
         await service.SaveBaselineAsync(Full(), default);
 
@@ -781,7 +786,11 @@ public sealed class OnboardingBaselineTests : IDisposable
         await using var db = _harness.NewContext();
         var dayContext = new StubUserDayContext(_harness.DayInfo());
         var service = new OnboardingStepsService(
-            db, dayContext, _harness.Crypto, new DeviceRegistrationService(db, dayContext));
+            db,
+            dayContext,
+            _harness.Crypto,
+            new DeviceRegistrationService(db, dayContext),
+            new CycleSettingsService(db, dayContext));
 
         var stagedElsewhere = new CycleEvent
         {

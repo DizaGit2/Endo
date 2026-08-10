@@ -1,3 +1,4 @@
+using Lumen.Api.CycleSettings;
 using Lumen.Api.Devices;
 using Lumen.Api.Onboarding;
 using Lumen.Api.Validation;
@@ -588,7 +589,11 @@ public sealed class OnboardingPreferenceStepsTests : IDisposable
         await using var db = _harness.NewContext(saves);
         var dayContext = new StubUserDayContext(_harness.DayInfo());
         var service = new OnboardingStepsService(
-            db, dayContext, _harness.Crypto, new DeviceRegistrationService(db, dayContext));
+            db,
+            dayContext,
+            _harness.Crypto,
+            new DeviceRegistrationService(db, dayContext),
+            new CycleSettingsService(db, dayContext));
 
         await service.SaveNotificationPrefsAsync(
             new SaveNotificationPrefsRequest(
@@ -619,7 +624,11 @@ public sealed class OnboardingPreferenceStepsTests : IDisposable
         await using var db = _harness.NewContext(new FailEverySaveInterceptor());
         var dayContext = new StubUserDayContext(_harness.DayInfo());
         var service = new OnboardingStepsService(
-            db, dayContext, _harness.Crypto, new DeviceRegistrationService(db, dayContext));
+            db,
+            dayContext,
+            _harness.Crypto,
+            new DeviceRegistrationService(db, dayContext),
+            new CycleSettingsService(db, dayContext));
 
         await Should.ThrowAsync<DbUpdateException>(async () => await service.SaveNotificationPrefsAsync(
             new SaveNotificationPrefsRequest(
@@ -638,7 +647,12 @@ public sealed class OnboardingPreferenceStepsTests : IDisposable
         await using (var db = _harness.NewContext(goalSaves))
         {
             var dayContext = new StubUserDayContext(_harness.DayInfo());
-            await new OnboardingStepsService(db, dayContext, _harness.Crypto, new DeviceRegistrationService(db, dayContext))
+            await new OnboardingStepsService(
+                    db,
+                    dayContext,
+                    _harness.Crypto,
+                    new DeviceRegistrationService(db, dayContext),
+                    new CycleSettingsService(db, dayContext))
                 .SaveGoalsAsync(new SaveGoalsRequest([UserGoal.Codes.JustCurious]), default);
             goalSaves.Saves.ShouldBe(1);
         }
@@ -646,7 +660,12 @@ public sealed class OnboardingPreferenceStepsTests : IDisposable
         var hormoneSaves = new CountingSaveInterceptor();
         await using var db2 = _harness.NewContext(hormoneSaves);
         var dayContext2 = new StubUserDayContext(_harness.DayInfo());
-        await new OnboardingStepsService(db2, dayContext2, _harness.Crypto, new DeviceRegistrationService(db2, dayContext2))
+        await new OnboardingStepsService(
+                db2,
+                dayContext2,
+                _harness.Crypto,
+                new DeviceRegistrationService(db2, dayContext2),
+                new CycleSettingsService(db2, dayContext2))
             .SaveHormonePrefsAsync(new SaveHormonePrefsRequest([HormoneCatalog.Codes.Fsh]), default);
         hormoneSaves.Saves.ShouldBe(1);
     }
