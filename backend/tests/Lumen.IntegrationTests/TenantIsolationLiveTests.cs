@@ -161,12 +161,20 @@ public class TenantIsolationLiveTests(TenantIsolationApiFactory factory) : IClas
     /// route here is a deliberate act with a reviewer attached; forgetting
     /// <c>.RequireAuthorization()</c> on a new endpoint is not, and that is the difference this list
     /// exists to catch.
+    ///
+    /// <para><b>Keyed on <c>"METHOD template"</c>, exactly like the authenticated half.</b> Keying this
+    /// set on the bare template would let a new UNAUTHENTICATED endpoint hide behind an existing
+    /// anonymous one: <c>app.MapPost("/health", …)</c> shares a template with the anonymous
+    /// <c>GET /health</c>, so a template-keyed set would filter it out of <c>unclassified</c> while its
+    /// lack of <see cref="IAuthorizeData"/> kept it out of the authenticated set too — a new
+    /// unauthenticated route on a live API, and this suite green. The method is part of the identity of
+    /// an endpoint, so it is part of the key on both sides.</para>
     /// </summary>
     private static readonly string[] DeclaredAnonymousRoutes =
     [
-        "/health",       // P0a liveness — no user, no data
-        "/health/ready", // P0a readiness — dependency probe only
-        "/onboarding/start", // sign-up: the caller cannot have a token yet (per-IP policy protects it)
+        "GET /health",       // P0a liveness — no user, no data
+        "GET /health/ready", // P0a readiness — dependency probe only
+        "POST /onboarding/start", // sign-up: the caller cannot have a token yet (per-IP policy protects it)
     ];
 
     /// <summary>
@@ -221,8 +229,10 @@ public class TenantIsolationLiveTests(TenantIsolationApiFactory factory) : IClas
             + "existed; the owner's row keeps DeletedAt == null; erased → 404",
             () => Req(HttpMethod.Delete, CycleEventUrl(Guid.NewGuid()))),
         new("POST", Routes.CyclePhaseOverride,
-            "keyed write: the other tenant's cycleStartOn is answered exactly as any day the caller "
-            + "never logged (400 'must match a logged period start'); erased → 404",
+            "keyed write, BOTH branches: the other tenant's cycleStartOn is answered exactly as any day "
+            + "the caller never logged (400 'must match a logged period start'), AND — once the caller "
+            + "has its own anchor on that same date — the 200 replace-the-set neither overwrites nor "
+            + "retracts the other tenant's corrections for that cycle; erased → 404",
             () => Req(HttpMethod.Post, Routes.CyclePhaseOverride, new { cycleStartOn = Today.ToString("yyyy-MM-dd"), boundaries = Array.Empty<object>() })),
         new("POST", Routes.CycleDayByDate,
             "write: the same day as the owner writes the CALLER's own row (§G9 unfiltered upsert); the "
@@ -232,7 +242,8 @@ public class TenantIsolationLiveTests(TenantIsolationApiFactory factory) : IClas
             "write: writes only the caller's today row; the owner's day log is byte-unchanged; erased → 404",
             () => Req(HttpMethod.Post, Routes.CheckinQuick, new { pain = 2, mood = 3 })),
         new("GET", Routes.CycleDayByDate,
-            "read: the owner's logged day answers identically to a day nobody ever logged (null log, "
+            "read: TWO of the owner's days — the busiest (log + event + symptom) and the one their phase "
+            + "correction is dated on — each answer identically to a day nobody ever logged (null log, "
             + "empty events, empty overrides); erased → 404",
             () => Req(HttpMethod.Get, CycleDayUrl(Today))),
         new("GET", Routes.CycleCalendar,
@@ -302,19 +313,24 @@ public class TenantIsolationLiveTests(TenantIsolationApiFactory factory) : IClas
         // endpoint that forgot .RequireAuthorization() is in neither bucket and lands here — which is
         // the only reason (b) can be trusted, since such an endpoint would otherwise never appear in
         // the authenticated set at all.
+        //
+        // BOTH buckets are keyed on "METHOD template" (see DeclaredAnonymousRoutes). Keying the
+        // anonymous half on the bare template would make this guard blind to a new unauthenticated
+        // endpoint added under a template that is ALREADY anonymous — `app.MapPost("/health", …)` would
+        // be swallowed by the anonymous `GET /health` and appear in neither half.
         var anonymous = endpoints
             .Where(e => e.Metadata.GetMetadata<IAllowAnonymous>() is not null)
-            .Select(e => e.RoutePattern.RawText!)
+            .SelectMany(RouteKeys)
             .ToHashSet(StringComparer.Ordinal);
-        var authorized = endpoints
+        var registered = endpoints
             .Where(e => e.Metadata.GetMetadata<IAllowAnonymous>() is null
                         && e.Metadata.GetMetadata<IAuthorizeData>() is not null)
-            .ToList();
+            .SelectMany(RouteKeys)
+            .ToHashSet(StringComparer.Ordinal);
 
         var unclassified = endpoints
-            .Where(e => !anonymous.Contains(e.RoutePattern.RawText!))
-            .Except(authorized)
-            .Select(e => e.RoutePattern.RawText!)
+            .SelectMany(RouteKeys)
+            .Where(key => !anonymous.Contains(key) && !registered.Contains(key))
             .ToList();
         unclassified.ShouldBeEmpty(
             "every route must be either declared anonymous (DeclaredAnonymousRoutes) or carry "
@@ -329,11 +345,6 @@ public class TenantIsolationLiveTests(TenantIsolationApiFactory factory) : IClas
 
         // (b) COVERAGE. Set equality both ways: a new authenticated endpoint with no entry in `Swept`
         // fails here, and so does a `Swept` entry whose route was renamed or unregistered.
-        var registered = authorized
-            .SelectMany(e => (e.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods ?? ["*"])
-                .Select(m => $"{m} {e.RoutePattern.RawText}"))
-            .ToHashSet(StringComparer.Ordinal);
-
         registered.ShouldBe(
             Swept.Select(s => s.Key).ToHashSet(StringComparer.Ordinal),
             ignoreOrder: true,
@@ -344,6 +355,15 @@ public class TenantIsolationLiveTests(TenantIsolationApiFactory factory) : IClas
 
         Swept.Select(s => s.Key).ShouldBeUnique();
     }
+
+    /// <summary>
+    /// The <c>"METHOD template"</c> keys one registered endpoint contributes — the single unit BOTH
+    /// halves of the guard above are keyed on, and the same shape as <see cref="SweptRoute.Key"/>. A
+    /// route registered without any method constraint keys as <c>* template</c>.
+    /// </summary>
+    private static IEnumerable<string> RouteKeys(RouteEndpoint endpoint) =>
+        (endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods ?? ["*"])
+            .Select(m => $"{m} {endpoint.RoutePattern.RawText}");
 
     // ---------------------------------------------------------------- 2. reads
 
@@ -396,20 +416,38 @@ public class TenantIsolationLiveTests(TenantIsolationApiFactory factory) : IClas
             calendarBody.GetProperty("days").GetArrayLength()
                 .ShouldBe(0, "a sparse calendar over another tenant's month is empty, not merely phase-less");
 
-            // GET /cycle/day/{date} — the owner's busiest day must answer EXACTLY as a day nobody ever
+            // GET /cycle/day/{date} — a day the owner filled must answer EXACTLY as a day nobody ever
             // logged. Status-code equality is not enough: the point is that the two responses are
             // indistinguishable, so the fingerprints are compared with the echoed `date` normalised out.
-            var populated = await intruder.GetAsync(CycleDayUrl(owner.Anchor));
+            //
+            // TWO owner days are read, because the response carries THREE collections and no single day
+            // populates all of them. `owner.Anchor` is the busiest day — day log, cycle event, symptom —
+            // but every phase correction the owner has is dated AFTER it (SeedTenantAsync), so reading
+            // the anchor alone leaves the `phaseOverrides` leg asserting emptiness against a day that is
+            // empty for everyone: it would pass with `CycleDayService`'s override query unscoped.
             var barren = await intruder.GetAsync(CycleDayUrl(owner.Anchor.AddDays(-400)));
+            var barrenFingerprint = await FingerprintAsync(barren, "date");
+
+            var populated = await intruder.GetAsync(CycleDayUrl(owner.Anchor));
             populated.StatusCode.ShouldBe(HttpStatusCode.OK);
             var populatedBody = await populated.Content.ReadFromJsonAsync<JsonElement>();
             populatedBody.GetProperty("log").ValueKind.ShouldBe(JsonValueKind.Null);
             populatedBody.GetProperty("events").GetArrayLength().ShouldBe(0);
-            populatedBody.GetProperty("phaseOverrides").GetArrayLength().ShouldBe(0);
             (await FingerprintAsync(populated, "date"))
-                .ShouldBe(await FingerprintAsync(barren, "date"),
+                .ShouldBe(barrenFingerprint,
                     "a day the OTHER tenant filled must be answered identically to a day nobody has ever "
                     + "touched — otherwise the shape of the answer is itself the leak");
+
+            // The day the owner's phase correction is actually dated on.
+            var corrected = await intruder.GetAsync(CycleDayUrl(owner.Anchor.AddDays(SeededOverrideOffsetDays)));
+            corrected.StatusCode.ShouldBe(HttpStatusCode.OK);
+            (await corrected.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("phaseOverrides").GetArrayLength()
+                .ShouldBe(0, "the owner's phase correction is dated on this day and is theirs alone");
+            (await FingerprintAsync(corrected, "date"))
+                .ShouldBe(barrenFingerprint,
+                    "the day carrying the other tenant's phase correction must be answered identically "
+                    + "to a day nobody has ever touched");
 
             // GET /symptoms over the owner's window — nothing, in items OR in total.
             var symptoms = await intruder.GetAsync(SymptomWindowUrl(owner.Anchor.AddDays(-5), Today));
@@ -566,6 +604,34 @@ public class TenantIsolationLiveTests(TenantIsolationApiFactory factory) : IClas
                 avgCycleLengthDays = 21,
                 regularity = UserCycleSettings.RegularityValues.Regular,
             })).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            // POST /cycle/phase-override, on the 200 PATH — and it has to come after the step above,
+            // which is what makes the 200 reachable at all: the endpoint anchors a correction on the
+            // CALLER's own live period_start, and `/onboarding/cycle` has just seeded the intruder one
+            // on the owner's exact anchor day. Two tenants therefore hold a cycle keyed
+            // `(cycleStartOn = owner.Anchor)` — ordinary, not contrived — and the replace-the-set write
+            // below runs over it.
+            //
+            // Without this request the endpoint's WRITE half is unswept anywhere in the repository: the
+            // 400 branch (asserted in Id_addressed_routes…) returns before `ApplyOverridesAsync` is ever
+            // called. Dropping the UserId predicate from that method's IgnoreQueryFilters() lookup would
+            // then let a second tenant do both halves of replace-the-set to the owner's corrections —
+            // OVERWRITE `menstrual/end` in place (the request names that pair) and SOFT-DELETE
+            // `ovulatory/start` (the request omits it) — with this whole file green.
+            (await intruder.PostAsJsonAsync(Routes.CyclePhaseOverride, new
+            {
+                cycleStartOn = owner.Anchor.ToString("yyyy-MM-dd"),
+                boundaries = new[]
+                {
+                    new
+                    {
+                        phase = CyclePhaseOverride.Phases.Menstrual,
+                        boundary = CyclePhaseOverride.Boundaries.End,
+                        occurredOn = owner.Anchor.AddDays(SeededOverrideOffsetDays - 1).ToString("yyyy-MM-dd"),
+                    },
+                },
+            })).StatusCode.ShouldBe(HttpStatusCode.OK);
+
             (await intruder.PostAsJsonAsync(Routes.OnboardingComplete, new { }))
                 .StatusCode.ShouldBe(HttpStatusCode.OK);
 
@@ -576,6 +642,9 @@ public class TenantIsolationLiveTests(TenantIsolationApiFactory factory) : IClas
                 (await db.CycleEvents.CountAsync(e => e.UserId == intruderId)).ShouldBeGreaterThan(0);
                 (await db.CycleDayLogs.CountAsync(l => l.UserId == intruderId)).ShouldBeGreaterThan(0);
                 (await db.Symptoms.CountAsync(s => s.UserId == intruderId)).ShouldBe(1);
+                // The caller's own correction row. Under a dropped UserId predicate the write lands on
+                // the owner's `menstrual/end` row instead and the caller ends up owning none.
+                (await db.CyclePhaseOverrides.CountAsync(o => o.UserId == intruderId)).ShouldBe(1);
                 (await db.CycleSettings.CountAsync(s => s.UserId == intruderId)).ShouldBe(1);
                 (await db.UserDevices.CountAsync(d => d.UserId == intruderId)).ShouldBe(2);
                 (await db.UserGoals.CountAsync(g => g.UserId == intruderId)).ShouldBeGreaterThan(0);
@@ -591,7 +660,7 @@ public class TenantIsolationLiveTests(TenantIsolationApiFactory factory) : IClas
 
             (await SnapshotAsync(ownerId)).ShouldBe(
                 owner.Snapshot,
-                "fourteen writes by a second tenant, and not one byte of the first tenant's rows moved");
+                "fifteen writes by a second tenant, and not one byte of the first tenant's rows moved");
         }
         finally
         {
@@ -910,6 +979,14 @@ public class TenantIsolationLiveTests(TenantIsolationApiFactory factory) : IClas
     /// <summary>The value <see cref="SeedTenantAsync"/> patches onto the owner's cycle settings.</summary>
     private const int SeededAvgCycleLengthDays = 41;
 
+    /// <summary>
+    /// Days after the anchor that <see cref="SeedTenantAsync"/> dates the owner's first phase correction
+    /// on. Named because the day-read assertion has to aim at THIS day: the anchor itself carries the
+    /// day log, the cycle event and the symptom but no override, so an override assertion pointed at
+    /// the anchor asserts nothing.
+    /// </summary>
+    private const int SeededOverrideOffsetDays = 4;
+
     private sealed record SeededTenant(
         Guid UserId,
         string Token,
@@ -992,12 +1069,27 @@ public class TenantIsolationLiveTests(TenantIsolationApiFactory factory) : IClas
         var symptomId = (await symptoms.Content.ReadFromJsonAsync<JsonElement>())
             .GetProperty("items")[0].GetProperty("id").GetGuid();
 
+        // TWO corrections on the one cycle, in a single request because this endpoint REPLACES the set.
+        // Two is what makes the write sweep able to exercise both halves of that replacement across the
+        // tenant boundary: an intruder's request naming `menstrual/end` and omitting `ovulatory/start`
+        // would, with the UserId predicate gone, overwrite the first and retract the second.
         (await authed.PostAsJsonAsync(Routes.CyclePhaseOverride, new
         {
             cycleStartOn = anchor.ToString("yyyy-MM-dd"),
             boundaries = new[]
             {
-                new { phase = CyclePhaseOverride.Phases.Menstrual, boundary = CyclePhaseOverride.Boundaries.End, occurredOn = anchor.AddDays(4).ToString("yyyy-MM-dd") },
+                new
+                {
+                    phase = CyclePhaseOverride.Phases.Menstrual,
+                    boundary = CyclePhaseOverride.Boundaries.End,
+                    occurredOn = anchor.AddDays(SeededOverrideOffsetDays).ToString("yyyy-MM-dd"),
+                },
+                new
+                {
+                    phase = CyclePhaseOverride.Phases.Ovulatory,
+                    boundary = CyclePhaseOverride.Boundaries.Start,
+                    occurredOn = anchor.AddDays(SeededOverrideOffsetDays + 3).ToString("yyyy-MM-dd"),
+                },
             },
         })).StatusCode.ShouldBe(HttpStatusCode.OK);
 
