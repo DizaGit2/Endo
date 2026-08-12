@@ -552,6 +552,10 @@ Backend only — no Flutter screens (P4b); the regenerated Dart client is the on
 
 **5. Coverage** — see §G15; implemented as `backend/tools/check-coverage.cs` (path-based, prints both figures) + `backend/coverlet.runsettings`, gated in `ci-backend.yml`'s `integration` job. T20 measurement: whole tree **4702/8347 = 56.33%**, hand-written **3893/4007 = 97.15%**.
 
+**6. The migration `Down()` round-trip is VERIFIED** (T20 was blocked on it; the P4a safety review ran it 2026-08-11 against a throwaway `lumen_rt_review` database, since dropped). Fresh DB → up = 8 migrations / 18 tables → down to `20260614172735_AddAdminAuditLogEntityIndex` = 5 migrations / 7 tables, all eleven T5–T7 tables dropped and the `user_profile_enc` columns reverted → re-up = 18 tables. Every step `rc=0`. **T22 ticks the "migrations clean" exit criterion on this**; deviation 3 of `.superpowers/sdd/task-20-report.md` is struck accordingly.
+
+**7. The test-residue sweep is OPT-IN** (`LUMEN_SWEEP_TEST_RESIDUE=1`) as of the safety-fix commit, fail-closed on an unreadable age, covered by `TestResidueSweepRuleTests`, and gated behind a positive dev-stack identity proof. It used to run on every `dotnet test` of `Lumen.IntegrationTests` and report only to a diagnostic sink nothing had enabled. **Any later phase that expects the dev stack to tidy itself must set the variable** — see `RUNBOOK.md` §10.
+
 ---
 
 ### T21 — Dart client regeneration + client verification

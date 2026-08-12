@@ -10,8 +10,11 @@ namespace Lumen.IntegrationTests;
 /// Both halves matter: a sweep that missed residue would leave the dev stack exactly as it was, and a
 /// sweep that over-matched would delete a developer's dev-stack account — or another run's user
 /// mid-assertion — which is far worse than the residue it was written to clean up.
-/// <b>[Category=LiveStack]</b> — needs Postgres only (the Keycloak half is exercised for real by every
-/// run's startup hook, and cannot be asserted here without creating the very accounts it deletes).
+/// <b>[Category=LiveStack]</b> — needs Postgres only. The Keycloak half is covered by
+/// <see cref="TestResidueSweepRuleTests"/> instead, which proves the per-account rule as a pure
+/// predicate: asserting it live would mean creating, in a developer's own realm, the very accounts the
+/// assertion then deletes. (It used to be "covered" by running on every startup, which is not coverage —
+/// nothing asserted the outcome, and the sweep is opt-in now.)
 /// </summary>
 public class TestResidueSweepLiveTests
 {

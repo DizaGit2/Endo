@@ -20,6 +20,18 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!--
+    diagnosticMessages=true, so the residue sweep's DiagnosticMessages actually reach the console.
+    Without this file xUnit defaults it to false and every line the sweep "reported" went nowhere:
+    the sweep deleted accounts for its whole life without a single visible line, which is how a
+    permanently broken sweep would have survived unnoticed. The test host's own stdout/stderr is
+    swallowed by the VSTest console logger at default verbosity (measured), so this channel — the one
+    xUnit's [xUnit.net ...] lines already use — is the only one a plain `dotnet test` shows.
+  -->
+  <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\Lumen.Infrastructure\Lumen.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Lumen.Api\Lumen.Api.csproj" />

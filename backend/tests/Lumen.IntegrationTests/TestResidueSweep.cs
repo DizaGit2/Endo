@@ -19,30 +19,57 @@ namespace Lumen.IntegrationTests;
 /// onboarding test ever run. Neither is a correctness bug — every test scopes its assertions to its own
 /// user id — but both make the dev stack progressively slower and hide real residue in noise.</para>
 ///
-/// <para><b>The rule, and why it cannot delete something it should not.</b> A row is swept only if it
-/// is BOTH:</para>
+/// <para><b>OPT-IN, and loud.</b> Nothing here runs unless the run sets
+/// <see cref="EnableVariable"/><c>=1</c>. It used to run from the assembly's test-framework hook on
+/// every <c>dotnet test</c> of this assembly — including a <c>--filter</c> run of a single test that
+/// never opens a connection, and every IDE "run test" — and it reported only to xUnit's diagnostic
+/// sink, which prints nothing without an <c>xunit.runner.json</c> this repo does not have. The
+/// combination is what made it dangerous: on 2026-08-11 a filtered run of thirty pure in-memory tests
+/// reclaimed 194 Keycloak accounts and printed not one line about it. Everything the sweep does now
+/// goes to the console as well as the sink, because a delete nobody can see is both how a broken sweep
+/// survives (the prefix-search bug was found by hand, not by a test) and how a working one surprises
+/// somebody.</para>
+///
+/// <para><b>The rule, and what each part of it is worth.</b> A row is swept only if it is BOTH:</para>
 /// <list type="number">
 /// <item><b>Test-shaped</b> — either its <c>consent_records</c> row carries
-/// <see cref="TestPolicyVersion"/> (the literal only this suite posts to <c>/onboarding/start</c>; the
-/// Flutter client sends <c>v1-draft</c> and production a real version), or its <c>EmailHash</c> starts
-/// with <see cref="DirectInsertEmailHashPrefix"/> — the plaintext marker
-/// <c>TestFixtures.NewUser</c>/<c>SecurityTestFixtures.NewUser</c> write, which no production path can
-/// produce because a real hash is Vault ciphertext (<c>vault:v1:…</c>). Keycloak's half is narrower
-/// still: only <c>@example.com</c>, an RFC 2606 reserved domain.</item>
+/// <see cref="TestPolicyVersion"/> (a CONVENTION: <c>policyVersion</c> is caller-controlled free text,
+/// so this identifies rows this suite wrote but does not prove nothing else wrote them), or its
+/// <c>EmailHash</c> starts with <see cref="DirectInsertEmailHashPrefix"/> — the plaintext marker
+/// <c>TestFixtures.NewUser</c>/<c>SecurityTestFixtures.NewUser</c> write, which is a genuine INVARIANT,
+/// because no production path can produce it: a real hash is Vault ciphertext (<c>vault:v1:…</c>).
+/// Keycloak's half is narrower still: only the <c>@example.com</c> SUFFIX, an RFC 2606 reserved
+/// domain.</item>
 /// <item><b>Older than <see cref="MinimumAge"/></b> — residue is by definition from an EARLIER run, so
 /// the age floor makes the sweep safe under any concurrency. Without it a run starting while another
 /// is in flight (the two live test assemblies are separate <c>dotnet test</c> invocations) would delete
-/// the other's users mid-assertion.</item>
+/// the other's users mid-assertion. Both halves evaluate it FAIL-CLOSED: an age that cannot be
+/// established keeps the row.</item>
 /// </list>
 ///
-/// <para><b>Fail-soft, always.</b> This runs from the assembly's test-framework hook, which means it
-/// also runs for the CI <c>openapi-contract</c> job — a docker-less run of the static contract tests.
-/// A sweep that threw there would fail every test in the assembly for want of a database it never
-/// needed, so every failure here is swallowed and reported to the diagnostic sink instead.</para>
+/// <para><b>And it must be the dev stack.</b> The endpoints below are hard-coded, which prevents a
+/// reconfiguration but not a tunnel — an address is not an identity. So before either half runs,
+/// <see cref="EnsureDevStackAsync"/> proves positively that the realm behind the address is the one
+/// <c>deploy/keycloak/realm-lumen.json</c> imports, and <see cref="MaxPostgresDeletesPerRun"/> bounds
+/// the damage if the marker rule ever matches more than it was written for.</para>
+///
+/// <para><b>Fail-soft, always.</b> An enabled sweep that cannot reach its stack must not fail the run
+/// it is only tidying up for, so every failure here is swallowed and printed rather than thrown.</para>
 /// </summary>
 internal static class TestResidueSweep
 {
-    /// <summary>The <c>policyVersion</c> every live test posts to <c>/onboarding/start</c>.</summary>
+    /// <summary>
+    /// The <c>policyVersion</c> every live test posts to <c>/onboarding/start</c>.
+    ///
+    /// <para><b>A convention, not an invariant — do not over-trust it.</b> <c>policyVersion</c> is
+    /// caller-controlled free text on <c>POST /onboarding/start</c>: nothing stops another client, or a
+    /// stray script, from posting this literal, and if one did, its aged row would look like residue to
+    /// the rule below. Contrast <see cref="DirectInsertEmailHashPrefix"/>, which production genuinely
+    /// cannot produce because a real hash is Vault ciphertext. That asymmetry is why the marker rule is
+    /// not the only thing standing between this sweep and a row it should not touch — the opt-in gate,
+    /// the environment identity proof, the age floor and
+    /// <see cref="MaxPostgresDeletesPerRun"/> all sit in front of it.</para>
+    /// </summary>
     public const string TestPolicyVersion = "v1-test";
 
     /// <summary>The <c>EmailHash</c> prefix of a directly-inserted test user (never a real hash).</summary>
@@ -64,6 +91,15 @@ internal static class TestResidueSweep
     /// </summary>
     public const int MaxKeycloakDeletesPerRun = 500;
 
+    /// <summary>
+    /// Blast-radius cap on the Postgres half: more candidates than this and the sweep REFUSES rather
+    /// than deleting. A normal aborted run strands a handful of rows, so this is never reached in
+    /// ordinary use — it exists because <see cref="TestPolicyVersion"/> is a convention rather than an
+    /// invariant, so an unexpectedly large match means the rule is matching something it was not
+    /// written for, and "delete more than I have ever deleted" is the wrong response to that surprise.
+    /// </summary>
+    public const int MaxPostgresDeletesPerRun = 200;
+
     private const string UserIdPropertyName = "UserId";
     /// <summary>
     /// The IPv4 literal, not <c>localhost</c> — the compose stack publishes Keycloak on
@@ -75,10 +111,82 @@ internal static class TestResidueSweep
     private const string KeycloakBaseUrl = "http://127.0.0.1:8080";
     private const string Realm = "lumen";
 
+    /// <summary>
+    /// The confidential client, and its committed dev-only secret, that
+    /// <c>deploy/keycloak/realm-lumen.json</c> imports into the <c>lumen</c> realm. Used by
+    /// <see cref="EnsureDevStackAsync"/> as positive proof of which realm is actually there — not as an
+    /// authentication step; the deletes use the admin-cli token. Same literal
+    /// <c>TestFixtures.ApiClientSecret</c> already carries.
+    /// </summary>
+    private const string DevRealmClientId = "api";
+
+    /// <inheritdoc cref="DevRealmClientId"/>
+    private const string DevRealmClientSecret = "dev-api-secret";
+
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static bool _swept;
 
-    /// <summary>Runs the sweep at most once per process. Never throws.</summary>
+    /// <summary>
+    /// Environment variable a run must set to <c>1</c> (or <c>true</c>) to opt into the sweep.
+    /// </summary>
+    public const string EnableVariable = "LUMEN_SWEEP_TEST_RESIDUE";
+
+    /// <summary>
+    /// Whether <paramref name="value"/> is an explicit opt-in. Deliberately narrow — only the two
+    /// documented literals — because everything this gate protects is a delete.
+    /// </summary>
+    public static bool IsEnabled(string? value) =>
+        value?.Trim() is { } v && (v == "1" || v.Equals("true", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Whether one candidate account may be reclaimed. Pure, so the riskiest rule in this file can be
+    /// proven without a Keycloak and without deleting anything (<c>TestResidueSweepRuleTests</c>).
+    /// </summary>
+    /// <param name="username">The account's username, or <c>null</c> if the representation omits it.</param>
+    /// <param name="createdTimestampMs">Its creation instant, or <c>null</c> if it cannot be read.</param>
+    /// <param name="cutoffMs">Accounts created before this instant are old enough to be residue.</param>
+    public static bool IsReclaimableKeycloakAccount(string? username, long? createdTimestampMs, long cutoffMs)
+    {
+        if (username is null) return false;
+
+        // A SUFFIX test, never Contains(): `search` matches infixes and also matches first/last name,
+        // so `x@example.com.evil.net` is a candidate the perimeter has to reject.
+        if (!username.EndsWith(TestEmailDomain, StringComparison.OrdinalIgnoreCase)) return false;
+
+        // FAIL-CLOSED. An age we could not establish is not evidence of age: `null` here means the
+        // representation had no readable createdTimestamp, and the only safe reading of "I do not know
+        // how old this is" is "keep it". Deleting instead would make the age floor fail-OPEN — one
+        // Keycloak serialization change (or a briefRepresentation that drops the field) and the floor
+        // silently switches off for EVERY account at once, which is the single worst failure this file
+        // has, because the floor is what makes the sweep safe against a concurrently running suite.
+        // The Postgres half is fail-closed by construction (`u.CreatedAt < cutoff`, evaluated in SQL on
+        // a NOT NULL column, matches nothing when it cannot compare); this half now matches it.
+        if (createdTimestampMs is not { } created) return false;
+
+        return created < cutoffMs;
+    }
+
+    /// <summary>
+    /// Reads <c>createdTimestamp</c> off a user representation, or <c>null</c> when it is absent or is
+    /// not something an <c>int64</c> can be read from. Never throws: a representation that serializes
+    /// the field as a string, a double or an ISO instant must degrade to an UNKNOWN age (which
+    /// <see cref="IsReclaimableKeycloakAccount"/> keeps), never to an exception and never to a zero.
+    /// </summary>
+    public static long? ReadCreatedTimestamp(JsonElement account) =>
+        account.TryGetProperty("createdTimestamp", out var created)
+        && created.ValueKind == JsonValueKind.Number
+        && created.TryGetInt64(out var ms)
+            ? ms
+            : null;
+
+    /// <summary>
+    /// Runs the sweep at most once per process, and only if this run explicitly opted in. Never throws.
+    /// </summary>
+    /// <param name="report">
+    /// One of three sinks the sweep announces itself on, and in practice xUnit's diagnostic message
+    /// sink. Never the only one — see the comment on <c>Say</c> for why each is needed.
+    /// </param>
+    /// <param name="ct">Cancellation.</param>
     public static async Task RunOnceAsync(Action<string> report, CancellationToken ct = default)
     {
         await Gate.WaitAsync(ct);
@@ -87,26 +195,73 @@ internal static class TestResidueSweep
             if (_swept) return;
             _swept = true;
 
+            // THE OPT-IN GATE. Everything past this line deletes rows and accounts, so an ordinary
+            // `dotnet test` — a --filter run of one unrelated test, an IDE's "run test", a CI job that
+            // only wanted the static contract checks — must get past it without touching anything.
+            if (!IsEnabled(Environment.GetEnvironmentVariable(EnableVariable))) return;
+
+            // Say it THREE times, on purpose, because no single channel here is reliably visible:
+            //
+            //   * the console is what an IDE test pane and an interactive run show. Measured: the VSTest
+            //     console logger swallows the test host's stdout AND stderr at its default (minimal)
+            //     verbosity, so this one alone shows nothing on `dotnet test --nologo`.
+            //   * `report` reaches xUnit's DiagnosticMessage sink. That sink printed NOTHING for the
+            //     whole life of this sweep, because `diagnosticMessages` defaults to false and there was
+            //     no xunit.runner.json in the repo — so every line it "reported" went nowhere. The file
+            //     now exists (see the csproj); this channel prints from `verbosity=normal` up.
+            //   * the log file survives the run regardless of any verbosity setting (see AppendToLog).
+            //
+            // A delete that leaves no trace is how a permanently broken sweep survives (the
+            // prefix-search bug was found by hand, not by a test) and how a working one deletes 194
+            // accounts during a filtered run of pure in-memory tests without anyone noticing.
+            void Say(string line)
+            {
+                Console.WriteLine($"[residue-sweep] {line}");
+                Console.Out.Flush();
+                report(line);
+                AppendToLog(line);
+            }
+
             var cutoff = DateTimeOffset.UtcNow - MinimumAge;
+            Say($"ENABLED by {EnableVariable} — reclaiming test residue created before {cutoff:u}");
+
+            // The endpoints below are hard-coded, which stops a RECONFIGURATION but not a TUNNEL:
+            // `kubectl port-forward svc/keycloak 8080:8080` or `ssh -L 55432:staging-db:5432` puts
+            // something else entirely behind the same address, and an address is not an identity.
+            // So prove the identity positively before deleting anything, and skip BOTH halves if the
+            // proof fails — the two endpoints are one compose stack, and if that stack is not there,
+            // there is nothing here worth reclaiming.
+            try
+            {
+                await EnsureDevStackAsync(ct);
+                Say($"environment identity confirmed: realm '{Realm}' accepted the compose stack's "
+                    + $"sentinel '{DevRealmClientId}' client secret");
+            }
+            catch (Exception ex)
+            {
+                Say($"environment identity check FAILED ({ex.GetType().Name}: {ex.Message}) — "
+                    + "NOTHING was swept");
+                return;
+            }
 
             try
             {
                 var rows = await SweepDatabaseAsync(cutoff, ct);
-                report($"residue sweep: {rows} orphan test user(s) reclaimed from Postgres");
+                Say($"{rows} orphan test user(s) reclaimed from Postgres");
             }
             catch (Exception ex)
             {
-                report($"residue sweep: Postgres half skipped ({ex.GetType().Name}: {ex.Message})");
+                Say($"Postgres half skipped ({ex.GetType().Name}: {ex.Message})");
             }
 
             try
             {
                 var accounts = await SweepKeycloakAsync(cutoff, ct);
-                report($"residue sweep: {accounts} test account(s) reclaimed from Keycloak");
+                Say($"{accounts} test account(s) reclaimed from Keycloak realm '{Realm}'");
             }
             catch (Exception ex)
             {
-                report($"residue sweep: Keycloak half skipped ({ex.GetType().Name}: {ex.Message})");
+                Say($"Keycloak half skipped ({ex.GetType().Name}: {ex.Message})");
             }
         }
         finally
@@ -114,6 +269,65 @@ internal static class TestResidueSweep
             Gate.Release();
         }
     }
+
+    /// <summary>
+    /// Positive proof that the stack behind the hard-coded endpoints is THIS repo's dev stack: the
+    /// <c>lumen</c> realm must accept the <c>api</c> client secret that
+    /// <c>deploy/keycloak/realm-lumen.json</c> imports verbatim. The secret is a committed dev sentinel
+    /// that exists nowhere else — any real environment injects its own via sops (<c>ARCHITECTURE.md
+    /// §G</c>) — so a successful grant identifies the realm, where the address only located it.
+    /// Throws if the proof fails.
+    /// </summary>
+    private static async Task EnsureDevStackAsync(CancellationToken ct)
+    {
+        using var http = NewKeycloakClient();
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "client_credentials",
+            ["client_id"] = DevRealmClientId,
+            ["client_secret"] = DevRealmClientSecret,
+        });
+
+        using var response = await http.PostAsync($"/realms/{Realm}/protocol/openid-connect/token", form, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"the realm behind {KeycloakBaseUrl} rejected the dev stack's sentinel client secret "
+                + $"(HTTP {(int)response.StatusCode}); whatever is listening there, it is not the realm "
+                + "deploy/keycloak/realm-lumen.json imports");
+        }
+    }
+
+    /// <summary>
+    /// The third channel, and the only one that survives the run: append to
+    /// <c>TestResults/residue-sweep.log</c> at the repo root (already gitignored). It exists because
+    /// `dotnet test`'s console logger is MINIMAL by default and drops the test host's stdout, stderr
+    /// and xUnit diagnostics alike (all three measured) — so on the canonical command the other two
+    /// channels can still show nobody anything. A file cannot be swallowed by a verbosity setting, so
+    /// after any sweep there is always something to read that says what was deleted.
+    /// Never throws: a log that fails must not fail the run it is only annotating.
+    /// </summary>
+    private static void AppendToLog(string line)
+    {
+        try
+        {
+            var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git"))) dir = dir.Parent;
+            if (dir is null) return;
+
+            var results = Directory.CreateDirectory(Path.Combine(dir.FullName, "TestResults"));
+            File.AppendAllText(
+                Path.Combine(results.FullName, "residue-sweep.log"),
+                $"{DateTimeOffset.UtcNow:u}  {line}{Environment.NewLine}");
+        }
+        catch
+        {
+            // Deliberately swallowed — see the summary.
+        }
+    }
+
+    private static HttpClient NewKeycloakClient() =>
+        new() { BaseAddress = new Uri(KeycloakBaseUrl), Timeout = TimeSpan.FromSeconds(30) };
 
     /// <summary>
     /// Deletes every aged, test-shaped user and everything that belongs to it. Returns the number of
@@ -134,6 +348,14 @@ internal static class TestResidueSweep
             .ToListAsync(ct);
 
         if (residue.Count == 0) return 0;
+
+        if (residue.Count > MaxPostgresDeletesPerRun)
+        {
+            throw new InvalidOperationException(
+                $"{residue.Count} candidate rows exceeds the {MaxPostgresDeletesPerRun}-row cap — "
+                + "refusing to sweep. Either this is not the dev database, or the marker rule is "
+                + "matching rows it was not written for; inspect them before raising the cap.");
+        }
 
         // Dependents are derived from the COMPILED EF MODEL — every entity type carrying a `UserId` —
         // rather than typed out. A hand list is the failure mode this sweep is cleaning up after: it
@@ -188,7 +410,7 @@ internal static class TestResidueSweep
     /// </summary>
     private static async Task<int> SweepKeycloakAsync(DateTimeOffset cutoff, CancellationToken ct)
     {
-        using var http = new HttpClient { BaseAddress = new Uri(KeycloakBaseUrl), Timeout = TimeSpan.FromSeconds(30) };
+        using var http = NewKeycloakClient();
 
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -221,16 +443,7 @@ internal static class TestResidueSweep
         foreach (var account in candidates.EnumerateArray())
         {
             var username = account.TryGetProperty("username", out var u) ? u.GetString() : null;
-            if (username is null || !username.EndsWith(TestEmailDomain, StringComparison.OrdinalIgnoreCase)) continue;
-
-            // No createdTimestamp means an account older than Keycloak started recording them; treat it
-            // as aged rather than skipping it forever.
-            if (account.TryGetProperty("createdTimestamp", out var created) &&
-                created.TryGetInt64(out var createdMs) &&
-                createdMs >= cutoffMs)
-            {
-                continue;
-            }
+            if (!IsReclaimableKeycloakAccount(username, ReadCreatedTimestamp(account), cutoffMs)) continue;
 
             using var delete = await http.DeleteAsync($"/admin/realms/{Realm}/users/{account.GetProperty("id").GetString()}", ct);
             if (delete.IsSuccessStatusCode) deleted++;
