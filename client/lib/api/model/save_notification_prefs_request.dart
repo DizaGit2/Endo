@@ -3,69 +3,70 @@
 //
 
 // ignore_for_file: unused_element
+import 'package:built_collection/built_collection.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
-part 'update_me_request.g.dart';
+part 'save_notification_prefs_request.g.dart';
 
-/// UpdateMeRequest
+/// SaveNotificationPrefsRequest
 ///
 /// Properties:
-/// * [displayName] 
-/// * [locale] 
-/// * [timezone] 
+/// * [enabledCategories] 
+/// * [platform] 
+/// * [pushToken] 
 @BuiltValue()
-abstract class UpdateMeRequest implements Built<UpdateMeRequest, UpdateMeRequestBuilder> {
-  @BuiltValueField(wireName: r'displayName')
-  String? get displayName;
+abstract class SaveNotificationPrefsRequest implements Built<SaveNotificationPrefsRequest, SaveNotificationPrefsRequestBuilder> {
+  @BuiltValueField(wireName: r'enabledCategories')
+  BuiltList<String>? get enabledCategories;
 
-  @BuiltValueField(wireName: r'locale')
-  String? get locale;
+  @BuiltValueField(wireName: r'platform')
+  String? get platform;
 
-  @BuiltValueField(wireName: r'timezone')
-  String? get timezone;
+  @BuiltValueField(wireName: r'pushToken')
+  String? get pushToken;
 
-  UpdateMeRequest._();
+  SaveNotificationPrefsRequest._();
 
-  factory UpdateMeRequest([void updates(UpdateMeRequestBuilder b)]) = _$UpdateMeRequest;
+  factory SaveNotificationPrefsRequest([void updates(SaveNotificationPrefsRequestBuilder b)]) = _$SaveNotificationPrefsRequest;
 
   @BuiltValueHook(initializeBuilder: true)
-  static void _defaults(UpdateMeRequestBuilder b) => b;
+  static void _defaults(SaveNotificationPrefsRequestBuilder b) => b;
 
   @BuiltValueSerializer(custom: true)
-  static Serializer<UpdateMeRequest> get serializer => _$UpdateMeRequestSerializer();
+  static Serializer<SaveNotificationPrefsRequest> get serializer => _$SaveNotificationPrefsRequestSerializer();
 }
 
-class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest> {
+class _$SaveNotificationPrefsRequestSerializer implements PrimitiveSerializer<SaveNotificationPrefsRequest> {
   @override
-  final Iterable<Type> types = const [UpdateMeRequest, _$UpdateMeRequest];
+  final Iterable<Type> types = const [SaveNotificationPrefsRequest, _$SaveNotificationPrefsRequest];
 
   @override
-  final String wireName = r'UpdateMeRequest';
+  final String wireName = r'SaveNotificationPrefsRequest';
 
   Iterable<Object?> _serializeProperties(
     Serializers serializers,
-    UpdateMeRequest object, {
+    SaveNotificationPrefsRequest object, {
     FullType specifiedType = FullType.unspecified,
   }) sync* {
-    if (object.displayName != null) {
-      yield r'displayName';
+    if (object.enabledCategories != null) {
+      yield r'enabledCategories';
       yield serializers.serialize(
-        object.displayName,
+        object.enabledCategories,
+        specifiedType: const FullType.nullable(BuiltList, [FullType(String)]),
+      );
+    }
+    if (object.platform != null) {
+      yield r'platform';
+      yield serializers.serialize(
+        object.platform,
         specifiedType: const FullType.nullable(String),
       );
     }
-    if (object.locale != null) {
-      yield r'locale';
+    if (object.pushToken != null) {
+      yield r'pushToken';
       yield serializers.serialize(
-        object.locale,
-        specifiedType: const FullType.nullable(String),
-      );
-    }
-    if (object.timezone != null) {
-      yield r'timezone';
-      yield serializers.serialize(
-        object.timezone,
+        object.pushToken,
         specifiedType: const FullType.nullable(String),
       );
     }
@@ -74,7 +75,7 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
   @override
   Object serialize(
     Serializers serializers,
-    UpdateMeRequest object, {
+    SaveNotificationPrefsRequest object, {
     FullType specifiedType = FullType.unspecified,
   }) {
     return _serializeProperties(serializers, object, specifiedType: specifiedType).toList();
@@ -85,36 +86,36 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
     required List<Object?> serializedList,
-    required UpdateMeRequestBuilder result,
+    required SaveNotificationPrefsRequestBuilder result,
     required List<Object?> unhandled,
   }) {
     for (var i = 0; i < serializedList.length; i += 2) {
       final key = serializedList[i] as String;
       final value = serializedList[i + 1];
       switch (key) {
-        case r'displayName':
+        case r'enabledCategories':
           final valueDes = serializers.deserialize(
             value,
-            specifiedType: const FullType.nullable(String),
-          ) as String?;
+            specifiedType: const FullType.nullable(BuiltList, [FullType(String)]),
+          ) as BuiltList<String>?;
           if (valueDes == null) continue;
-          result.displayName = valueDes;
+          result.enabledCategories.replace(valueDes);
           break;
-        case r'locale':
+        case r'platform':
           final valueDes = serializers.deserialize(
             value,
             specifiedType: const FullType.nullable(String),
           ) as String?;
           if (valueDes == null) continue;
-          result.locale = valueDes;
+          result.platform = valueDes;
           break;
-        case r'timezone':
+        case r'pushToken':
           final valueDes = serializers.deserialize(
             value,
             specifiedType: const FullType.nullable(String),
           ) as String?;
           if (valueDes == null) continue;
-          result.timezone = valueDes;
+          result.pushToken = valueDes;
           break;
         default:
           unhandled.add(key);
@@ -125,12 +126,12 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
   }
 
   @override
-  UpdateMeRequest deserialize(
+  SaveNotificationPrefsRequest deserialize(
     Serializers serializers,
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
   }) {
-    final result = UpdateMeRequestBuilder();
+    final result = SaveNotificationPrefsRequestBuilder();
     final serializedList = (serialized as Iterable<Object?>).toList();
     final unhandled = <Object?>[];
     _deserializeProperties(

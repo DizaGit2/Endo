@@ -7,29 +7,21 @@ import 'package:lumen/api/model/date.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
-part 'me_response.g.dart';
+part 'save_baseline_request.g.dart';
 
-/// MeResponse
+/// SaveBaselineRequest
 ///
 /// Properties:
 /// * [diagnosedOn] 
-/// * [displayName] 
 /// * [dob] 
 /// * [endoStatus] 
 /// * [heightCm] 
-/// * [id] 
-/// * [latestWeightKg] 
-/// * [locale] 
-/// * [onboardingCompleted] 
 /// * [rasrmStage] 
-/// * [timezone] 
+/// * [weightKg] 
 @BuiltValue()
-abstract class MeResponse implements Built<MeResponse, MeResponseBuilder> {
+abstract class SaveBaselineRequest implements Built<SaveBaselineRequest, SaveBaselineRequestBuilder> {
   @BuiltValueField(wireName: r'diagnosedOn')
   String? get diagnosedOn;
-
-  @BuiltValueField(wireName: r'displayName')
-  String? get displayName;
 
   @BuiltValueField(wireName: r'dob')
   Date? get dob;
@@ -40,58 +32,39 @@ abstract class MeResponse implements Built<MeResponse, MeResponseBuilder> {
   @BuiltValueField(wireName: r'heightCm')
   int? get heightCm;
 
-  @BuiltValueField(wireName: r'id')
-  String? get id;
-
-  @BuiltValueField(wireName: r'latestWeightKg')
-  double? get latestWeightKg;
-
-  @BuiltValueField(wireName: r'locale')
-  String? get locale;
-
-  @BuiltValueField(wireName: r'onboardingCompleted')
-  bool? get onboardingCompleted;
-
   @BuiltValueField(wireName: r'rasrmStage')
   int? get rasrmStage;
 
-  @BuiltValueField(wireName: r'timezone')
-  String? get timezone;
+  @BuiltValueField(wireName: r'weightKg')
+  double? get weightKg;
 
-  MeResponse._();
+  SaveBaselineRequest._();
 
-  factory MeResponse([void updates(MeResponseBuilder b)]) = _$MeResponse;
+  factory SaveBaselineRequest([void updates(SaveBaselineRequestBuilder b)]) = _$SaveBaselineRequest;
 
   @BuiltValueHook(initializeBuilder: true)
-  static void _defaults(MeResponseBuilder b) => b;
+  static void _defaults(SaveBaselineRequestBuilder b) => b;
 
   @BuiltValueSerializer(custom: true)
-  static Serializer<MeResponse> get serializer => _$MeResponseSerializer();
+  static Serializer<SaveBaselineRequest> get serializer => _$SaveBaselineRequestSerializer();
 }
 
-class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
+class _$SaveBaselineRequestSerializer implements PrimitiveSerializer<SaveBaselineRequest> {
   @override
-  final Iterable<Type> types = const [MeResponse, _$MeResponse];
+  final Iterable<Type> types = const [SaveBaselineRequest, _$SaveBaselineRequest];
 
   @override
-  final String wireName = r'MeResponse';
+  final String wireName = r'SaveBaselineRequest';
 
   Iterable<Object?> _serializeProperties(
     Serializers serializers,
-    MeResponse object, {
+    SaveBaselineRequest object, {
     FullType specifiedType = FullType.unspecified,
   }) sync* {
     if (object.diagnosedOn != null) {
       yield r'diagnosedOn';
       yield serializers.serialize(
         object.diagnosedOn,
-        specifiedType: const FullType.nullable(String),
-      );
-    }
-    if (object.displayName != null) {
-      yield r'displayName';
-      yield serializers.serialize(
-        object.displayName,
         specifiedType: const FullType.nullable(String),
       );
     }
@@ -116,34 +89,6 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
         specifiedType: const FullType.nullable(int),
       );
     }
-    if (object.id != null) {
-      yield r'id';
-      yield serializers.serialize(
-        object.id,
-        specifiedType: const FullType(String),
-      );
-    }
-    if (object.latestWeightKg != null) {
-      yield r'latestWeightKg';
-      yield serializers.serialize(
-        object.latestWeightKg,
-        specifiedType: const FullType.nullable(double),
-      );
-    }
-    if (object.locale != null) {
-      yield r'locale';
-      yield serializers.serialize(
-        object.locale,
-        specifiedType: const FullType.nullable(String),
-      );
-    }
-    if (object.onboardingCompleted != null) {
-      yield r'onboardingCompleted';
-      yield serializers.serialize(
-        object.onboardingCompleted,
-        specifiedType: const FullType(bool),
-      );
-    }
     if (object.rasrmStage != null) {
       yield r'rasrmStage';
       yield serializers.serialize(
@@ -151,11 +96,11 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
         specifiedType: const FullType.nullable(int),
       );
     }
-    if (object.timezone != null) {
-      yield r'timezone';
+    if (object.weightKg != null) {
+      yield r'weightKg';
       yield serializers.serialize(
-        object.timezone,
-        specifiedType: const FullType.nullable(String),
+        object.weightKg,
+        specifiedType: const FullType.nullable(double),
       );
     }
   }
@@ -163,7 +108,7 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
   @override
   Object serialize(
     Serializers serializers,
-    MeResponse object, {
+    SaveBaselineRequest object, {
     FullType specifiedType = FullType.unspecified,
   }) {
     return _serializeProperties(serializers, object, specifiedType: specifiedType).toList();
@@ -174,7 +119,7 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
     required List<Object?> serializedList,
-    required MeResponseBuilder result,
+    required SaveBaselineRequestBuilder result,
     required List<Object?> unhandled,
   }) {
     for (var i = 0; i < serializedList.length; i += 2) {
@@ -188,14 +133,6 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
           ) as String?;
           if (valueDes == null) continue;
           result.diagnosedOn = valueDes;
-          break;
-        case r'displayName':
-          final valueDes = serializers.deserialize(
-            value,
-            specifiedType: const FullType.nullable(String),
-          ) as String?;
-          if (valueDes == null) continue;
-          result.displayName = valueDes;
           break;
         case r'dob':
           final valueDes = serializers.deserialize(
@@ -221,36 +158,6 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
           if (valueDes == null) continue;
           result.heightCm = valueDes;
           break;
-        case r'id':
-          final valueDes = serializers.deserialize(
-            value,
-            specifiedType: const FullType(String),
-          ) as String;
-          result.id = valueDes;
-          break;
-        case r'latestWeightKg':
-          final valueDes = serializers.deserialize(
-            value,
-            specifiedType: const FullType.nullable(double),
-          ) as double?;
-          if (valueDes == null) continue;
-          result.latestWeightKg = valueDes;
-          break;
-        case r'locale':
-          final valueDes = serializers.deserialize(
-            value,
-            specifiedType: const FullType.nullable(String),
-          ) as String?;
-          if (valueDes == null) continue;
-          result.locale = valueDes;
-          break;
-        case r'onboardingCompleted':
-          final valueDes = serializers.deserialize(
-            value,
-            specifiedType: const FullType(bool),
-          ) as bool;
-          result.onboardingCompleted = valueDes;
-          break;
         case r'rasrmStage':
           final valueDes = serializers.deserialize(
             value,
@@ -259,13 +166,13 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
           if (valueDes == null) continue;
           result.rasrmStage = valueDes;
           break;
-        case r'timezone':
+        case r'weightKg':
           final valueDes = serializers.deserialize(
             value,
-            specifiedType: const FullType.nullable(String),
-          ) as String?;
+            specifiedType: const FullType.nullable(double),
+          ) as double?;
           if (valueDes == null) continue;
-          result.timezone = valueDes;
+          result.weightKg = valueDes;
           break;
         default:
           unhandled.add(key);
@@ -276,12 +183,12 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
   }
 
   @override
-  MeResponse deserialize(
+  SaveBaselineRequest deserialize(
     Serializers serializers,
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
   }) {
-    final result = MeResponseBuilder();
+    final result = SaveBaselineRequestBuilder();
     final serializedList = (serialized as Iterable<Object?>).toList();
     final unhandled = <Object?>[];
     _deserializeProperties(

@@ -3,70 +3,82 @@
 //
 
 // ignore_for_file: unused_element
+import 'package:lumen/api/model/date.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
-part 'update_me_request.g.dart';
+part 'log_cycle_event_request.g.dart';
 
-/// UpdateMeRequest
+/// LogCycleEventRequest
 ///
 /// Properties:
-/// * [displayName] 
-/// * [locale] 
-/// * [timezone] 
+/// * [flowIntensity] 
+/// * [kind] 
+/// * [notes] 
+/// * [occurredOn] 
 @BuiltValue()
-abstract class UpdateMeRequest implements Built<UpdateMeRequest, UpdateMeRequestBuilder> {
-  @BuiltValueField(wireName: r'displayName')
-  String? get displayName;
+abstract class LogCycleEventRequest implements Built<LogCycleEventRequest, LogCycleEventRequestBuilder> {
+  @BuiltValueField(wireName: r'flowIntensity')
+  int? get flowIntensity;
 
-  @BuiltValueField(wireName: r'locale')
-  String? get locale;
+  @BuiltValueField(wireName: r'kind')
+  String? get kind;
 
-  @BuiltValueField(wireName: r'timezone')
-  String? get timezone;
+  @BuiltValueField(wireName: r'notes')
+  String? get notes;
 
-  UpdateMeRequest._();
+  @BuiltValueField(wireName: r'occurredOn')
+  Date? get occurredOn;
 
-  factory UpdateMeRequest([void updates(UpdateMeRequestBuilder b)]) = _$UpdateMeRequest;
+  LogCycleEventRequest._();
+
+  factory LogCycleEventRequest([void updates(LogCycleEventRequestBuilder b)]) = _$LogCycleEventRequest;
 
   @BuiltValueHook(initializeBuilder: true)
-  static void _defaults(UpdateMeRequestBuilder b) => b;
+  static void _defaults(LogCycleEventRequestBuilder b) => b;
 
   @BuiltValueSerializer(custom: true)
-  static Serializer<UpdateMeRequest> get serializer => _$UpdateMeRequestSerializer();
+  static Serializer<LogCycleEventRequest> get serializer => _$LogCycleEventRequestSerializer();
 }
 
-class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest> {
+class _$LogCycleEventRequestSerializer implements PrimitiveSerializer<LogCycleEventRequest> {
   @override
-  final Iterable<Type> types = const [UpdateMeRequest, _$UpdateMeRequest];
+  final Iterable<Type> types = const [LogCycleEventRequest, _$LogCycleEventRequest];
 
   @override
-  final String wireName = r'UpdateMeRequest';
+  final String wireName = r'LogCycleEventRequest';
 
   Iterable<Object?> _serializeProperties(
     Serializers serializers,
-    UpdateMeRequest object, {
+    LogCycleEventRequest object, {
     FullType specifiedType = FullType.unspecified,
   }) sync* {
-    if (object.displayName != null) {
-      yield r'displayName';
+    if (object.flowIntensity != null) {
+      yield r'flowIntensity';
       yield serializers.serialize(
-        object.displayName,
+        object.flowIntensity,
+        specifiedType: const FullType.nullable(int),
+      );
+    }
+    if (object.kind != null) {
+      yield r'kind';
+      yield serializers.serialize(
+        object.kind,
         specifiedType: const FullType.nullable(String),
       );
     }
-    if (object.locale != null) {
-      yield r'locale';
+    if (object.notes != null) {
+      yield r'notes';
       yield serializers.serialize(
-        object.locale,
+        object.notes,
         specifiedType: const FullType.nullable(String),
       );
     }
-    if (object.timezone != null) {
-      yield r'timezone';
+    if (object.occurredOn != null) {
+      yield r'occurredOn';
       yield serializers.serialize(
-        object.timezone,
-        specifiedType: const FullType.nullable(String),
+        object.occurredOn,
+        specifiedType: const FullType.nullable(Date),
       );
     }
   }
@@ -74,7 +86,7 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
   @override
   Object serialize(
     Serializers serializers,
-    UpdateMeRequest object, {
+    LogCycleEventRequest object, {
     FullType specifiedType = FullType.unspecified,
   }) {
     return _serializeProperties(serializers, object, specifiedType: specifiedType).toList();
@@ -85,36 +97,44 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
     required List<Object?> serializedList,
-    required UpdateMeRequestBuilder result,
+    required LogCycleEventRequestBuilder result,
     required List<Object?> unhandled,
   }) {
     for (var i = 0; i < serializedList.length; i += 2) {
       final key = serializedList[i] as String;
       final value = serializedList[i + 1];
       switch (key) {
-        case r'displayName':
+        case r'flowIntensity':
           final valueDes = serializers.deserialize(
             value,
-            specifiedType: const FullType.nullable(String),
-          ) as String?;
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
           if (valueDes == null) continue;
-          result.displayName = valueDes;
+          result.flowIntensity = valueDes;
           break;
-        case r'locale':
+        case r'kind':
           final valueDes = serializers.deserialize(
             value,
             specifiedType: const FullType.nullable(String),
           ) as String?;
           if (valueDes == null) continue;
-          result.locale = valueDes;
+          result.kind = valueDes;
           break;
-        case r'timezone':
+        case r'notes':
           final valueDes = serializers.deserialize(
             value,
             specifiedType: const FullType.nullable(String),
           ) as String?;
           if (valueDes == null) continue;
-          result.timezone = valueDes;
+          result.notes = valueDes;
+          break;
+        case r'occurredOn':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(Date),
+          ) as Date?;
+          if (valueDes == null) continue;
+          result.occurredOn = valueDes;
           break;
         default:
           unhandled.add(key);
@@ -125,12 +145,12 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
   }
 
   @override
-  UpdateMeRequest deserialize(
+  LogCycleEventRequest deserialize(
     Serializers serializers,
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
   }) {
-    final result = UpdateMeRequestBuilder();
+    final result = LogCycleEventRequestBuilder();
     final serializedList = (serialized as Iterable<Object?>).toList();
     final unhandled = <Object?>[];
     _deserializeProperties(

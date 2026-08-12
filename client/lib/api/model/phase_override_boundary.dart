@@ -3,69 +3,70 @@
 //
 
 // ignore_for_file: unused_element
+import 'package:lumen/api/model/date.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
-part 'update_me_request.g.dart';
+part 'phase_override_boundary.g.dart';
 
-/// UpdateMeRequest
+/// PhaseOverrideBoundary
 ///
 /// Properties:
-/// * [displayName] 
-/// * [locale] 
-/// * [timezone] 
+/// * [boundary] 
+/// * [occurredOn] 
+/// * [phase] 
 @BuiltValue()
-abstract class UpdateMeRequest implements Built<UpdateMeRequest, UpdateMeRequestBuilder> {
-  @BuiltValueField(wireName: r'displayName')
-  String? get displayName;
+abstract class PhaseOverrideBoundary implements Built<PhaseOverrideBoundary, PhaseOverrideBoundaryBuilder> {
+  @BuiltValueField(wireName: r'boundary')
+  String? get boundary;
 
-  @BuiltValueField(wireName: r'locale')
-  String? get locale;
+  @BuiltValueField(wireName: r'occurredOn')
+  Date? get occurredOn;
 
-  @BuiltValueField(wireName: r'timezone')
-  String? get timezone;
+  @BuiltValueField(wireName: r'phase')
+  String? get phase;
 
-  UpdateMeRequest._();
+  PhaseOverrideBoundary._();
 
-  factory UpdateMeRequest([void updates(UpdateMeRequestBuilder b)]) = _$UpdateMeRequest;
+  factory PhaseOverrideBoundary([void updates(PhaseOverrideBoundaryBuilder b)]) = _$PhaseOverrideBoundary;
 
   @BuiltValueHook(initializeBuilder: true)
-  static void _defaults(UpdateMeRequestBuilder b) => b;
+  static void _defaults(PhaseOverrideBoundaryBuilder b) => b;
 
   @BuiltValueSerializer(custom: true)
-  static Serializer<UpdateMeRequest> get serializer => _$UpdateMeRequestSerializer();
+  static Serializer<PhaseOverrideBoundary> get serializer => _$PhaseOverrideBoundarySerializer();
 }
 
-class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest> {
+class _$PhaseOverrideBoundarySerializer implements PrimitiveSerializer<PhaseOverrideBoundary> {
   @override
-  final Iterable<Type> types = const [UpdateMeRequest, _$UpdateMeRequest];
+  final Iterable<Type> types = const [PhaseOverrideBoundary, _$PhaseOverrideBoundary];
 
   @override
-  final String wireName = r'UpdateMeRequest';
+  final String wireName = r'PhaseOverrideBoundary';
 
   Iterable<Object?> _serializeProperties(
     Serializers serializers,
-    UpdateMeRequest object, {
+    PhaseOverrideBoundary object, {
     FullType specifiedType = FullType.unspecified,
   }) sync* {
-    if (object.displayName != null) {
-      yield r'displayName';
+    if (object.boundary != null) {
+      yield r'boundary';
       yield serializers.serialize(
-        object.displayName,
+        object.boundary,
         specifiedType: const FullType.nullable(String),
       );
     }
-    if (object.locale != null) {
-      yield r'locale';
+    if (object.occurredOn != null) {
+      yield r'occurredOn';
       yield serializers.serialize(
-        object.locale,
-        specifiedType: const FullType.nullable(String),
+        object.occurredOn,
+        specifiedType: const FullType(Date),
       );
     }
-    if (object.timezone != null) {
-      yield r'timezone';
+    if (object.phase != null) {
+      yield r'phase';
       yield serializers.serialize(
-        object.timezone,
+        object.phase,
         specifiedType: const FullType.nullable(String),
       );
     }
@@ -74,7 +75,7 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
   @override
   Object serialize(
     Serializers serializers,
-    UpdateMeRequest object, {
+    PhaseOverrideBoundary object, {
     FullType specifiedType = FullType.unspecified,
   }) {
     return _serializeProperties(serializers, object, specifiedType: specifiedType).toList();
@@ -85,36 +86,35 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
     required List<Object?> serializedList,
-    required UpdateMeRequestBuilder result,
+    required PhaseOverrideBoundaryBuilder result,
     required List<Object?> unhandled,
   }) {
     for (var i = 0; i < serializedList.length; i += 2) {
       final key = serializedList[i] as String;
       final value = serializedList[i + 1];
       switch (key) {
-        case r'displayName':
+        case r'boundary':
           final valueDes = serializers.deserialize(
             value,
             specifiedType: const FullType.nullable(String),
           ) as String?;
           if (valueDes == null) continue;
-          result.displayName = valueDes;
+          result.boundary = valueDes;
           break;
-        case r'locale':
+        case r'occurredOn':
           final valueDes = serializers.deserialize(
             value,
-            specifiedType: const FullType.nullable(String),
-          ) as String?;
-          if (valueDes == null) continue;
-          result.locale = valueDes;
+            specifiedType: const FullType(Date),
+          ) as Date;
+          result.occurredOn = valueDes;
           break;
-        case r'timezone':
+        case r'phase':
           final valueDes = serializers.deserialize(
             value,
             specifiedType: const FullType.nullable(String),
           ) as String?;
           if (valueDes == null) continue;
-          result.timezone = valueDes;
+          result.phase = valueDes;
           break;
         default:
           unhandled.add(key);
@@ -125,12 +125,12 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
   }
 
   @override
-  UpdateMeRequest deserialize(
+  PhaseOverrideBoundary deserialize(
     Serializers serializers,
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
   }) {
-    final result = UpdateMeRequestBuilder();
+    final result = PhaseOverrideBoundaryBuilder();
     final serializedList = (serialized as Iterable<Object?>).toList();
     final unhandled = <Object?>[];
     _deserializeProperties(

@@ -6,67 +6,67 @@
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
-part 'update_me_request.g.dart';
+part 'log_cycle_day_request.g.dart';
 
-/// UpdateMeRequest
+/// LogCycleDayRequest
 ///
 /// Properties:
-/// * [displayName] 
-/// * [locale] 
-/// * [timezone] 
+/// * [mood] 
+/// * [notes] 
+/// * [pain] 
 @BuiltValue()
-abstract class UpdateMeRequest implements Built<UpdateMeRequest, UpdateMeRequestBuilder> {
-  @BuiltValueField(wireName: r'displayName')
-  String? get displayName;
+abstract class LogCycleDayRequest implements Built<LogCycleDayRequest, LogCycleDayRequestBuilder> {
+  @BuiltValueField(wireName: r'mood')
+  int? get mood;
 
-  @BuiltValueField(wireName: r'locale')
-  String? get locale;
+  @BuiltValueField(wireName: r'notes')
+  String? get notes;
 
-  @BuiltValueField(wireName: r'timezone')
-  String? get timezone;
+  @BuiltValueField(wireName: r'pain')
+  int? get pain;
 
-  UpdateMeRequest._();
+  LogCycleDayRequest._();
 
-  factory UpdateMeRequest([void updates(UpdateMeRequestBuilder b)]) = _$UpdateMeRequest;
+  factory LogCycleDayRequest([void updates(LogCycleDayRequestBuilder b)]) = _$LogCycleDayRequest;
 
   @BuiltValueHook(initializeBuilder: true)
-  static void _defaults(UpdateMeRequestBuilder b) => b;
+  static void _defaults(LogCycleDayRequestBuilder b) => b;
 
   @BuiltValueSerializer(custom: true)
-  static Serializer<UpdateMeRequest> get serializer => _$UpdateMeRequestSerializer();
+  static Serializer<LogCycleDayRequest> get serializer => _$LogCycleDayRequestSerializer();
 }
 
-class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest> {
+class _$LogCycleDayRequestSerializer implements PrimitiveSerializer<LogCycleDayRequest> {
   @override
-  final Iterable<Type> types = const [UpdateMeRequest, _$UpdateMeRequest];
+  final Iterable<Type> types = const [LogCycleDayRequest, _$LogCycleDayRequest];
 
   @override
-  final String wireName = r'UpdateMeRequest';
+  final String wireName = r'LogCycleDayRequest';
 
   Iterable<Object?> _serializeProperties(
     Serializers serializers,
-    UpdateMeRequest object, {
+    LogCycleDayRequest object, {
     FullType specifiedType = FullType.unspecified,
   }) sync* {
-    if (object.displayName != null) {
-      yield r'displayName';
+    if (object.mood != null) {
+      yield r'mood';
       yield serializers.serialize(
-        object.displayName,
+        object.mood,
+        specifiedType: const FullType.nullable(int),
+      );
+    }
+    if (object.notes != null) {
+      yield r'notes';
+      yield serializers.serialize(
+        object.notes,
         specifiedType: const FullType.nullable(String),
       );
     }
-    if (object.locale != null) {
-      yield r'locale';
+    if (object.pain != null) {
+      yield r'pain';
       yield serializers.serialize(
-        object.locale,
-        specifiedType: const FullType.nullable(String),
-      );
-    }
-    if (object.timezone != null) {
-      yield r'timezone';
-      yield serializers.serialize(
-        object.timezone,
-        specifiedType: const FullType.nullable(String),
+        object.pain,
+        specifiedType: const FullType.nullable(int),
       );
     }
   }
@@ -74,7 +74,7 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
   @override
   Object serialize(
     Serializers serializers,
-    UpdateMeRequest object, {
+    LogCycleDayRequest object, {
     FullType specifiedType = FullType.unspecified,
   }) {
     return _serializeProperties(serializers, object, specifiedType: specifiedType).toList();
@@ -85,36 +85,36 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
     required List<Object?> serializedList,
-    required UpdateMeRequestBuilder result,
+    required LogCycleDayRequestBuilder result,
     required List<Object?> unhandled,
   }) {
     for (var i = 0; i < serializedList.length; i += 2) {
       final key = serializedList[i] as String;
       final value = serializedList[i + 1];
       switch (key) {
-        case r'displayName':
+        case r'mood':
           final valueDes = serializers.deserialize(
             value,
-            specifiedType: const FullType.nullable(String),
-          ) as String?;
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
           if (valueDes == null) continue;
-          result.displayName = valueDes;
+          result.mood = valueDes;
           break;
-        case r'locale':
+        case r'notes':
           final valueDes = serializers.deserialize(
             value,
             specifiedType: const FullType.nullable(String),
           ) as String?;
           if (valueDes == null) continue;
-          result.locale = valueDes;
+          result.notes = valueDes;
           break;
-        case r'timezone':
+        case r'pain':
           final valueDes = serializers.deserialize(
             value,
-            specifiedType: const FullType.nullable(String),
-          ) as String?;
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
           if (valueDes == null) continue;
-          result.timezone = valueDes;
+          result.pain = valueDes;
           break;
         default:
           unhandled.add(key);
@@ -125,12 +125,12 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
   }
 
   @override
-  UpdateMeRequest deserialize(
+  LogCycleDayRequest deserialize(
     Serializers serializers,
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
   }) {
-    final result = UpdateMeRequestBuilder();
+    final result = LogCycleDayRequestBuilder();
     final serializedList = (serialized as Iterable<Object?>).toList();
     final unhandled = <Object?>[];
     _deserializeProperties(

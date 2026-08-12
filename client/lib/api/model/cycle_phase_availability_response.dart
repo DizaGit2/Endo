@@ -6,66 +6,56 @@
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
-part 'update_me_request.g.dart';
+part 'cycle_phase_availability_response.g.dart';
 
-/// UpdateMeRequest
+/// CyclePhaseAvailabilityResponse
 ///
 /// Properties:
-/// * [displayName] 
-/// * [locale] 
-/// * [timezone] 
+/// * [available] 
+/// * [unavailableReason] 
 @BuiltValue()
-abstract class UpdateMeRequest implements Built<UpdateMeRequest, UpdateMeRequestBuilder> {
-  @BuiltValueField(wireName: r'displayName')
-  String? get displayName;
+abstract class CyclePhaseAvailabilityResponse implements Built<CyclePhaseAvailabilityResponse, CyclePhaseAvailabilityResponseBuilder> {
+  @BuiltValueField(wireName: r'available')
+  bool? get available;
 
-  @BuiltValueField(wireName: r'locale')
-  String? get locale;
+  @BuiltValueField(wireName: r'unavailableReason')
+  String? get unavailableReason;
 
-  @BuiltValueField(wireName: r'timezone')
-  String? get timezone;
+  CyclePhaseAvailabilityResponse._();
 
-  UpdateMeRequest._();
-
-  factory UpdateMeRequest([void updates(UpdateMeRequestBuilder b)]) = _$UpdateMeRequest;
+  factory CyclePhaseAvailabilityResponse([void updates(CyclePhaseAvailabilityResponseBuilder b)]) = _$CyclePhaseAvailabilityResponse;
 
   @BuiltValueHook(initializeBuilder: true)
-  static void _defaults(UpdateMeRequestBuilder b) => b;
+  static void _defaults(CyclePhaseAvailabilityResponseBuilder b) => b
+      ..available = false;
 
   @BuiltValueSerializer(custom: true)
-  static Serializer<UpdateMeRequest> get serializer => _$UpdateMeRequestSerializer();
+  static Serializer<CyclePhaseAvailabilityResponse> get serializer => _$CyclePhaseAvailabilityResponseSerializer();
 }
 
-class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest> {
+class _$CyclePhaseAvailabilityResponseSerializer implements PrimitiveSerializer<CyclePhaseAvailabilityResponse> {
   @override
-  final Iterable<Type> types = const [UpdateMeRequest, _$UpdateMeRequest];
+  final Iterable<Type> types = const [CyclePhaseAvailabilityResponse, _$CyclePhaseAvailabilityResponse];
 
   @override
-  final String wireName = r'UpdateMeRequest';
+  final String wireName = r'CyclePhaseAvailabilityResponse';
 
   Iterable<Object?> _serializeProperties(
     Serializers serializers,
-    UpdateMeRequest object, {
+    CyclePhaseAvailabilityResponse object, {
     FullType specifiedType = FullType.unspecified,
   }) sync* {
-    if (object.displayName != null) {
-      yield r'displayName';
+    if (object.available != null) {
+      yield r'available';
       yield serializers.serialize(
-        object.displayName,
-        specifiedType: const FullType.nullable(String),
+        object.available,
+        specifiedType: const FullType(bool),
       );
     }
-    if (object.locale != null) {
-      yield r'locale';
+    if (object.unavailableReason != null) {
+      yield r'unavailableReason';
       yield serializers.serialize(
-        object.locale,
-        specifiedType: const FullType.nullable(String),
-      );
-    }
-    if (object.timezone != null) {
-      yield r'timezone';
-      yield serializers.serialize(
-        object.timezone,
+        object.unavailableReason,
         specifiedType: const FullType.nullable(String),
       );
     }
@@ -74,7 +64,7 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
   @override
   Object serialize(
     Serializers serializers,
-    UpdateMeRequest object, {
+    CyclePhaseAvailabilityResponse object, {
     FullType specifiedType = FullType.unspecified,
   }) {
     return _serializeProperties(serializers, object, specifiedType: specifiedType).toList();
@@ -85,36 +75,27 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
     required List<Object?> serializedList,
-    required UpdateMeRequestBuilder result,
+    required CyclePhaseAvailabilityResponseBuilder result,
     required List<Object?> unhandled,
   }) {
     for (var i = 0; i < serializedList.length; i += 2) {
       final key = serializedList[i] as String;
       final value = serializedList[i + 1];
       switch (key) {
-        case r'displayName':
+        case r'available':
           final valueDes = serializers.deserialize(
             value,
-            specifiedType: const FullType.nullable(String),
-          ) as String?;
-          if (valueDes == null) continue;
-          result.displayName = valueDes;
+            specifiedType: const FullType(bool),
+          ) as bool;
+          result.available = valueDes;
           break;
-        case r'locale':
+        case r'unavailableReason':
           final valueDes = serializers.deserialize(
             value,
             specifiedType: const FullType.nullable(String),
           ) as String?;
           if (valueDes == null) continue;
-          result.locale = valueDes;
-          break;
-        case r'timezone':
-          final valueDes = serializers.deserialize(
-            value,
-            specifiedType: const FullType.nullable(String),
-          ) as String?;
-          if (valueDes == null) continue;
-          result.timezone = valueDes;
+          result.unavailableReason = valueDes;
           break;
         default:
           unhandled.add(key);
@@ -125,12 +106,12 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
   }
 
   @override
-  UpdateMeRequest deserialize(
+  CyclePhaseAvailabilityResponse deserialize(
     Serializers serializers,
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
   }) {
-    final result = UpdateMeRequestBuilder();
+    final result = CyclePhaseAvailabilityResponseBuilder();
     final serializedList = (serialized as Iterable<Object?>).toList();
     final unhandled = <Object?>[];
     _deserializeProperties(
