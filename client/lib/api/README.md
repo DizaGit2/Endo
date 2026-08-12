@@ -43,8 +43,19 @@ java -jar <path>\openapi-generator-cli-7.x.jar generate `
 # 3. Generate the built_value *.g.dart files from the app root:
 $env:PUB_CACHE = 'C:\pub_cache'
 flutter pub get
-dart run build_runner build --delete-conflicting-outputs
+dart run build_runner build
 ```
+
+> **`--delete-conflicting-outputs` is gone (corrected P4a/T22).** build_runner **2.15.0** removed the
+> flag: passing it prints a deprecation warning and proceeds, because deleting conflicting outputs is
+> now the default behaviour. Earlier revisions of this file documented it; drop it from the command.
+
+**Commit the regenerated `*.g.dart` files.** `.github/workflows/ci-client.yml` runs `pub get` →
+`analyze` → `test --coverage` and **never** runs `build_runner`, so uncommitted generated code means CI
+tests stale bindings. Note also that `client/analysis_options.yaml` excludes `lib/api/**` and
+`**/*.g.dart`, so **`flutter analyze` cannot detect a broken regenerated client** — it reports "No
+issues found" against deliberately stale `*.g.dart`. The real compile gate for this directory is
+**`flutter test`**.
 
 `serializationLibrary` defaults to `built_value` for the `dart-dio` generator. The
 generated client depends on `dio`, `built_value`, `built_collection`, `one_of`, and

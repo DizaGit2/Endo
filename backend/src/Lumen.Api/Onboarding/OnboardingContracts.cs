@@ -1,11 +1,21 @@
 using Lumen.Api.Onboarding;
 using Lumen.Domain.Entities;
 
-// DELIBERATELY NO `namespace` DECLARATION (§G12). These types live in the GLOBAL namespace, exactly
-// where they lived at the bottom of Program.cs. Swashbuckle derives an OpenAPI schema name from the
-// type name, and the generated Dart client binds to that name — so giving these records a namespace
-// would rename `OnboardingStartRequest` in the contract and break `client/lib/core/network/`. Every
-// P4a feature-contract file follows this shape: `<Feature>/<Feature>Contracts.cs`, no namespace.
+// No `namespace` declaration here — these types stayed in the GLOBAL namespace when T4 moved them out
+// of Program.cs, and leaving them there kept that move a provable no-op at the contract level.
+//
+// CORRECTED BY T22 (§G12; the original comment here stated the opposite and was wrong): the absence of
+// a namespace is a STYLE CHOICE, NOT a contract guarantee. `AddSwaggerGen()` is bare — no
+// `CustomSchemaIds` — so the OpenAPI schema id is `type.Name` and is namespace-INDEPENDENT. Adding a
+// namespace to this file would NOT rename `OnboardingStartRequest`, and the claim that it would break
+// `client/lib/core/network/` was never true. Verified empirically twice: T4 confirmed the snapshot was
+// byte-identical across the move, and `Lumen.Api/Cycle/CycleContracts.cs` DOES declare a namespace
+// while still emitting bare ids (`LogCycleEventRequest`, `CycleEventResponse`, …).
+//
+// THE REAL HAZARD is a short-type-name COLLISION between two feature folders: two types called
+// `SaveRequest` in different namespaces throw a duplicate-schemaId error at document generation. So the
+// rule that actually binds is that every DTO short name is globally unique across all feature folders.
+// The file-per-feature shape `<Feature>/<Feature>Contracts.cs` is the T3 convention and still stands.
 
 /// <summary>
 /// Sign-up payload for <c>POST /onboarding/start</c>. <c>Email</c>/<c>Password</c> are required;
