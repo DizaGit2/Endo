@@ -967,6 +967,42 @@ public class CycleSettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyOnboardingCycleAsync_MERGES_on_update_and_defaults_only_on_CREATE()
+    {
+        // The asymmetry this method now carries, in one place: on CREATE an omitted value takes the T6
+        // default (there is nothing else it could take), and on UPDATE an omitted value takes THE STORED
+        // ONE. Assigning unconditionally — which is how this shipped — made a second call with an
+        // omitted field a silent reset of an answer the user gave, and `OnboardingStateResponse` carries
+        // none of these three, so nothing downstream could put them back.
+        await using (var create = _harness.NewContext())
+        {
+            var service = new CycleSettingsService(create, new StubUserDayContext(_harness.DayInfo()));
+            await service.ApplyOnboardingCycleAsync(
+                _harness.UserId, 33, 7, UserCycleSettings.RegularityValues.Irregular, CycleTestHarness.Now, default);
+            await create.SaveChangesAsync();
+        }
+
+        await using (var update = _harness.NewContext())
+        {
+            var service = new CycleSettingsService(update, new StubUserDayContext(_harness.DayInfo()));
+            var row = await service.ApplyOnboardingCycleAsync(
+                _harness.UserId, null, null, null, CycleTestHarness.Now, default);
+            await update.SaveChangesAsync();
+
+            row.AvgCycleLengthDays.ShouldBe(
+                (short)33, "an omitted value on an EXISTING row is not a request for the default");
+            row.AvgPeriodLengthDays.ShouldBe((short)7);
+            row.Regularity.ShouldBe(UserCycleSettings.RegularityValues.Irregular);
+        }
+
+        await using var read = _harness.NewContext();
+        var stored = await read.CycleSettings.AsNoTracking().SingleAsync(s => s.UserId == _harness.UserId);
+        stored.AvgCycleLengthDays.ShouldBe((short)33);
+        stored.AvgPeriodLengthDays.ShouldBe((short)7);
+        stored.Regularity.ShouldBe(UserCycleSettings.RegularityValues.Irregular);
+    }
+
+    [Fact]
     public async Task ApplyOnboardingCycleAsync_STAGES_ONLY_so_T18_can_compose_it_with_another_write()
     {
         // §G12's unit-of-work rule, enforced rather than documented. `ConcurrencyRetry` recovers via

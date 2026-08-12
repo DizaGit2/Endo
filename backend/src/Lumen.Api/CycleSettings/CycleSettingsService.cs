@@ -167,10 +167,31 @@ public sealed class CycleSettingsService(LumenDbContext db, IUserDayContext dayC
 
     /// <summary>
     /// Creates or updates the caller's <c>user_cycle_settings</c> row from the onboarding cycle step
-    /// (B15), applying the T6 defaults for every omitted value. <b>Shared with T18's
+    /// (B15). <b>Defaults on CREATE, MERGE on update</b> — see the remarks. <b>Shared with T18's
     /// <c>POST /onboarding/cycle</c>, which must not duplicate it</b> (§G12).
     /// </summary>
     /// <remarks>
+    /// <para><b>An omitted value applies the T6 default only when the row is being CREATED. On an
+    /// UPDATE it leaves the stored value alone.</b> This method shipped assigning all three columns
+    /// unconditionally, which made every re-post a reset: an omitted <c>avgPeriodLengthDays</c> wiped a
+    /// stored answer, <c>avgCycleLengthDays</c> fell back to 28 and <c>regularity</c> to
+    /// <c>somewhat</c>. Re-posting is not an edge case — the step stays open until
+    /// <c>POST /onboarding/complete</c> stamps the account (only then is it a 409), and screen 3 is
+    /// precisely where a user returns to correct a mistyped date, sending nothing else.</para>
+    ///
+    /// <para>Nothing could repair it afterwards, which is what made it data loss rather than an
+    /// inconvenience: <c>OnboardingStateResponse</c> — the single read P4b resumes a partial onboarding
+    /// from, built so no client re-derives anything — carries <c>lastPeriodStart</c> and <b>none</b> of
+    /// these three, so a client cannot re-send what the re-post has just cleared. Merge is the same
+    /// ruling <c>POST /cycle/day/{date}</c> already carries, for the same reason: on a row more than one
+    /// surface writes (here onboarding and <c>PATCH /settings/cycle</c>), omitted must not mean
+    /// cleared.</para>
+    ///
+    /// <para>The cost, stated: <b>P4a exposes no way to CLEAR <c>avgPeriodLengthDays</c> back to
+    /// null.</b> That is the accepted trade everywhere merge is chosen (§C.0.1) and it is cheap here —
+    /// screen 3 never asks for the field, so no user can set it through this endpoint in the first
+    /// place, and <c>PATCH /settings/cycle</c> merges too.</para>
+    ///
     /// <para><b>THIS METHOD STAGES ONLY. It calls no <c>SaveChangesAsync</c>, no
     /// <c>ChangeTracker.Clear()</c> and no <see cref="ConcurrencyRetry"/>, and it must never start
     /// to.</b> That is §G12's unit-of-work rule, and it exists because <see cref="ConcurrencyRetry"/>
@@ -203,9 +224,18 @@ public sealed class CycleSettingsService(LumenDbContext db, IUserDayContext dayC
     /// from the caller's own save, against T6's structural CHECK).</para>
     /// </remarks>
     /// <param name="userId">The onboarding user. Taken explicitly because T18 has already resolved it.</param>
-    /// <param name="avgCycleLengthDays">The self-report, or null to apply the T6 default.</param>
-    /// <param name="avgPeriodLengthDays">The self-report, or null to leave the column null (screen 3 never collects it).</param>
-    /// <param name="regularity">One of <see cref="UserCycleSettings.RegularityValues"/>, or null for the default.</param>
+    /// <param name="avgCycleLengthDays">
+    /// The self-report. Null on CREATE applies the T6 default (28); null on UPDATE leaves the stored
+    /// value unchanged.
+    /// </param>
+    /// <param name="avgPeriodLengthDays">
+    /// The self-report. Null on CREATE leaves the column null (screen 3 never collects it); null on
+    /// UPDATE leaves the stored value unchanged.
+    /// </param>
+    /// <param name="regularity">
+    /// One of <see cref="UserCycleSettings.RegularityValues"/>. Null on CREATE applies the default
+    /// (<c>somewhat</c>); null on UPDATE leaves the stored code unchanged.
+    /// </param>
     /// <param name="now">The caller's single instant for the whole request (plan §2).</param>
     /// <returns>The staged entity, tracked and <b>unsaved</b>.</returns>
     /// <exception cref="ArgumentException"><paramref name="regularity"/> is outside the ratified vocabulary.</exception>
@@ -234,17 +264,29 @@ public sealed class CycleSettingsService(LumenDbContext db, IUserDayContext dayC
 
         // NO ChangeTracker.Clear() here: the caller may already have staged its cycle_events row.
         var row = await db.CycleSettings.FirstOrDefaultAsync(s => s.UserId == userId, ct);
+
         if (row is null)
         {
+            // CREATE: an omitted value has nothing to preserve, so it takes the T6 default. Those come
+            // off the entity initializers, which are the same values the DDL defaults carry — never
+            // retyped here.
             row = new UserCycleSettings { UserId = userId, CreatedAt = now, UpdatedAt = now };
             db.CycleSettings.Add(row);
+
+            row.AvgCycleLengthDays = avgCycleLengthDays ?? UserCycleSettings.DefaultAvgCycleLengthDays;
+            row.AvgPeriodLengthDays = avgPeriodLengthDays;
+            row.Regularity = normalisedRegularity ?? UserCycleSettings.RegularityValues.Default;
+        }
+        else
+        {
+            // UPDATE: MERGE. An omitted value leaves the stored one alone; it is never a request to
+            // restore the default. `is { } value`, never a truthiness test, for the same reason the
+            // merge on `UpdateAsync` uses it.
+            if (avgCycleLengthDays is { } cycleLength) row.AvgCycleLengthDays = cycleLength;
+            if (avgPeriodLengthDays is { } periodLength) row.AvgPeriodLengthDays = periodLength;
+            if (normalisedRegularity is { } regularityCode) row.Regularity = regularityCode;
         }
 
-        // The T6 defaults for omitted values come off the entity initializers, which are the same
-        // values the DDL defaults carry — never retyped here.
-        row.AvgCycleLengthDays = avgCycleLengthDays ?? UserCycleSettings.DefaultAvgCycleLengthDays;
-        row.AvgPeriodLengthDays = avgPeriodLengthDays;
-        row.Regularity = normalisedRegularity ?? UserCycleSettings.RegularityValues.Default;
         row.UpdatedAt = now;
 
         // NO SaveChangesAsync: the caller owns the single save for the whole unit of work.

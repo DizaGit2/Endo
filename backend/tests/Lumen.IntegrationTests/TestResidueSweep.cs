@@ -19,16 +19,27 @@ namespace Lumen.IntegrationTests;
 /// onboarding test ever run. Neither is a correctness bug — every test scopes its assertions to its own
 /// user id — but both make the dev stack progressively slower and hide real residue in noise.</para>
 ///
-/// <para><b>OPT-IN, and loud.</b> Nothing here runs unless the run sets
-/// <see cref="EnableVariable"/><c>=1</c>. It used to run from the assembly's test-framework hook on
+/// <para><b>The UNATTENDED sweep is opt-in, and loud.</b>
+/// <see cref="RunOnceAsync"/> — the whole-database, whole-realm pass the assembly's test-framework hook
+/// starts — does nothing unless the run sets <see cref="EnableVariable"/><c>=1</c>. It used to run on
 /// every <c>dotnet test</c> of this assembly — including a <c>--filter</c> run of a single test that
 /// never opens a connection, and every IDE "run test" — and it reported only to xUnit's diagnostic
 /// sink, which prints nothing without an <c>xunit.runner.json</c> this repo does not have. The
 /// combination is what made it dangerous: on 2026-08-11 a filtered run of thirty pure in-memory tests
-/// reclaimed 194 Keycloak accounts and printed not one line about it. Everything the sweep does now
-/// goes to the console as well as the sink, because a delete nobody can see is both how a broken sweep
-/// survives (the prefix-search bug was found by hand, not by a test) and how a working one surprises
-/// somebody.</para>
+/// reclaimed 194 Keycloak accounts and printed not one line about it. Everything the unattended sweep
+/// does now goes to the console as well as the sink, because a delete nobody can see is both how a
+/// broken sweep survives (the prefix-search bug was found by hand, not by a test) and how a working one
+/// surprises somebody.</para>
+///
+/// <para><b>"Opt-in" is a statement about <see cref="RunOnceAsync"/> ONLY — do not read it as a
+/// property of this file.</b> <see cref="SweepDatabaseAsync"/> is public and
+/// <c>TestResidueSweepLiveTests</c> calls it directly from plain <c>[Fact]</c>s, which run on every
+/// ordinary integration-test invocation with the gate unset. Those calls carry none of the three
+/// safeguards below, so their bound is a different one: they must name the ids they planted via
+/// <c>restrictTo</c>, and the delete then cannot reach a row the test did not create. The coverage
+/// added alongside the opt-in gate re-opened the very hole the gate had just closed — a whole-database
+/// sweep on every ordinary run, silently — which is why the bound now lives in the signature instead
+/// of in a convention.</para>
 ///
 /// <para><b>The rule, and what each part of it is worth.</b> A row is swept only if it is BOTH:</para>
 /// <list type="number">
@@ -48,10 +59,12 @@ namespace Lumen.IntegrationTests;
 /// </list>
 ///
 /// <para><b>And it must be the dev stack.</b> The endpoints below are hard-coded, which prevents a
-/// reconfiguration but not a tunnel — an address is not an identity. So before either half runs,
-/// <see cref="EnsureDevStackAsync"/> proves positively that the realm behind the address is the one
-/// <c>deploy/keycloak/realm-lumen.json</c> imports, and <see cref="MaxPostgresDeletesPerRun"/> bounds
-/// the damage if the marker rule ever matches more than it was written for.</para>
+/// reconfiguration but not a tunnel — an address is not an identity. So before either half of
+/// <see cref="RunOnceAsync"/> runs, <see cref="EnsureDevStackAsync"/> proves positively that the realm
+/// behind the address is the one <c>deploy/keycloak/realm-lumen.json</c> imports, and
+/// <see cref="MaxPostgresDeletesPerRun"/> bounds the damage if the marker rule ever matches more than
+/// it was written for. A DIRECT <see cref="SweepDatabaseAsync"/> caller gets neither the gate nor the
+/// identity proof — <c>restrictTo</c> is what stands in for both.</para>
 ///
 /// <para><b>Fail-soft, always.</b> An enabled sweep that cannot reach its stack must not fail the run
 /// it is only tidying up for, so every failure here is swallowed and printed rather than thrown.</para>
@@ -246,7 +259,9 @@ internal static class TestResidueSweep
 
             try
             {
-                var rows = await SweepDatabaseAsync(cutoff, ct);
+                // The ONE unrestricted call in the repo, and the three safeguards above are what buys
+                // it: opted in, identity-proven, and announced on three channels.
+                var rows = await SweepDatabaseAsync(cutoff, restrictTo: null, ct);
                 Say($"{rows} orphan test user(s) reclaimed from Postgres");
             }
             catch (Exception ex)
@@ -334,18 +349,51 @@ internal static class TestResidueSweep
     /// <c>users</c> rows removed. Exposed (rather than private) so
     /// <c>TestResidueSweepLiveTests</c> can prove both halves of the rule on seeded fixtures.
     /// </summary>
-    public static async Task<int> SweepDatabaseAsync(DateTimeOffset cutoff, CancellationToken ct = default)
+    /// <param name="cutoff">Rows created before this instant are old enough to be residue.</param>
+    /// <param name="restrictTo">
+    /// <b>The blast-radius bound, and every direct caller must supply one.</b> When non-null the sweep
+    /// can delete only rows whose id appears here — an empty collection therefore deletes nothing,
+    /// never "everything". Only <see cref="RunOnceAsync"/> passes <see langword="null"/>, and it earns
+    /// that by carrying three safeguards this method has none of: the
+    /// <see cref="EnableVariable"/> opt-in gate, <see cref="EnsureDevStackAsync"/>'s positive proof of
+    /// WHICH stack is behind the hard-coded <c>localhost:55432</c>, and the three announcement channels.
+    ///
+    /// <para>This parameter exists because that asymmetry was invisible and cost real rows. The live
+    /// tests call this method DIRECTLY, from plain <c>[Fact]</c>s, so on an ordinary <c>dotnet test</c>
+    /// — no opt-in, no identity proof, nothing printed — an unrestricted call is a whole-database sweep
+    /// with only <see cref="MaxPostgresDeletesPerRun"/> left standing. It was measured deleting an aged,
+    /// rule-matching <c>users</c> row that no test had planted, along with every user-owned health row
+    /// hanging off it. Naming the ids makes a delete the caller did not intend unreachable rather than
+    /// unlikely, and it costs the tests nothing: the rule still decides about every row they plant.</para>
+    /// </param>
+    /// <param name="ct">Cancellation.</param>
+    public static async Task<int> SweepDatabaseAsync(
+        DateTimeOffset cutoff,
+        IReadOnlyCollection<Guid>? restrictTo = null,
+        CancellationToken ct = default)
     {
+        // Empty means "no row is in scope". Checked before the connection is opened so the reading
+        // cannot be confused with `null`, which is the one case that means "no restriction".
+        if (restrictTo is { Count: 0 }) return 0;
+
         await using var db = TestFixtures.NewDb();
 
         // IgnoreQueryFilters: a crypto-shred test that aborted mid-flight leaves a TOMBSTONED user,
         // which an ordinary read hides — exactly the residue hardest to notice.
-        var residue = await db.Users.IgnoreQueryFilters()
+        var candidates = db.Users.IgnoreQueryFilters()
             .Where(u => u.CreatedAt < cutoff)
             .Where(u => u.EmailHash.StartsWith(DirectInsertEmailHashPrefix)
-                        || db.ConsentRecords.Any(c => c.UserId == u.Id && c.PolicyVersion == TestPolicyVersion))
-            .Select(u => u.Id)
-            .ToListAsync(ct);
+                        || db.ConsentRecords.Any(c => c.UserId == u.Id && c.PolicyVersion == TestPolicyVersion));
+
+        if (restrictTo is not null)
+        {
+            // Applied as an EXTRA predicate rather than in place of the marker rule: a named id still
+            // has to be aged and test-shaped to be swept, so this can only ever narrow the match.
+            var named = restrictTo.ToArray();
+            candidates = candidates.Where(u => named.Contains(u.Id));
+        }
+
+        var residue = await candidates.Select(u => u.Id).ToListAsync(ct);
 
         if (residue.Count == 0) return 0;
 

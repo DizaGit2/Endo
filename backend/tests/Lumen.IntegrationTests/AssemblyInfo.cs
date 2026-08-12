@@ -6,10 +6,15 @@
 // Installs the hook that CAN reclaim the Postgres rows and Keycloak accounts an ABORTED live run
 // leaves behind, once, before the first test executes.
 //
-//   OPT-IN: it does nothing unless the run sets LUMEN_SWEEP_TEST_RESIDUE=1, and when it does run it
-//   announces every delete on three channels (console, xUnit diagnostics, TestResults/residue-sweep.log).
+//   OPT-IN: the HOOK does nothing unless the run sets LUMEN_SWEEP_TEST_RESIDUE=1, and when it does run
+//   it announces every delete on three channels (console, xUnit diagnostics, TestResults/residue-sweep.log).
 //   Registering a test framework applies to the WHOLE assembly and survives any --filter, so the
 //   decision to delete cannot live here; it lives in that variable.
+//
+//   That gate covers THIS HOOK, not the whole sweep: TestResidueSweepLiveTests calls
+//   TestResidueSweep.SweepDatabaseAsync directly from ordinary [Fact]s, which run with the variable
+//   unset. Their bound is the `restrictTo` argument — a delete cannot reach a row the test did not
+//   plant — because none of the safeguards named above apply on that path.
 //
 //     PS>  $env:LUMEN_SWEEP_TEST_RESIDUE=1
 //     PS>  dotnet test backend/tests/Lumen.IntegrationTests --logger "console;verbosity=normal"

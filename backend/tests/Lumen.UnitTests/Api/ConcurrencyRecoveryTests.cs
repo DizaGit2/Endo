@@ -1,4 +1,5 @@
 using Lumen.Api.Cycle;
+using Lumen.Api.CycleSettings;
 using Lumen.Api.Devices;
 using Lumen.Api.Onboarding;
 using Lumen.Api.Persistence;
@@ -50,11 +51,21 @@ namespace Lumen.UnitTests.Api;
 /// (a foreign provider's error must never be retried on a guess) and it propagates out of the service
 /// as the 500 the retry existed to prevent.</para>
 ///
-/// <para><b>The one <c>Clear()</c> these tests do not pin</b> is
-/// <c>CycleService.DeleteEventAsync</c>'s, and that is a statement about the code, not a gap here. A
-/// soft delete stages an UPDATE, never an INSERT, and changes no unique key: its retry can never
-/// fire, and if it somehow did, the re-query would return the same already-modified tracked instance
-/// and save identically with or without the clear. There is no behaviour to assert. It is kept for
+/// <para><b>What is in scope here, stated as a RULE rather than as a list.</b> Two earlier attempts to
+/// enumerate the call sites went stale within one task each — the count in
+/// <see cref="ConcurrencyRetry"/>'s own remarks first, then a naming of "the one <c>Clear()</c> these
+/// tests do not pin" that was simply false by the time it was read, because
+/// <c>CycleSettingsService.UpdateAsync</c> had shipped with an unpinned one and nothing said so. So:
+/// <b>every <see cref="ConcurrencyRetry"/> action that can stage an INSERT owes this file a test, and
+/// the obligation is discharged by the test, never by the inventory.</b> The way to check the file is
+/// current is to delete a <c>db.ChangeTracker.Clear()</c> and watch a test named after that write
+/// fail — not to count entries in a paragraph.</para>
+///
+/// <para><b>The one exemption, and it is a property of the code.</b>
+/// <c>CycleService.DeleteEventAsync</c> stages an UPDATE and never an INSERT, and changes no unique
+/// key: its retry can never fire, and if it somehow did, the re-query would return the same
+/// already-modified tracked instance and save identically with or without the clear. There is no
+/// behaviour to assert, so no test is written rather than a vacuous one. The <c>Clear()</c> is kept for
 /// uniformity — every write on that service going through one shape — and its remarks say so.</para>
 /// </summary>
 public sealed class ConcurrencyRecoveryTests : IDisposable
@@ -369,6 +380,99 @@ public sealed class ConcurrencyRecoveryTests : IDisposable
         var settings = db.CycleSettings.Where(s => s.UserId == _harness.UserId).ToList();
         settings.Count.ShouldBe(1, "the loser's staged settings insert must not reach the database either");
         settings[0].AvgCycleLengthDays.ShouldBe((short)31);
+    }
+
+    // --- PATCH /settings/cycle (T14) ------------------------------------------------------------
+    //
+    // The 12th ConcurrencyRetry call site, and the one whose Clear() shipped unpinned: the whole unit
+    // suite stayed green — 1003 passed, 0 failed — with `CycleSettingsService.cs`'s
+    // `db.ChangeTracker.Clear()` deleted.
+    //
+    // `UpdateAsync` stages TWO different inserts, they fail for two different reasons, and one test
+    // could not honestly claim both — so there are two, each arranged so that the OTHER insert cannot
+    // occur:
+    //
+    //   * `db.CycleSettings.Add` on a first save. The worst instance in the phase, because
+    //     `user_cycle_settings`'s PRIMARY KEY *is* `UserId`: the loser's orphaned Added entity carries
+    //     the winner's exact key, so identity resolution hands the second attempt its own dead insert
+    //     back INSTEAD of the committed row, and the re-save is a key violation.
+    //   * `db.CycleTrackingPauseSpans.Add` on a first pause. Identity resolution cannot help here at
+    //     all: `ReconcilePauseAsync` looks the open span up in SQL, does not see the still-unsaved
+    //     staged row, and adds a SECOND one — which the partial unique index
+    //     `(UserId) WHERE "EndedOn" IS NULL` rejects.
+    //
+    // Either way the escaping `DbUpdateException` is not a 23505-shaped Npgsql one, so `ConcurrencyRetry`
+    // correctly declines to retry it and it leaves the service as the 500 the retry exists to prevent.
+
+    [Fact]
+    public async Task A_lost_race_on_the_cycle_settings_update_recovers_onto_the_winners_row()
+    {
+        // Screen 32's "average cycle length" field, saved twice by a user who has never opened the
+        // settings screen before: neither copy finds a `user_cycle_settings` row and both insert.
+        // Nothing here pauses, so the settings insert is the ONLY staged insert in the action.
+        UserCycleSettings? winner = null;
+        var interceptor = new LostRaceOnFirstSaveInterceptor(() =>
+            winner = _harness.SeedCycleSettings(avgCycleLengthDays: 26, regularity: UserCycleSettings.RegularityValues.Irregular));
+
+        // Constructed directly: CycleTestHarness.NewCycleSettingsService takes no interceptor.
+        var service = new CycleSettingsService(
+            _harness.NewContext(interceptor), new StubUserDayContext(_harness.DayInfo()));
+
+        var result = await service.UpdateAsync(
+            new UpdateCycleSettingsRequest(AvgCycleLengthDays: 31), CancellationToken.None);
+
+        interceptor.Saves.ShouldBe(2, "one failed save, one that recovered");
+        var saved = result.ShouldBeOfType<CycleSettingsUpdateResult.Saved>().Settings;
+        saved.AvgCycleLengthDays.ShouldBe(31, "the second attempt applied THIS request onto the winner's row");
+        saved.Regularity.ShouldBe(
+            UserCycleSettings.RegularityValues.Irregular,
+            "merge semantics: the winner's untouched field survived rather than reverting to a default");
+
+        using var db = _harness.NewContext();
+        var rows = db.CycleSettings.Where(s => s.UserId == _harness.UserId).ToList();
+        rows.Count.ShouldBe(1, "the loser's staged insert must not reach the database");
+        rows[0].CreatedAt.ShouldBe(winner!.CreatedAt, "the winner's row was updated, not replaced");
+        rows[0].AvgCycleLengthDays.ShouldBe((short)31);
+    }
+
+    [Fact]
+    public async Task A_lost_race_on_the_first_pause_recovers_onto_the_winners_open_span()
+    {
+        // The second insert, isolated: the settings row already exists and is unpaused, so the retried
+        // action stages NO settings insert and the only Added entity is the pause span. The shape is a
+        // double-tapped "pause tracking" switch — the one the partial unique index would otherwise turn
+        // into an error page.
+        _harness.SeedCycleSettings();
+
+        CycleTrackingPauseSpan? winnerSpan = null;
+        var interceptor = new LostRaceOnFirstSaveInterceptor(() => winnerSpan = _harness.SeedPauseSpan(
+            UserCycleSettings.PauseReasons.Pregnancy, CycleTestHarness.Today));
+
+        var service = new CycleSettingsService(
+            _harness.NewContext(interceptor), new StubUserDayContext(_harness.DayInfo()));
+
+        var result = await service.UpdateAsync(
+            new UpdateCycleSettingsRequest(
+                TrackingPaused: true, PauseReason: UserCycleSettings.PauseReasons.Surgical),
+            CancellationToken.None);
+
+        interceptor.Saves.ShouldBe(2, "one failed save, one that recovered");
+        var saved = result.ShouldBeOfType<CycleSettingsUpdateResult.Saved>().Settings;
+        saved.TrackingPaused.ShouldBeTrue();
+        saved.PauseReason.ShouldBe(UserCycleSettings.PauseReasons.Surgical);
+
+        using var db = _harness.NewContext();
+        var spans = db.CycleTrackingPauseSpans.Where(s => s.UserId == _harness.UserId).ToList();
+        spans.Count.ShouldBe(
+            1, "the loser's staged span insert must not reach the database — a second OPEN span "
+            + "violates the partial unique index and surfaces as a 500");
+        spans[0].Id.ShouldBe(winnerSpan!.Id, "the winner's open span was updated in place");
+        spans[0].Reason.ShouldBe(
+            UserCycleSettings.PauseReasons.Surgical,
+            "the second attempt applied THIS request's reason onto the winner's span");
+        spans[0].EndedOn.ShouldBeNull();
+
+        db.CycleSettings.Count(s => s.UserId == _harness.UserId).ShouldBe(1);
     }
 
     private List<CycleDayLog> AllDayLogs() =>

@@ -329,6 +329,15 @@ public record NotificationCategorySelection(string Code, bool Enabled);
 /// Post-completion edits go through <c>POST /cycle/events</c> and <c>PATCH /settings/cycle</c>, which
 /// are the surfaces built for exactly that. The other four steps stay open (T17) — this is the only one
 /// that owns a value later data is measured against.</para>
+///
+/// <para><b>Re-posting BEFORE completion is normal, and the three self-report members MERGE.</b> Screen
+/// 3 is where a user goes back to fix a mistyped date, and that correction sends
+/// <c>lastPeriodStart</c> and nothing else. So an omitted member <b>leaves the stored value
+/// unchanged</b>; the documented defaults below apply only when the <c>user_cycle_settings</c> row is
+/// being CREATED. <c>lastPeriodStart</c> itself is REQUIRED on every post — it is the one field the
+/// step exists to collect. The consequence for P4b: this endpoint is safe to call with a partial body,
+/// and it has to be, because <c>GET /onboarding/state</c> returns <c>lastPeriodStart</c> and none of
+/// the other three, so a client resuming a partial onboarding could not re-send them if it tried.</para>
 /// </summary>
 /// <param name="LastPeriodStart">
 /// The day the user's last period began — <b>required</b>, and the only required field on the whole
@@ -339,20 +348,23 @@ public record NotificationCategorySelection(string Code, bool Enabled);
 /// well as <c>&lt;=</c> the user's local today. Every other dated write is capped by today alone.</para>
 /// </param>
 /// <param name="AvgCycleLengthDays">
-/// The user's self-reported average cycle length. Omitted → the T6 default of <b>28</b>.
+/// The user's self-reported average cycle length. Omitted on the FIRST post → the T6 default of
+/// <b>28</b>; omitted on a RE-POST → the stored value is left alone (see the merge note above).
 /// <para><b>§G7: this is never clinically validated.</b> The only rejection is structural — a positive
 /// integer that fits the <c>smallint</c> column. A value outside the sanity band is <b>stored</b> and
 /// answered with a non-blocking code in <see cref="OnboardingCycleResponse.Warnings"/>; the C-03
 /// clinical band is clinician-UNSIGNED and has no home in <c>backend/src</c> this phase.</para>
 /// </param>
 /// <param name="AvgPeriodLengthDays">
-/// The user's self-reported average period length. Omitted → <b>null</b>, deliberately and not 5 or any
-/// other figure: screen 3 never asks, and a seeded value would be a self-report the user never made.
+/// The user's self-reported average period length. Omitted on the FIRST post → <b>null</b>,
+/// deliberately and not 5 or any other figure: screen 3 never asks, and a seeded value would be a
+/// self-report the user never made. Omitted on a RE-POST → the stored value is left alone.
 /// </param>
 /// <param name="Regularity">
 /// One of <see cref="UserCycleSettings.RegularityValues"/> — <c>regular</c>, <c>somewhat</c> or
-/// <c>irregular</c>. Omitted → <c>somewhat</c>. Matched case-sensitively; the near-miss "sometimes" is a
-/// 400 rather than data P6 cannot read.
+/// <c>irregular</c>. Omitted on the FIRST post → <c>somewhat</c>; omitted on a RE-POST → the stored
+/// code is left alone. Matched case-sensitively; the near-miss "sometimes" is a 400 rather than data P6
+/// cannot read.
 /// </param>
 public record SaveOnboardingCycleRequest(
     DateOnly? LastPeriodStart,

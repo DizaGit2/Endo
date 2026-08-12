@@ -215,6 +215,66 @@ public sealed class OnboardingCompletionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_re_post_that_omits_the_self_reports_LEAVES_THE_STORED_ONES_ALONE()
+    {
+        // Re-posting this step is pre-completion and fully supported — the 409 only closes it after
+        // `/complete` — and screen 3 is exactly where a user goes back to correct the date they typed
+        // wrong. Under the create-semantics this method shipped with, that correction ALSO reset
+        // `avgCycleLengthDays` to 28, `avgPeriodLengthDays` to null and `regularity` to `somewhat`,
+        // because every column was assigned unconditionally.
+        //
+        // It could not be undone, either: `GET /onboarding/state` — the one read P4b resumes a partial
+        // onboarding from, built expressly so no client re-derives anything — returns `lastPeriodStart`
+        // and NOT these three, so the client cannot re-send what the re-post has just cleared. Merge is
+        // the same ruling `POST /cycle/day/{date}` already carries for the same reason: on a row more
+        // than one surface writes, omitted must not mean cleared.
+        var first = CycleTestHarness.Today.AddDays(-6);
+        var firstSave = SavedOf(await _harness.NewOnboardingStepsService().SaveCycleAsync(
+            Cycle(first, avgCycleLengthDays: 33, avgPeriodLengthDays: 7, regularity: "irregular"), default));
+        firstSave.AvgCycleLengthDays.ShouldBe(33);
+
+        // The correction: a new date, and only a new date. This is the whole body screen 3 sends when
+        // the user edits the one field it got wrong.
+        var corrected = CycleTestHarness.Today.AddDays(-4);
+        var saved = SavedOf(await _harness.NewOnboardingStepsService().SaveCycleAsync(
+            Cycle(corrected), default));
+
+        saved.LastPeriodStart.ShouldBe(corrected, "the field the user DID supply moved");
+        saved.AvgCycleLengthDays.ShouldBe(33, "an omitted field is not a request to restore the default");
+        saved.AvgPeriodLengthDays.ShouldBe(7);
+        saved.Regularity.ShouldBe("irregular");
+
+        await using var db = _harness.NewContext();
+        var row = await db.CycleSettings.AsNoTracking().SingleAsync(s => s.UserId == _harness.UserId);
+        row.AvgCycleLengthDays.ShouldBe((short)33);
+        row.AvgPeriodLengthDays.ShouldBe((short)7);
+        row.Regularity.ShouldBe("irregular");
+    }
+
+    [Fact]
+    public async Task A_re_post_that_supplies_a_self_report_still_OVERWRITES_it()
+    {
+        // The other direction, so "merge" cannot be satisfied by ignoring the fields altogether: a
+        // supplied value must still win, including one supplied on a row that already has an answer.
+        var anchor = CycleTestHarness.Today.AddDays(-6);
+        await _harness.NewOnboardingStepsService().SaveCycleAsync(
+            Cycle(anchor, avgCycleLengthDays: 33, avgPeriodLengthDays: 7, regularity: "irregular"), default);
+
+        var saved = SavedOf(await _harness.NewOnboardingStepsService().SaveCycleAsync(
+            Cycle(anchor, avgCycleLengthDays: 26, avgPeriodLengthDays: 4, regularity: "regular"), default));
+
+        saved.AvgCycleLengthDays.ShouldBe(26);
+        saved.AvgPeriodLengthDays.ShouldBe(4);
+        saved.Regularity.ShouldBe("regular");
+
+        await using var db = _harness.NewContext();
+        var row = await db.CycleSettings.AsNoTracking().SingleAsync(s => s.UserId == _harness.UserId);
+        row.AvgCycleLengthDays.ShouldBe((short)26);
+        row.AvgPeriodLengthDays.ShouldBe((short)4);
+        row.Regularity.ShouldBe("regular");
+    }
+
+    [Fact]
     public async Task An_unratified_regularity_is_rejected()
     {
         // "sometimes" is the plausible misspelling of the ratified `somewhat`; matching is Ordinal, so a

@@ -14,7 +14,18 @@ namespace Lumen.IntegrationTests;
 /// <see cref="TestResidueSweepRuleTests"/> instead, which proves the per-account rule as a pure
 /// predicate: asserting it live would mean creating, in a developer's own realm, the very accounts the
 /// assertion then deletes. (It used to be "covered" by running on every startup, which is not coverage —
-/// nothing asserted the outcome, and the sweep is opt-in now.)
+/// nothing asserted the outcome.)
+///
+/// <para><b>Every call below passes <c>restrictTo</c>, and that is not a convenience.</b> These are
+/// plain <c>[Fact]</c>s: they run on an ordinary <c>dotnet test</c>, with no
+/// <c>LUMEN_SWEEP_TEST_RESIDUE</c> and none of <see cref="TestResidueSweep.RunOnceAsync"/>'s three
+/// safeguards — no opt-in gate, no <c>EnsureDevStackAsync</c> identity proof, no announcement channels.
+/// An unrestricted call from here is therefore an <b>ungated whole-database sweep on every ordinary
+/// integration run</b>, and it was exactly that until this file was fixed: a measured run deleted an
+/// aged, rule-matching <c>users</c> row that no test had planted, plus everything that hung off it.
+/// Restricting each call to the ids the test itself inserted makes the delete unable to reach a row the
+/// test did not create, while leaving every assertion below exactly as strong — the rule still has to
+/// decide correctly about each planted row, which is the whole of what these tests claim.</para>
 /// </summary>
 public class TestResidueSweepLiveTests
 {
@@ -55,7 +66,8 @@ public class TestResidueSweepLiveTests
                 await db.SaveChangesAsync();
             }
 
-            var reclaimed = await TestResidueSweep.SweepDatabaseAsync(DateTimeOffset.UtcNow.AddHours(-1));
+            var reclaimed = await TestResidueSweep.SweepDatabaseAsync(
+                DateTimeOffset.UtcNow.AddHours(-1), restrictTo: [userId]);
             reclaimed.ShouldBeGreaterThanOrEqualTo(1);
 
             await using var check = TestFixtures.NewDb();
@@ -94,7 +106,8 @@ public class TestResidueSweepLiveTests
                 await db.SaveChangesAsync();
             }
 
-            await TestResidueSweep.SweepDatabaseAsync(DateTimeOffset.UtcNow.AddHours(-1));
+            await TestResidueSweep.SweepDatabaseAsync(
+                DateTimeOffset.UtcNow.AddHours(-1), restrictTo: [userId]);
 
             await using var check = TestFixtures.NewDb();
             (await check.Users.IgnoreQueryFilters().AnyAsync(u => u.Id == userId)).ShouldBeFalse();
@@ -147,7 +160,10 @@ public class TestResidueSweepLiveTests
                 await db.SaveChangesAsync();
             }
 
-            await TestResidueSweep.SweepDatabaseAsync(DateTimeOffset.UtcNow.AddHours(-1));
+            // Restricted to the two rows this test planted — and both are still OFFERED to the rule, so
+            // the assertions below are unchanged: the sweep is free to take either and must take neither.
+            await TestResidueSweep.SweepDatabaseAsync(
+                DateTimeOffset.UtcNow.AddHours(-1), restrictTo: [inFlightId, devAccountId]);
 
             await using var check = TestFixtures.NewDb();
             (await check.Users.IgnoreQueryFilters().AnyAsync(u => u.Id == inFlightId)).ShouldBeTrue(
@@ -161,6 +177,85 @@ public class TestResidueSweepLiveTests
         {
             await HardDeleteAsync(inFlightId);
             await HardDeleteAsync(devAccountId);
+        }
+    }
+
+    [Fact]
+    public async Task A_restricted_sweep_cannot_reach_a_row_the_caller_did_not_name()
+    {
+        // The guarantee the other three tests RELY on, asserted on its own so it is falsifiable rather
+        // than merely believed. Two rows, identical in every respect the rule looks at — aged, and
+        // carrying the direct-insert marker — so the ONLY thing that can separate them is `restrictTo`.
+        // Ignore that argument and the bystander goes too, which is precisely the defect this closes:
+        // a plain [Fact] with none of RunOnceAsync's safeguards deleting a row nobody planted.
+        var mineId = Guid.NewGuid();
+        var bystanderId = Guid.NewGuid();
+        var aged = DateTimeOffset.UtcNow.AddHours(-3);
+
+        try
+        {
+            await using (var db = TestFixtures.NewDb())
+            {
+                foreach (var id in new[] { mineId, bystanderId })
+                {
+                    var user = TestFixtures.NewUser(id);
+                    user.CreatedAt = aged;
+                    user.UpdatedAt = aged;
+                    db.Users.Add(user);
+                }
+
+                await db.SaveChangesAsync();
+            }
+
+            var reclaimed = await TestResidueSweep.SweepDatabaseAsync(
+                DateTimeOffset.UtcNow.AddHours(-1), restrictTo: [mineId]);
+
+            reclaimed.ShouldBe(1, "exactly the one named row, however many others the rule would match");
+
+            await using var check = TestFixtures.NewDb();
+            (await check.Users.IgnoreQueryFilters().AnyAsync(u => u.Id == mineId)).ShouldBeFalse(
+                "the named row is still swept — restricting the blast radius must not disarm the rule");
+            (await check.Users.IgnoreQueryFilters().AnyAsync(u => u.Id == bystanderId)).ShouldBeTrue(
+                "a row the caller did not name must survive even though the rule matches it perfectly");
+        }
+        finally
+        {
+            await HardDeleteAsync(mineId);
+            await HardDeleteAsync(bystanderId);
+        }
+    }
+
+    [Fact]
+    public async Task A_sweep_restricted_to_an_empty_set_deletes_nothing()
+    {
+        // The degenerate case, and the one a caller reaches by accident: an empty `restrictTo` must mean
+        // "nothing is in scope", never "no restriction". Getting this backwards would turn the safest-
+        // looking call in the file into the whole-database sweep it exists to prevent.
+        var bystanderId = Guid.NewGuid();
+        var aged = DateTimeOffset.UtcNow.AddHours(-3);
+
+        try
+        {
+            await using (var db = TestFixtures.NewDb())
+            {
+                var user = TestFixtures.NewUser(bystanderId);
+                user.CreatedAt = aged;
+                user.UpdatedAt = aged;
+                db.Users.Add(user);
+                await db.SaveChangesAsync();
+            }
+
+            var reclaimed = await TestResidueSweep.SweepDatabaseAsync(
+                DateTimeOffset.UtcNow.AddHours(-1), restrictTo: []);
+
+            reclaimed.ShouldBe(0);
+
+            await using var check = TestFixtures.NewDb();
+            (await check.Users.IgnoreQueryFilters().AnyAsync(u => u.Id == bystanderId)).ShouldBeTrue();
+        }
+        finally
+        {
+            await HardDeleteAsync(bystanderId);
         }
     }
 

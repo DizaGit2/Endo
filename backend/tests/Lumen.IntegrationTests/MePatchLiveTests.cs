@@ -113,6 +113,52 @@ public class MePatchLiveTests(LumenApiFactory factory) : IClassFixture<LumenApiF
         }
     }
 
+    [Fact]
+    public async Task Patch_me_with_an_empty_body_is_204_and_creates_the_profile_row()
+    {
+        // ARCHITECTURE.md §C.0.1 claimed an empty body here was a 400. It is not, and the difference is
+        // load-bearing for P4b: `POST /onboarding/baseline` 400s on an all-null body
+        // (OnboardingValidationMessages.BaselineEmpty), `PATCH /me` falls through every branch and
+        // answers 204 — and on the way it CREATES a `user_profile_enc` row that did not exist. A client
+        // written to the merged rule would either send a field it does not mean or treat a success as a
+        // failure. Nothing pinned the real behaviour, so nothing would have caught the doc being wrong.
+        var email = $"patch-empty-{Guid.NewGuid():N}@example.com";
+        Guid userId = default;
+        try
+        {
+            (userId, var token) = await OnboardAndLoginAsync(email, "Nombre Intacto");
+
+            // Remove the profile row so the creation half is observable, exactly as the row-creation
+            // test above does — this is the state a user reaches before any baseline step has run.
+            await using (var db = TestFixtures.NewDb())
+                await db.UserProfiles.Where(p => p.UserId == userId).ExecuteDeleteAsync();
+
+            var authed = factory.CreateClient();
+            authed.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var patch = await authed.PatchAsJsonAsync("/me", new { });
+
+            patch.StatusCode.ShouldBe(
+                HttpStatusCode.NoContent,
+                "PATCH /me has no all-fields-absent check; the empty-body 400 belongs to "
+                + "POST /onboarding/baseline alone");
+
+            await using var db2 = TestFixtures.NewDb();
+            var created = await db2.UserProfiles.AsNoTracking().SingleOrDefaultAsync(p => p.UserId == userId);
+            created.ShouldNotBeNull("an empty PATCH still materialises the profile row");
+            created!.DisplayNameEnc.ShouldBeNull("nothing was supplied, so nothing was written to it");
+
+            // Absent is never a reset: the rest of the resource is exactly as onboarding left it.
+            var user = await db2.Users.AsNoTracking().SingleAsync(u => u.Id == userId);
+            user.Timezone.ShouldBe("Europe/Madrid");
+            user.Locale.ShouldBe("es-ES");
+        }
+        finally
+        {
+            if (userId != default) await CleanupAsync(userId);
+        }
+    }
+
     // --- T4: users.timezone / users.locale become mutable ---------------------------------
 
     [Fact]
