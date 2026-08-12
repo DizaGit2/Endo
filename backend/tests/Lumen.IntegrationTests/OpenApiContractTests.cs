@@ -538,6 +538,118 @@ public class OpenApiContractTests(LumenApiFactory factory) : IClassFixture<Lumen
         }
     }
 
+    // --- T20: the T13 defect as a DOCUMENT-WIDE invariant, and the window parameters' shape ---------
+
+    [Fact]
+    public async Task OpenApi_declares_no_schema_that_is_both_nullable_and_defaulted()
+    {
+        // T13's defect, promoted from a per-schema allow-list to a property of the whole document.
+        //
+        // `nullable: true` + `default:` is unrepresentable in this toolchain. openapi-generator-cli
+        // 7.11.0's dart-dio + built_value output turns a schema `default` into a BUILDER default:
+        //
+        //     static void _defaults(FooBuilder b) => b..bar = 'baz';
+        //
+        // and the generated deserializer skips explicit nulls (`if (valueDes == null) continue;`). So a
+        // member carrying both can never be observed as null by the client: the server may send
+        // `{"bar": null}` or omit the key entirely and the client still reads 'baz', forever. That is
+        // exactly how a nullable `unavailableReason` with a [DefaultValue] would have kept reporting the
+        // P4a phase-engine code after P6 shipped a real engine — a silent, permanent client-side lie
+        // that no backend test can see and that only regenerating the real client exposes.
+        //
+        // The three T13/T14/T15 checks above each name their own members; this one needs no list and so
+        // cannot fall behind the document. It walks EVERY object in the tree — component schemas, their
+        // nested `items`/`allOf` members, and parameter schemas alike — because the hazard is a property
+        // of the emitted JSON node, not of where it happens to sit.
+        //
+        // Green today: the document's only `default` is CyclePhaseAvailabilityResponse.available, a
+        // non-nullable bool, which built_value binds correctly.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+
+        var offenders = new List<string>();
+        CollectNullableDefaults(doc.RootElement, "#", offenders);
+
+        offenders.ShouldBeEmpty(
+            "a schema that is both `nullable: true` and carries a `default` becomes a built_value " +
+            "builder default the generated client can never clear — an explicit null on the wire is " +
+            "skipped on deserialize, so the client reads the default forever. Drop the [DefaultValue], " +
+            "or make the member non-nullable if the default is genuinely the contract.");
+    }
+
+    /// <summary>
+    /// Recursively records the JSON-pointer path of every object that declares both
+    /// <c>nullable: true</c> and a <c>default</c>. Structural (it does not care which OpenAPI keyword
+    /// the object sits under), so a new schema shape cannot slip past it.
+    /// </summary>
+    private static void CollectNullableDefaults(JsonElement element, string path, List<string> offenders)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                if (element.TryGetProperty("nullable", out var nullable) &&
+                    nullable.ValueKind == JsonValueKind.True &&
+                    element.TryGetProperty("default", out _))
+                {
+                    offenders.Add(path);
+                }
+
+                foreach (var property in element.EnumerateObject())
+                    CollectNullableDefaults(property.Value, $"{path}/{property.Name}", offenders);
+                break;
+
+            case JsonValueKind.Array:
+                var index = 0;
+                foreach (var item in element.EnumerateArray())
+                    CollectNullableDefaults(item, $"{path}/{index++}", offenders);
+                break;
+        }
+    }
+
+    [Fact]
+    public async Task OpenApi_leaves_the_symptoms_window_parameters_optional_because_the_handler_binds_them_nullable()
+    {
+        // T20's query-parameter ruling, pinned where a future change would have to argue with it.
+        //
+        // `GET /symptoms` VALIDATES from/to as mandatory (SymptomService.ListAsync → 400 with the error
+        // attached to `from`/`to`; SymptomListServiceTests covers it) yet documents neither as
+        // `required`, so T21's Dart client takes them as optional named arguments. That understatement
+        // is DELIBERATE and the alternatives are worse:
+        //
+        //   * Making the handler parameters non-nullable (`DateOnly from`) is what actually flips
+        //     ApiExplorer's IsRequired — and it moves the failure from the validator to the BINDER,
+        //     where it becomes T3's single `request`-keyed 400 with no field attribution. That is the
+        //     problem shape §G12 gave T3 to eliminate.
+        //   * `[Required]` / `[BindRequired]` on the nullable parameter do NOT flip it. Measured on this
+        //     document at T20: EndpointMetadataApiDescriptionProvider derives IsRequired from the
+        //     parameter's nullability and default alone and ignores both attributes, so the emitted
+        //     parameter was byte-identical with and without them.
+        //   * That leaves a hand-maintained Swashbuckle IOperationFilter in backend/src whose only job
+        //     is to re-state, in a second place, a rule the validator already owns — a new drift surface
+        //     guarding against a failure that is already loud, immediate and field-attributed.
+        //
+        // So the contract stays as it is, and THIS test is the guard: it fails if someone "fixes" the
+        // ergonomics by de-nullifying the handler parameters, which is the change that would silently
+        // cost the 400 its field attribution.
+        using var doc = JsonDocument.Parse(await GetSwaggerJsonAsync());
+
+        var parameters = doc.RootElement
+            .GetProperty("paths").GetProperty("/symptoms").GetProperty("get").GetProperty("parameters");
+
+        foreach (var name in new[] { "from", "to", "limit", "offset" })
+        {
+            var parameter = parameters.EnumerateArray()
+                .SingleOrDefault(p => p.GetProperty("name").GetString() == name);
+
+            parameter.ValueKind.ShouldNotBe(JsonValueKind.Undefined, $"GET /symptoms must document '{name}'");
+            parameter.TryGetProperty("required", out var required).ShouldBeFalse(
+                $"'{name}' must stay an optional query parameter in the contract: the handler binds it " +
+                $"nullable so an out-of-range value reaches the validator and comes back attached to its " +
+                $"own field. Marking it required means de-nullifying the parameter, which hands the " +
+                $"rejection back to the binder and to T3's undifferentiated `request` 400. " +
+                $"(Emitted: required={(required.ValueKind == JsonValueKind.Undefined ? "<absent>" : required.ToString())})");
+        }
+    }
+
     /// <summary>
     /// Asserts the response schema is the validation-problem one (the shape carrying the
     /// <c>errors</c> map) rather than the bare <c>ProblemDetails</c>. Matched on the referenced

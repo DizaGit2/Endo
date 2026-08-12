@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Coverage collection settings for the backend suites. Driven by the two commands recorded in
+  backend/tools/check-coverage.cs (a runsettings file cannot quote them: an XML comment may not
+  contain a double hyphen).
+
+  DELIBERATELY MINIMAL. It configures WHAT is instrumented (the four product assemblies, never the
+  test assemblies) and the report format, and nothing else.
+
+  In particular it does NOT use coverlet's ExcludeByFile to drop the generated EF migrations from the
+  denominator, even though that is the obvious place for it, for two reasons:
+
+    1. ExcludeByFile is a GLOB, and a glob is exactly how the client's coverage gate went wrong in
+       P3a: whether `*` crosses `/` differs between tools and versions, the pattern silently
+       under-excluded nested generated files, and the gate reported 58.6% against a true 97.60%. The
+       exclusion therefore lives in check-coverage.cs as an ordinal PATH match, where it is
+       deterministic and testable. Same reasoning, same shape, as client/tool/check_coverage.dart.
+
+    2. Excluding at COLLECTION time destroys the whole-tree number. G15 requires BOTH figures to be
+       reported: the hand-written one the 70% exit criterion is measured against, and the whole-tree
+       one that keeps nobody from mistaking 95% for whole-tree coverage. A partitioning checker
+       reports both from one run; an ExcludeByFile run can only ever report one.
+
+  No filters beyond the assembly Include/Exclude, so the denominator stays comparable with the T9
+  measurement G15 quotes (SkipAutoProps and friends would silently move the number).
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <Include>[Lumen.Api]*,[Lumen.Application]*,[Lumen.Domain]*,[Lumen.Infrastructure]*</Include>
+          <Exclude>[Lumen.UnitTests]*,[Lumen.IntegrationTests]*,[Lumen.SecurityTests]*</Exclude>
+          <UseSourceLink>false</UseSourceLink>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

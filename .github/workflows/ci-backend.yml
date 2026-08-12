@@ -121,11 +121,33 @@ jobs:
             --startup-project backend/src/Lumen.Infrastructure
 
       - name: Integration tests (against the compose stack)
-        run: dotnet test backend/tests/Lumen.IntegrationTests --nologo --logger trx --results-directory TestResults/integration
+        run: >
+          dotnet test backend/tests/Lumen.IntegrationTests --nologo --logger trx
+          --settings backend/coverlet.runsettings --collect:"XPlat Code Coverage"
+          --results-directory TestResults/integration
 
       - name: Security/GDPR tests
         if: always()
-        run: dotnet test backend/tests/Lumen.SecurityTests --nologo --logger trx --results-directory TestResults/security
+        run: >
+          dotnet test backend/tests/Lumen.SecurityTests --nologo --logger trx
+          --settings backend/coverlet.runsettings --collect:"XPlat Code Coverage"
+          --results-directory TestResults/security
+
+      # The unit suite runs in build-and-unit too; it is repeated here (6 s) purely so all three
+      # suites' coverage lands in ONE results tree. Gating on the live suites alone would measure a
+      # denominator the unit tests cover most of, and report a number nobody could act on.
+      - name: Unit tests (for the coverage denominator)
+        run: >
+          dotnet test backend/tests/Lumen.UnitTests --nologo
+          --settings backend/coverlet.runsettings --collect:"XPlat Code Coverage"
+          --results-directory TestResults/unit-coverage
+
+      # A self-contained .NET 10 file-based app merges the three cobertura reports and splits the
+      # denominator BY PATH (never a glob — see the file's header and the P3a client bug it cites).
+      # Fails the job if coverage on HAND-WRITTEN backend/src is below 70% (plan G15); the whole-tree
+      # figure is always printed beside it so 97% is never mistaken for whole-tree coverage.
+      - name: Backend coverage gate
+        run: dotnet run backend/tools/check-coverage.cs -- TestResults
 
       - name: Upload integration/security test results
         if: failure()
