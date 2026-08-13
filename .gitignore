@@ -3,6 +3,10 @@
 **/obj/
 *.user
 
+# Test + coverage output (`dotnet test --results-directory` / `--collect:"XPlat Code Coverage"`)
+TestResults/
+**/TestResults/
+
 # Node (existing screen tooling)
 node_modules/
 

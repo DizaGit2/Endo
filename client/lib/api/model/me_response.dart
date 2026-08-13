@@ -3,6 +3,7 @@
 //
 
 // ignore_for_file: unused_element
+import 'package:lumen/api/model/date.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
@@ -11,24 +12,48 @@ part 'me_response.g.dart';
 /// MeResponse
 ///
 /// Properties:
+/// * [diagnosedOn] 
 /// * [displayName] 
+/// * [dob] 
+/// * [endoStatus] 
+/// * [heightCm] 
 /// * [id] 
+/// * [latestWeightKg] 
 /// * [locale] 
 /// * [onboardingCompleted] 
+/// * [rasrmStage] 
 /// * [timezone] 
 @BuiltValue()
 abstract class MeResponse implements Built<MeResponse, MeResponseBuilder> {
+  @BuiltValueField(wireName: r'diagnosedOn')
+  String? get diagnosedOn;
+
   @BuiltValueField(wireName: r'displayName')
   String? get displayName;
 
+  @BuiltValueField(wireName: r'dob')
+  Date? get dob;
+
+  @BuiltValueField(wireName: r'endoStatus')
+  String? get endoStatus;
+
+  @BuiltValueField(wireName: r'heightCm')
+  int? get heightCm;
+
   @BuiltValueField(wireName: r'id')
   String? get id;
+
+  @BuiltValueField(wireName: r'latestWeightKg')
+  double? get latestWeightKg;
 
   @BuiltValueField(wireName: r'locale')
   String? get locale;
 
   @BuiltValueField(wireName: r'onboardingCompleted')
   bool? get onboardingCompleted;
+
+  @BuiltValueField(wireName: r'rasrmStage')
+  int? get rasrmStage;
 
   @BuiltValueField(wireName: r'timezone')
   String? get timezone;
@@ -56,6 +81,13 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
     MeResponse object, {
     FullType specifiedType = FullType.unspecified,
   }) sync* {
+    if (object.diagnosedOn != null) {
+      yield r'diagnosedOn';
+      yield serializers.serialize(
+        object.diagnosedOn,
+        specifiedType: const FullType.nullable(String),
+      );
+    }
     if (object.displayName != null) {
       yield r'displayName';
       yield serializers.serialize(
@@ -63,11 +95,39 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
         specifiedType: const FullType.nullable(String),
       );
     }
+    if (object.dob != null) {
+      yield r'dob';
+      yield serializers.serialize(
+        object.dob,
+        specifiedType: const FullType.nullable(Date),
+      );
+    }
+    if (object.endoStatus != null) {
+      yield r'endoStatus';
+      yield serializers.serialize(
+        object.endoStatus,
+        specifiedType: const FullType.nullable(String),
+      );
+    }
+    if (object.heightCm != null) {
+      yield r'heightCm';
+      yield serializers.serialize(
+        object.heightCm,
+        specifiedType: const FullType.nullable(int),
+      );
+    }
     if (object.id != null) {
       yield r'id';
       yield serializers.serialize(
         object.id,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.latestWeightKg != null) {
+      yield r'latestWeightKg';
+      yield serializers.serialize(
+        object.latestWeightKg,
+        specifiedType: const FullType.nullable(double),
       );
     }
     if (object.locale != null) {
@@ -82,6 +142,13 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
       yield serializers.serialize(
         object.onboardingCompleted,
         specifiedType: const FullType(bool),
+      );
+    }
+    if (object.rasrmStage != null) {
+      yield r'rasrmStage';
+      yield serializers.serialize(
+        object.rasrmStage,
+        specifiedType: const FullType.nullable(int),
       );
     }
     if (object.timezone != null) {
@@ -114,6 +181,14 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
       final key = serializedList[i] as String;
       final value = serializedList[i + 1];
       switch (key) {
+        case r'diagnosedOn':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.diagnosedOn = valueDes;
+          break;
         case r'displayName':
           final valueDes = serializers.deserialize(
             value,
@@ -122,12 +197,44 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
           if (valueDes == null) continue;
           result.displayName = valueDes;
           break;
+        case r'dob':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(Date),
+          ) as Date?;
+          if (valueDes == null) continue;
+          result.dob = valueDes;
+          break;
+        case r'endoStatus':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.endoStatus = valueDes;
+          break;
+        case r'heightCm':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.heightCm = valueDes;
+          break;
         case r'id':
           final valueDes = serializers.deserialize(
             value,
             specifiedType: const FullType(String),
           ) as String;
           result.id = valueDes;
+          break;
+        case r'latestWeightKg':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(double),
+          ) as double?;
+          if (valueDes == null) continue;
+          result.latestWeightKg = valueDes;
           break;
         case r'locale':
           final valueDes = serializers.deserialize(
@@ -143,6 +250,14 @@ class _$MeResponseSerializer implements PrimitiveSerializer<MeResponse> {
             specifiedType: const FullType(bool),
           ) as bool;
           result.onboardingCompleted = valueDes;
+          break;
+        case r'rasrmStage':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.rasrmStage = valueDes;
           break;
         case r'timezone':
           final valueDes = serializers.deserialize(

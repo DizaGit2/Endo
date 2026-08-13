@@ -12,10 +12,18 @@ part 'update_me_request.g.dart';
 ///
 /// Properties:
 /// * [displayName] 
+/// * [locale] 
+/// * [timezone] 
 @BuiltValue()
 abstract class UpdateMeRequest implements Built<UpdateMeRequest, UpdateMeRequestBuilder> {
   @BuiltValueField(wireName: r'displayName')
   String? get displayName;
+
+  @BuiltValueField(wireName: r'locale')
+  String? get locale;
+
+  @BuiltValueField(wireName: r'timezone')
+  String? get timezone;
 
   UpdateMeRequest._();
 
@@ -44,6 +52,20 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
       yield r'displayName';
       yield serializers.serialize(
         object.displayName,
+        specifiedType: const FullType.nullable(String),
+      );
+    }
+    if (object.locale != null) {
+      yield r'locale';
+      yield serializers.serialize(
+        object.locale,
+        specifiedType: const FullType.nullable(String),
+      );
+    }
+    if (object.timezone != null) {
+      yield r'timezone';
+      yield serializers.serialize(
+        object.timezone,
         specifiedType: const FullType.nullable(String),
       );
     }
@@ -77,6 +99,22 @@ class _$UpdateMeRequestSerializer implements PrimitiveSerializer<UpdateMeRequest
           ) as String?;
           if (valueDes == null) continue;
           result.displayName = valueDes;
+          break;
+        case r'locale':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.locale = valueDes;
+          break;
+        case r'timezone':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.timezone = valueDes;
           break;
         default:
           unhandled.add(key);

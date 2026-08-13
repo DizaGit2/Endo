@@ -37,8 +37,10 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 
 ## §1 Status ledger  (the ONLY authority for "done")
 
-**NEXT PHASE TO RUN: P4a — Backend Onboarding-rest + Cycle + Symptoms (UNBLOCKED — pre-P4a decision session held 2026-07-08).**  (P0a–P3c DONE. The 2026-07-08 session resolved **D-01 (REOPENED: social login IN v1 → new phase P4c)**, D-02, D-04, D-08..D-14, B15/B16, ratified the `definitions.md` extracts (with PO-extended symptom vocabularies), and adopted interim C-03/C-04 defaults (two-tier bounds) plus a **cycle-tracking-pause rider** — see the §4 r15 row, `ARCHITECTURE.md §A`, decision-sheet.md, and the definitions.md ratification block. Keep working the long-lead gates below — clinical outreach C-01..C-13, the Anthropic DPA, legal L-01/L-02/L-04, and now **Apple/Google OAuth registrations + L-09 (for P4c)** are the schedule's real critical path.)
-**Plan revision:** r17   **Repo HEAD when ledger last updated:** `main` @ `77e44ea` (r16 clinical-asks PO-interim session, committed 2026-07-14); r17 = P4a rider drift-fix (2026-08-06, docs-only) — the r16 session updated `ARCHITECTURE.md §A`, §1 and §4 but left the P4a rider list at its r15 values; riders (2) and (7) are now re-synced to §A, and P4a gained an **Architecture refs** line so the §0 kickoff template routes the session to §A, which is authoritative on conflict.
+**NEXT PHASE TO RUN: P4b — Flutter screens 3–14, 32.**  **P4a is DONE** — human-accepted and merged to `main` 2026-08-13 (`--no-ff`, tag `phase-04a`): 22/22 tasks, **1,220 backend tests + 278 client tests re-verified green at acceptance**, OpenAPI and the Dart client regenerated. A **whole-branch review** ran five independent lenses (28 raw findings) and returned **MERGE_WITH_FOLLOWUPS**; its four must-fix findings are closed in `3f7e958`. P4b's preconditions ("P4a endpoints green + regenerated client") are now satisfied on `main`, and P4b must read `ARCHITECTURE.md §C.0` before writing any client write path — Swashbuckle emits no `description`, so none of P4a's DTO documentation survives into `client/lib/api/`. Three things carried out of P4a and still open, all detailed in its STATUS block: the **three L-05/L-06 legal blockers** (one needs a product decision, not a lawyer), the **T20 Keycloak deletion incident** in the local dev realm, and the **open PO questions**. *(P0a–P3c DONE. The 2026-07-08 session resolved **D-01 (REOPENED: social login IN v1 → new phase P4c)**, D-02, D-04, D-08..D-14, B15/B16, ratified the `definitions.md` extracts (with PO-extended symptom vocabularies), and adopted interim C-03/C-04 defaults (two-tier bounds) plus a **cycle-tracking-pause rider** — see the §4 r15 row, `ARCHITECTURE.md §A`, decision-sheet.md, and the definitions.md ratification block. Keep working the long-lead gates below — clinical outreach C-01..C-13, the Anthropic DPA, legal L-01/L-02/L-04, and now **Apple/Google OAuth registrations + L-09 (for P4c)** are the schedule's real critical path.)*
+**Plan revision:** r19   **Repo HEAD when ledger last updated:** `main` @ the `phase/04a-logging-backend` merge commit, tagged `phase-04a`. P4a's 52 branch commits — T1–T22, then the four whole-branch-review must-fix fixes (`3f7e958`) and their records (`5535a4f`, `9589803`, `4ed97ed`) — are now on `main`, which was `3930dda` (the r17 drift-fix, and the branch's merge-base) before this merge.
+**r19 = P4a acceptance (2026-08-13, docs-only).** Human review passed against RUNBOOK §4 + §9: build `-warnaserror` 0 warnings; **1,220 backend tests green re-run at branch HEAD** (1008 unit / 205 integration-LiveStack / 7 security); 278 client tests + `flutter analyze` clean; secret scan over the 222-file diff clean; contract gate green (`openapi.json` + 91 client files, 43 `*.g.dart` committed); full compose stack healthy with `/health` + `/health/ready` 200 through Caddy over TLS. Ledger row → DONE, NEXT advanced to P4b, merged `--no-ff` + tagged `phase-04a` per §8. **The stale verification paste below was refreshed** — it showed 1003/202/7 = 1,212 from before `3f7e958`, while the prose beside it claimed the (correct) re-verified 1,220. **One environment defect found during acceptance, not a P4a code defect — see "Dev-stack fragility" in the STATUS block: a recreated Vault container silently loses the Transit engine and `lumen-dev-kek`, reddening 96 integration tests while `docker compose ps` still looks healthy.**
+**r18 = P4a phase close (2026-08-11, docs-only, T22).** Filled the P4a STATUS block with pasted verification output and ticked the six exit criteria (criterion 6 passes on the §G15 hand-written denominator and is stated as NOT met against a literal whole-tree reading); added `ARCHITECTURE.md §C.0` for the rules the generated Dart client cannot express; recorded the C-03/C-04 PO-interim numbers and the §G11 inventions in STATUS and the §A P4a row; corrected the stale "a namespace renames the schema" rationale in §A and in `OnboardingContracts.cs`; dropped `--delete-conflicting-outputs` from `client/lib/api/README.md` (removed in build_runner 2.15.0); set this row to NEEDS_REVIEW. Earlier: r17 = P4a rider drift-fix (2026-08-06, docs-only) — the r16 session updated `ARCHITECTURE.md §A`, §1 and §4 but left the P4a rider list at its r15 values; riders (2) and (7) were re-synced to §A, and P4a gained an **Architecture refs** line so the §0 kickoff template routes the session to §A, which is authoritative on conflict.
 
 | Phase | Name | Status | Branch | PR | Verified by | Notes |
 |---|---|---|---|---|---|---|
@@ -49,7 +51,7 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 | P3a | Flutter foundation + theming + OpenAPI pipeline | DONE | phase/03a-client-foundation | tag `phase-03a` | 2026-06-14 | merged to main (merge `39acac4`); 106 client + 3 OpenAPI tests; cov 97.60% |
 | P3b | Client OIDC + cache + screens 2/31 | DONE | phase/03b-client-spine | [#2](https://github.com/DizaGit2/Endo/pull/2) | 2026-07-06 | merged 2026-06-15 (ff, PR #2); tag `phase-03b` @ `6d122d4` cut retroactively r13; +4 post-merge fixes on main (see STATUS); iOS-redirect + screen-31-retry corrections → P3c, onboarding-gate → P4b |
 | P3c ⚠* | Consolidation & hardening (perimeter, crypto dedup, client/CI debt) | DONE | phase/03c-hardening | [#3](https://github.com/DizaGit2/Endo/pull/3) | 2026-07-08 | merged --no-ff, tag `phase-03c`; T1–T14 + review-fixes (19 commits); per-task two-stage review + whole-branch /code-review high + headless & on-device E2E |
-| P4a | Backend Onboarding-rest + Cycle + Symptoms | TODO | — | — | — | READY: decision session done 2026-07-08 (r15); session riders listed in §3 preconditions |
+| P4a | Backend Onboarding-rest + Cycle + Symptoms | DONE | phase/04a-logging-backend | no PR — merged locally `--no-ff`, tag `phase-04a` | 2026-08-13 | merged to main; 22/22 tasks, 52 commits; **re-verified at acceptance: 1008 unit + 205 integration + 7 security green, `-warnaserror` 0 warnings, 278 client tests + `flutter analyze` clean**; whole-branch review = MERGE_WITH_FOLLOWUPS, 4 must-fix findings closed in `3f7e958`; coverage re-measured at acceptance **97.24% hand-written / 56.96% whole-tree** (§G15 denominator; up from T20's 97.15%, ratchet holds); OpenAPI + Dart client regenerated; **⚠ T8 (erasure) reviewed SAFE_TO_MERGE**; see the P4a STATUS block for the three L-05/L-06 legal blockers, the T20 Keycloak incident, and the PO questions |
 | P4b | Flutter screens 3–14, 32 | TODO | — | — | — | screen-2 social buttons land in P4c, not here |
 | P4c | Social login (Apple/Google via Keycloak brokering) | TODO | — | — | — | NEW r15 (D-01 reopened 2026-07-08); needs OAuth app registrations + L-09; runs after P4b |
 | P5 | Body + Activity + Treatment | TODO | — | — | — | needs D-15/D-16 |
@@ -483,15 +485,355 @@ cd client; $env:PUB_CACHE='C:\pub_cache'; flutter analyze; flutter test; dart ru
 
 ### Phase P4a — Backend: Onboarding-rest + Cycle + Symptoms
 
-- **Status:** TODO · **Depends on:** P3c · **Branch:** `phase/04a-logging-backend`
+- **Status:** **DONE** (accepted + merged 2026-08-13 — see the STATUS block at the end of this entry) · **Depends on:** P3c · **Branch:** `phase/04a-logging-backend`
 - **Goal:** first wide band of encrypted CRUD reusing `IUserCryptoContext`; onboarding completion; Cycle + Symptoms modules; non-clinical placeholder snapshot.
 - **Architecture refs:** §A (decision rows — **authoritative: §A wins wherever the rider text below disagrees**), §C.1/§C.9 (onboarding + settings endpoints), §D (schema), §F (encryption).
 - **Preconditions (MUST resolve — this is the dense product-decision phase):** **P3c DONE** (r13). One decision-resolution session (fast-path like D-05/06/07, 2026-06-14): **D-02** (onboarding-complete criteria — the `complete` endpoint needs it; absent from the original list until r13), decisions **D-08** (intensity scale 0–10 vs 1–5), **D-09** (symptom type/triggers/related/region/body-map shape), **D-10** (mood/energy/libido), **D-11** (quick vs full payloads), **D-12** (timezone/today), **D-13** (soft-delete/pagination/future-dating/notes), **D-14** (goals + hormone-default), **B15** (cycle-setup endpoint home), **B16** (hormone code↔label). Definitions: goal enum, region seed, mood labels, hormone code-label table (from `definitions.md`). Clinical: **C-03/C-04 bounds** can use documented defaults from decision-sheet/clinical-asks but flag for sign-off.
 - **✅ Preconditions RESOLVED 2026-07-08 (r15)** — all of the above; full record in §4, `ARCHITECTURE.md §A`, decision-sheet.md, definitions.md ratification block. **Session riders P4a must implement:** (1) `cycle_day_logs.pain smallint 0..10` — the D-11 headline-pain upsert (quick check-in writes day-log only, no `symptoms` row); (2) **cycle-tracking pause** fields + endpoint on cycle settings (`tracking_paused`, `pause_reason {pregnancy, hormonal_suppression, surgical, menopause, other}` *(PO-extended 2026-07-14 / r16 — was 3 members at r15; corrected r17)*, `paused_since`; paused → no predictions, explicit "phases unavailable", spans excluded from estimators, resume user-controlled & always available for every reason; `pause_reason=pregnancy` disables hormone-range interpretation entirely; engine semantics finalize at P6/C-12); (3) extended frozen vocabularies (regions 8+`unspecified`, pain types 6, triggers 7, non-pain catalog 20 — definitions.md 2026-07-08); (4) profile/condition bundle (`endo_status {diagnosed, suspected, not_applicable}`, nullable `rasrm_stage` 1–4, `diagnosed_on`, `height_cm`; onboarding weight seeds `body_metrics`); (5) `POST /onboarding/cycle` (B15); (6) notification seed s7 ON/ON/OFF/OFF, canonical label "Phase shift"; (7) two-tier bounds — sanity validation only at entry (avg cycle 10–120 d, period 1–30 d), clinical bounds (21–45/1–10, **mean**-of-6 in-bounds cycles *(PO override 2026-07-14 / r16 — median was the researched recommendation; said "median-of-6" until r17)*, ≥3-cycle override) live in estimator params flagged pending C-03/C-04 clinician sign-off; **bounds are estimator-only, never entry blockers**.
-- **Exit criteria:** onboarding completes; Cycle/Symptoms/settings-cycle endpoints pass integration + tenant-isolation + encryption tests; migrations clean; placeholder snapshot unmistakably non-clinical; OpenAPI + Dart client regenerated in the same PR; global coverage ≥70%.
-- **Tasks (outline):** entities/migrations (`cycle_events`, `cycle_day_logs`, `symptoms`, `user_insight_snapshot` placeholder, `user_devices` upsert endpoint) → onboarding `baseline/goals/hormones/notifications/complete` (+ cycle-setup home) → Cycle endpoints → Symptoms endpoints (quick + full, region/type/triggers per D-09) → settings/cycle → validation (intensity bounds per D-08, enum membership, calendar windows, onboarding state machine) → onboarding-validation ProblemDetails alignment (r13; client-side validation lands in P4b) → OpenAPI+Dart regen. *(Detailed at phase entry, once D-08..D-14 are resolved.)*
+- **Exit criteria:** onboarding completes; Cycle/Symptoms/settings-cycle endpoints pass integration + tenant-isolation + encryption tests; migrations clean; placeholder snapshot unmistakably non-clinical; OpenAPI + Dart client regenerated in the same PR; global coverage ≥70% — **measured against HAND-WRITTEN `backend/src`** (see below).
+- **Coverage denominator (decided mid-phase, breakdown §G15; implemented in T20):** the ≥70% criterion excludes `**/Migrations/**` and `LumenDbContextModelSnapshot.cs`, which at T20 are **4,340 of 8,347 instrumented lines (52%)** and are never executed by any test (LiveStack applies migrations out of process via `dotnet ef`). Same precedent, same reasoning, as P3a's `client/tool/check_coverage.dart` excluding `lib/api/**` + `*.g.dart`. The gate is `backend/tools/check-coverage.cs`, which splits the denominator **by path, not by a glob** — the P3a review caught a glob that under-excluded nested generated files and reported 58.6% against a true 97.60% — and always prints BOTH figures so nobody reads the hand-written number as whole-tree coverage. **T20 measurement: whole tree 4702/8347 = 56.33% · hand-written 3893/4007 = 97.15%.**
+- **Tasks:** ✅ **DETAILED AT PHASE ENTRY 2026-08-06 → [`../specs/2026-05-31-build-strategy/p4a-task-breakdown.md`](../specs/2026-05-31-build-strategy/p4a-task-breakdown.md)** — 22 strictly-serial TDD tasks with a binding **Global constraints** block (§G1–G14: frozen vocabularies with exact members, the two-tier bounds rule, the three-migration cap, the zero-clinical-inference boundary, cross-task ownership, and the in-branch doc amendments each task owes). That file is the implementer's and reviewer's source of truth for P4a; this outline remains for orientation: entities/migrations (`cycle_events`, `cycle_day_logs`, `symptoms`, `user_insight_snapshot` placeholder, `user_devices` upsert endpoint) → onboarding `baseline/goals/hormones/notifications/complete` (+ cycle-setup home) → Cycle endpoints → Symptoms endpoints (quick + full, region/type/triggers per D-09) → settings/cycle → validation (intensity bounds per D-08, enum membership, calendar windows, onboarding state machine) → onboarding-validation ProblemDetails alignment (r13; client-side validation lands in P4b) → OpenAPI+Dart regen.
+- **Phase-entry decisions (2026-08-06):** PO confirmed — (1) **crypto-shred now hard-deletes the new plaintext health rows** (§D mandates plaintext for the P6 engine, so DEK deletion no longer suffices; §2's erasure invariant amended in §F, task T8 gets ⚠ treatment, privacy wording flagged for L-05/L-06); (2) `cycle_tracking_pause_spans` history table ships (rider 2's three fields cannot satisfy §A:59's "paused spans excluded from estimators"); (3) `POST /symptoms` is a **batch** (1–50, all-or-nothing); (4) four additive surfaces ship — timezone/locale on `PATCH /me`, `DELETE /cycle/events/{id}`, phase-override storage + `GET /onboarding/state` + `POST /me/devices`, and the `rasrm_stage`/`diagnosed_on` write+read path. Resolved from the docs without a PO call: sanity bounds are **soft/non-blocking** (no invented tier), the C-03/C-04 clinical numbers live in **documentation only** (no `Lumen.Domain.Clinical`, no `ref_insight_rule` this phase), and the B16 `ref_hormone` table **defers to P7b** (constants file ships now). Full rationale in the breakdown's "Decisions taken at phase entry".
 
-**STATUS** _(empty)_
+**STATUS**
+- **State:** **DONE** — human-accepted 2026-08-13 and merged to `main` (`--no-ff`, tag `phase-04a`; no PR opened) · **Branch:** `phase/04a-logging-backend` (from `3930dda`) · **22/22 tasks complete** · **52 commits** · closed 2026-08-11, then re-opened briefly to close the whole-branch review's four must-fix findings (`3f7e958`).
+
+**Whole-branch review (2026-08-11, after T22 closed the phase).** Five independent lenses over all 48 commits — cross-task interaction, security/GDPR, clinical safety, docs-vs-code, and test integrity — produced 28 raw findings; an adjudicator verified every CRITICAL and IMPORTANT itself and returned **MERGE_WITH_FOLLOWUPS**, on the grounds that no surviving production defect loses data or leaks health data. Its **four must-fix findings are closed in `3f7e958`**:
+
+1. **An ungated whole-database sweep was running on every ordinary integration test run.** Three plain `[Fact]`s called `TestResidueSweep.SweepDatabaseAsync` directly with a one-hour cutoff over the *whole* database, bypassing all three of `RunOnceAsync`'s safeguards — the opt-in gate, the dev-stack identity proof, and every announcement channel. Commit `568fea4` closed this hole and re-opened it through the coverage it added, while three doc blocks claimed the opposite. Reproduced by planting an aged rule-matching row that no test planted and watching it disappear. `SweepDatabaseAsync` now takes a `restrictTo` id set applied *on top of* the marker rule (it can only narrow; empty means nothing, never everything), two new guards fail if the bound is ignored, and a full 205-test integration run now leaves the `users` table byte-identical. **Residual:** `restrictTo` defaults to `null`, so a future test that forgets it re-opens the hole — a required parameter plus a separate `SweepEverythingAsync` would make it compiler-enforced (~5 lines, P5).
+2. **`CycleSettingsService.UpdateAsync`'s `ChangeTracker.Clear()` was unpinned** — the 12th `ConcurrencyRetry` call site, and the worst one, since `UserCycleSettings`' PK *is* `UserId`, so a lost race leaves the loser its own dead insert under the winner's key. Deleting the line left the entire 1003-test unit suite green. Now covered by two tests (the settings insert and the pause-span insert fail differently, and each is arranged so the other cannot occur), both proven red with the line removed. `ConcurrencyRecoveryTests`' inventory paragraph had also gone stale and now states the rule rather than a list that keeps rotting.
+3. **§C.0.1 was wrong in one row and missing the two endpoints behind P4b's last two screens.** `PATCH /me {}` is **not** a 400 — it returns 204 and creates a `user_profile_enc` row; the empty-body rule belongs to `POST /onboarding/baseline` alone, and §C.9 already said so, so ARCHITECTURE contradicted itself. Added: `POST /cycle/phase-override` (where `boundaries: null` is a 400 but `boundaries: []` soft-deletes every correction — and the generated client renders both as one nullable field) and `PATCH /settings/cycle` (whose response is deliberately not round-trippable: it always emits `pauseReason`, and supplying it while unpaused is a 400).
+4. **`POST /onboarding/cycle` full-replaced three columns on every re-post** — an omitted `avgPeriodLengthDays` / `avgCycleLengthDays` / `regularity` reset a stored answer rather than defaulting on create, and `GET /onboarding/state` returns none of the three, so the one read P4b resumes from could not restore what the re-post cleared. The only surviving finding that cost a user data. Fixed by merging on update (defaults apply only on create), which matches the ruling already made for `POST /cycle/day/{date}` and needs no contract change — so T21's single Dart regeneration still stands.
+
+Everything else the review raised is filed as a follow-up. **P5:** no synchronous erasure fence on `DELETE /me` (pre-existing and unchanged from merge-base, but P4a raises the stakes to eleven plaintext Art. 9 tables), and a shred that exhausts `[AutomaticRetry(Attempts = 10)]` parks in Hangfire's Failed state with no alert — the account is disabled, the user cannot log in to notice, and the data is retained, so a silently failed erasure is the one job failure nobody can observe from outside; `pause_reason` is un-erasable and un-correctable once set (Art. 5(1)(c) and Art. 16 bear on it); `users.onboarding_completed_at` survives the shred unmentioned. **P4b:** the Flutter debug interceptor prints the very request paths the backend spends three mechanisms redacting. **P6:** two clinician-UNSIGNED features ship consent-ON while their sibling ships OFF for being unsigned, so P4a's defaults must not be read as consent. Plus a batch of documentation corrections (§A self-contradicts on §G8's enforcement count; §F says erasure "empties push tokens" where the job deletes the rows; §D miscounts the tables without `deleted_at`).
+- **Accepted 2026-08-13.** Reviewed against RUNBOOK §4 + §9 with every verify command re-run rather than read (see "Acceptance re-verification" below), then merged to `main` with `git merge --no-ff` and tagged `phase-04a`. **No PR was opened** — the merge was local, matching the P0a/P1/P3a precedent rather than the P2/P3b/P3c PR route.
+- Per-task review record (every task reviewed, findings and fixes): [`../../.superpowers/sdd/progress.md`](../../../.superpowers/sdd/progress.md). Task breakdown + the binding §G1–§G15 constraints: [`../specs/2026-05-31-build-strategy/p4a-task-breakdown.md`](../specs/2026-05-31-build-strategy/p4a-task-breakdown.md).
+
+#### Acceptance re-verification — pasted output, run by the human reviewer at branch HEAD on 2026-08-13
+
+Every §9 gate re-run rather than read. `LUMEN_SWEEP_TEST_RESIDUE` was left unset throughout; nothing was deleted.
+
+```
+$ dotnet build backend/Lumen.slnx -warnaserror --nologo
+Build succeeded.  0 Warning(s)  0 Error(s)
+
+$ dotnet test backend/Lumen.slnx --nologo
+Passed!  - Failed: 0, Passed: 1008, Skipped: 0, Total: 1008, Duration: 5 s     - Lumen.UnitTests.dll (net10.0)
+Passed!  - Failed: 0, Passed:    7, Skipped: 0, Total:    7, Duration: 7 s     - Lumen.SecurityTests.dll (net10.0)
+Passed!  - Failed: 0, Passed:  205, Skipped: 0, Total:  205, Duration: 5 m 8 s - Lumen.IntegrationTests.dll (net10.0)
+
+$ dotnet run backend/tools/check-coverage.cs -- TestResults
+whole tree              4823/8468   =  56.96%
+  generated              809/4340   =  18.64%   (17 files, 51.3% of all instrumented lines)
+  hand-written  GATED   4014/4128   =  97.24%
+GATE PASS: hand-written coverage 97.24% >= 70%.
+
+$ cd client && flutter analyze          -> No issues found! (ran in 51.6s)
+$ cd client && flutter test             -> 00:07 +278: All tests passed!
+
+$ docker compose -f deploy/docker-compose.yml up -d ; curl -ksS https://localhost/health
+{"status":"healthy"}                                                    http=200
+$ curl -ksS https://localhost/health/ready
+{"status":"ready","dependencies":{"postgres":true,"vault":true}}        http=200
+
+$ git diff main...phase/04a-logging-backend | grep -iE "password|secret|api[_-]?key|BEGIN .*PRIVATE KEY"
+  -> test fixtures only (`Sup3rSecretPassw0rd!`), the `Password` DTO member, and PiiRedactionEnricher's
+     name list. No real secret committed.
+```
+
+**Coverage moved UP since T20** (97.15% → **97.24%** hand-written; denominator 4007 → 4128). The 121 new instrumented lines are `3f7e958`'s must-fix code, which T20's measurement predates. The §9 ratchet is satisfied.
+
+**§9 item 7 (safety mutation spot-check) was NOT re-run at acceptance** — it is taken on the documented in-branch evidence instead: T8's erasure guards were proven red by deleting them (the eleven-table retention artifact), and finding 2's two new `ConcurrencyRetry` tests were each proven red with `ChangeTracker.Clear()` removed. P4a is not one of the four ⚠ phases; T8 alone carried ⚠ treatment and passed its re-review gate as SAFE_TO_MERGE.
+
+#### ⚠ Dev-stack fragility found during acceptance — an ENVIRONMENT defect, not a P4a code defect
+
+The first acceptance run came back **96 of 205 integration tests RED**, every failure funnelling through `OnboardAndLoginAsync` with a 500. Root cause: **Vault runs `-dev` (in-memory storage), so a recreated container loses the Transit engine and `lumen-dev-kek` entirely** — `vault secrets list` showed no `transit/` path at all. The `vault-init` one-shot that creates them had not re-run on that start. Re-running it (`docker compose up vault-init`, the documented single init path from P3c-T3) turned the same suite fully green with no code change, which is the proof that the branch was never at fault.
+
+**Why this is worth fixing rather than remembering:** the stack *looks* healthy while broken — `docker compose ps` shows every container Up, Postgres reports healthy, and Keycloak's OIDC discovery answers 200. Only a DEK path fails. `vault` carries `restart: unless-stopped` but `vault-init` is a one-shot with no such policy, so any host reboot or `docker start` reproduces it silently. P0a's verify commands catch it; **RUNBOOK §4's per-phase review checklist does not**, which is why it surfaced here as 96 red tests instead of one clear line.
+
+**Follow-ups (neither done here — both are outside P4a's scope):**
+1. Make the dev stack self-healing or self-diagnosing — e.g. give `vault-init` a restart policy, fold the Transit check into `/health/ready`, or add the `vault read transit/keys/lumen-dev-kek` probe to RUNBOOK §4's checklist. **Owner: P11** (infra hardening) or a standalone chore.
+2. **14 rows in `user_keys` are now permanently undecryptable.** Their DEKs were wrapped by the *old* in-memory KEK, which is unrecoverable; the fresh KEK cannot unwrap them. This is pre-existing dev-realm test residue and no production system is involved — the rows were **deliberately left in place**, not cleaned up, given the T20 precedent about unrequested deletion.
+
+#### Verification — pasted output, run at HEAD on 2026-08-11
+
+```
+$ dotnet build backend/Lumen.slnx -warnaserror --nologo
+  Lumen.Domain -> ...\Lumen.Domain.dll
+  Lumen.Application -> ...\Lumen.Application.dll
+  Lumen.Infrastructure -> ...\Lumen.Infrastructure.dll
+  Lumen.SecurityTests -> ...\Lumen.SecurityTests.dll
+  Lumen.Api -> ...\Lumen.Api.dll
+  Lumen.UnitTests -> ...\Lumen.UnitTests.dll
+  Lumen.IntegrationTests -> ...\Lumen.IntegrationTests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+```
+
+```
+$ dotnet test backend/Lumen.slnx --nologo          # LiveStack up: lumen-postgres-1, lumen-keycloak-1, lumen-vault-1
+Passed!  - Failed:     0, Passed:  1008, Skipped:     0, Total:  1008, Duration: 5 s     - Lumen.UnitTests.dll (net10.0)
+Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7, Duration: 7 s     - Lumen.SecurityTests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   205, Skipped:     0, Total:   205, Duration: 5 m 8 s - Lumen.IntegrationTests.dll (net10.0)
+```
+**1,220 backend tests green** (1008 unit / 205 integration-LiveStack / 7 security) — re-verified at `3f7e958`, the final commit, and again at acceptance on 2026-08-13. Baseline before any P4a code was 74 + 37 + 5 = **116**. The OpenAPI suite is inside the integration assembly and is broken out below.
+
+> *r19 correction:* the numbers pasted above originally read `1003 / 202 / 7` = **1,212** — captured before `3f7e958` and never re-pasted, while the prose beneath already claimed the re-verified 1,220. The acceptance re-run (below) confirmed **1,220** is the true figure, so the block was corrected to match its own caption. A stale paste is exactly what RUNBOOK §4's "don't trust the pasted output, re-run it" exists to catch.
+
+```
+$ dotnet test backend/Lumen.slnx --settings backend/coverlet.runsettings --collect:"XPlat Code Coverage" --nologo --results-directory TestResults
+Passed!  - Failed: 0, Passed:    7, ... - Lumen.SecurityTests.dll (net10.0)
+Passed!  - Failed: 0, Passed: 1003, ... - Lumen.UnitTests.dll (net10.0)
+Passed!  - Failed: 0, Passed:  202, ... - Lumen.IntegrationTests.dll (net10.0)
+
+$ dotnet run backend/tools/check-coverage.cs -- TestResults
+whole tree              4702/8347   =  56.33%   (backend/src, everything instrumented)
+  generated              809/4340   =  18.64%   (17 files, 52.0% of all instrumented lines)
+  hand-written  GATED   3893/4007   =  97.15%   (excludes **/Migrations/** and LumenDbContextModelSnapshot.cs)
+
+GATE PASS: hand-written coverage 97.15% >= 70%.
+```
+**Denominator, stated so nobody reads 97% as whole-tree coverage:** per §G15 the ≥70% criterion is measured against **hand-written `backend/src`** — `**/Migrations/**` and `LumenDbContextModelSnapshot.cs` are EF-generated, are never executed by any test (LiveStack applies migrations out of process via `dotnet ef`), and are 4,340 of 8,347 instrumented lines. The exclusion is an ordinal **path** match on a normalized path, not a glob — the P3a client gate was written with a glob first and under-excluded nested generated files, reporting 58.6% against a true 97.60%. **Both figures are always printed.** Reproduces T20's measurement exactly.
+
+```
+$ cd client; $env:PUB_CACHE='C:\pub_cache'; flutter analyze
+Analyzing client...
+No issues found! (ran in 4.3s)
+
+$ flutter test --coverage
+00:13 +278: All tests passed!
+
+$ dart run tool/check_coverage.dart
+Coverage (excluding lib/api/** and *.g.dart): 999/1126 = 88.72%  (102 generated files skipped)
+GATE PASS: 88.72% >= 60%.
+```
+**278 client tests green, 88.72% against the committed 60% gate.** `flutter analyze` is reported for completeness only and is **not** the client regen gate: `client/analysis_options.yaml` excludes `lib/api/**` and `**/*.g.dart`, so analyze reports "No issues found" against deliberately stale `*.g.dart` (T1 rider). **`flutter test` is the real compile gate for the generated client**, and it is what CI runs.
+
+```
+$ cmp backend/contract/openapi.json client/openapi/lumen.openapi.json
+cmp exit=0
+-rw-r--r-- 66558 backend/contract/openapi.json
+-rw-r--r-- 66558 client/openapi/lumen.openapi.json
+
+$ echo "LUMEN_OPENAPI_UPDATE=[$env:LUMEN_OPENAPI_UPDATE]"     # deliberately UNSET
+LUMEN_OPENAPI_UPDATE=[]
+$ dotnet test backend/Lumen.slnx --filter "FullyQualifiedName~OpenApi" --nologo
+Passed!  - Failed: 0, Passed: 22, Skipped: 0, Total: 22, Duration: 3 s - Lumen.IntegrationTests.dll (net10.0)
+```
+The two snapshots are **byte-identical** (same 66,558 bytes, `cmp` exit 0 — the check `ci-client.yml` runs), and the drift guard passes **without** the refresh variable, so the committed contract is the document the live API actually emits. **T22 changed no endpoint, no DTO and no emitted document.**
+
+**Migrations clean — two independent proofs, one of them cited rather than re-run.**
+1. `ModelSyncTests` asserts `context.Database.HasPendingModelChanges() == false` (no connection opened); `SchemaSmokeLiveTests` pins `GetMigrations().Count() == 8` and cross-checks the EF model's tables against live `pg_tables` three ways. Both green in the run above.
+2. **The `Down()` round-trip was verified during T20's review, against a throwaway database** — not re-run by T22, and cited as the evidence for this tick: fresh → **up** = 8 migrations / 18 tables → **down** script to the pre-P4a migration = 5 migrations / 7 tables, with **all eleven T5–T7 tables dropped and the `user_profile_enc` columns reverted** → **re-up** = 18 tables. Every step `rc=0`. §G4 is spent, so nothing since T7 could have invalidated it.
+
+#### Exit criteria
+
+| # | Criterion | Verdict | Evidence |
+|---|---|---|---|
+| 1 | **Onboarding completes** | ✅ | `POST /onboarding/start · baseline · cycle · goals · hormones · notifications · complete` + `GET /onboarding/state` all ship and are exercised live (`OnboardingCompletionLiveTests`, `OnboardingBaselineLiveTests`, `OnboardingPreferencesLiveTests`, `SpineLiveTests`). Completion is a guarded `WHERE onboarding_completed_at IS NULL … ExecuteUpdateAsync`, so concurrent "Finish" taps stamp once and the loser reports `alreadyCompleted: true` at 200. The mandatory set is checked on the DATA (≥1 live `period_start` by either route). **Scope: backend only** — no screen walks this flow until P4b. |
+| 2 | **Cycle / Symptoms / settings-cycle pass integration + tenant-isolation + encryption tests** | ✅ | Integration: `CycleEventsLiveTests`, `CycleDayLiveTests`, `CycleCalendarLiveTests`, `SymptomsLiveTests`, `CycleSettingsLiveTests`, `DeviceRegistrationLiveTests`. Tenant isolation: `TenantIsolationLiveTests` (T19, 1,205 lines, zero production changes) — route-table-derived in three independent places, compares response **fingerprints** rather than status codes (the claim is indistinguishability, not "both are errors"), and snapshots all 16 user-owned tables field-by-field under `IgnoreQueryFilters()` so a MODIFICATION is caught, not just an insert. Encryption: `A_day_log_stores_the_note_as_ciphertext_a_re_post_rotates_it_and_the_read_decrypts_it`, `Logging_an_event_stores_the_note_as_ciphertext_and_a_re_post_rotates_it`, `A_batch_of_three_is_created_read_back_newest_first_and_stored_as_ciphertext`, `Every_encrypted_column_this_step_writes_holds_ciphertext_at_rest`, `The_four_condition_columns_round_trip_as_opaque_ciphertext`. |
+| 3 | **Migrations clean** | ✅ | `HasPendingModelChanges == false` + `GetMigrations().Count() == 8` + the T20-review `Down()` round-trip cited above. |
+| 4 | **Placeholder snapshot unmistakably non-clinical** | ✅ | `SchemaSmokeLiveTests.The_insight_snapshot_table_holds_zero_rows`; `ComputedBy` defaults to `'placeholder'` (`ComputedBy_defaults_to_placeholder`, `A_snapshot_created_through_EF_carries_the_placeholder_marker`, `The_insight_snapshot_marker_says_placeholder_and_nothing_else`); the T7 NetArchTest fact `UserInsightSnapshot_is_unreachable_from_the_API_surface` makes "no read endpoint" **structural**, reproduced red twice by the reviewer including a realistic DTO-with-factory case; `The_calendar_reports_that_no_phase_engine_exists_yet` (`available: false`, `unavailableReason: "phase_engine_not_implemented"`); `No_day_row_can_carry_a_phase_a_cycle_day_or_a_confidence` and `The_day_response_carries_no_phase_cycleDay_or_confidence_field`, mirrored at the contract level by `OpenApi_no_calendar_day_row_documents_a_phase_a_cycle_day_or_a_confidence`. |
+| 5 | **OpenAPI + Dart client regenerated in this PR** | ✅ *(with one caveat that is not mine to close)* | Both snapshots regenerated and byte-identical; the Dart client regenerated exactly once, in T21 (46 `*.g.dart` committed, none gitignored). T21's reviewer checked the commit out in a clean worktree, re-ran `build_runner`, and `git diff --exit-code -- client/lib/api` returned 0 — the committed generated code is byte-identical to fresh codegen, so CI's missing `build_runner` step is genuinely harmless. Programmatic parity across all 45 schemas: the generated `wireName` set **equals** the contract property set — zero renames, removals or extras. 27 methods on ONE `LumenApiApi` class (the no-`.WithTags` invariant held across all 20 backend tasks). **Caveat: the PR itself does not exist** — the session does not open it (RUNBOOK §5). |
+| 6 | **Global coverage ≥ 70 %** | ✅ **under §G15**, ❌ **as literally worded** | **Say it plainly: whole-tree `backend/src` coverage is 56.33% and does not reach 70%.** The criterion is met on **hand-written** `backend/src` at **97.15%**, which is what §G15 decided mid-phase (after T9) the criterion measures. That decision is arithmetic, not judgement: EF-generated migrations + the model snapshot are 52% of instrumented lines and are executed by nothing, so break-even at a whole-tree 70% would require hand-written source to grow ~4.6×. It mirrors the P3a client precedent exactly. **A reviewer who rejects §G15 should read criterion 6 as NOT MET.** |
+
+**What T22 could NOT prove, stated rather than glossed:**
+- **The migration `Down()` round-trip was not re-run in this session** — it is cited from T20's review (throwaway DB, every step `rc=0`). §G4 has been spent since T7, so no migration has changed, but the tick rests on cited evidence.
+- **Nothing here exercises a screen.** P4a is backend-only by §G14; "onboarding completes" is proven by live HTTP tests, not by a user walking screens 1–7. P4b is the first phase that can make that claim.
+- **The clinician sign-offs remain at zero**, so every C-01…C-15 value this phase touched is PO-interim (below).
+- **The three L-05/L-06 legal blockers cannot be closed inside this phase** (below) — two need a lawyer and one needs a product decision.
+
+#### C-03 / C-04 clinical numbers — **PO-interim, clinician-UNSIGNED, P6 `ref_insight_rule` seed input**
+
+Recorded here and in the `ARCHITECTURE.md §A` P4a row, **and deliberately nowhere in `backend/src`** (§G7): §G5 requires reference data to be seeded via migration with `valid_from` + provenance and read from `ref_insight_rule`, and §G6 keeps that table out of P4a — so documentation is the only lawful home this phase, and no `Lumen.Domain.Clinical` namespace was created.
+
+| Value | Number | Where it belongs |
+|---|---|---|
+| Clinical cycle-length band | **21–45 days** | P6 `ref_insight_rule` |
+| Clinical period-length band | **1–10 days** | P6 `ref_insight_rule` |
+| Estimator window | last **6** in-bounds cycles | P6 |
+| Central tendency | **mean** — a PO override of the researched median, flagged for the clinician | P6 |
+| Self-report override threshold | **≥ 3** cycles | P6 |
+| Period-qualifying flow | `flow_intensity >= 2` | P6 |
+| Auto-detect `period_start` | **≥ 3-day** episode gap | P6 |
+
+**P6 must seed these from a signed clinician answer, not from this block** — it records what the PO chose on 2026-07-14, not what a clinician approved.
+
+**Verified absent from `backend/src`, with one honest nuance.** `grep` for `21`/`45` across `backend/src` returns only "21 ratified symptom codes" and a `§A:45` citation; there is no clinical-band branch anywhere. What *is* in code is the §G7 **sanity band** (`CycleSettingsSanityBand` — avg cycle **10–120 d**, period **1–30 d**), which is a *non-blocking warning* that always saves, plus the structural positive-`smallint` domain that is the only thing on those two fields that can 400. That is what §G7 mandates, not a leak. The one nuance a reviewer should see: **two XML docs quote "flow ≥ 2 is period-qualifying" as a NEGATION** — `CycleEvent.FlowIntensityScale` and `LogCycleEventRequest.FlowIntensity` both name the rule in order to state that P4a does not implement it and that it belongs to P6. No code branches on it. Kept deliberately: a reader who does not know why the obvious cross-field validation is missing is the reader most likely to add it.
+
+**The guarantee that they are not entry blockers is behavioural, not structural** (§G7 / rider 7 / `clinical-asks.md:34`, all verbatim "never blocks save"): `avgCycleLengthDays = 15` and `= 47` are both accepted and stored, 47 unwarned; 200/365/32767 store with one warning; only `0`, `-1` and `32768` are 400s. Verified by the T6 and T14 reviewers against live Postgres, including a rolled-back probe.
+
+#### Values P4a **invented** (§G11) — so a later phase does not mistake them for ratified
+
+| Invention | Value |
+|---|---|
+| Windowed-read span | **≤ 366 days**, shared by `GET /cycle/calendar` and `GET /symptoms` through one `Validation.ReadWindow.MaxDays` + one wire message |
+| `POST /symptoms` batch size | **1–50** entries, all-or-nothing, 201 with `items` |
+| `cycle_events.source` | **{`user`, `onboarding`}** |
+| `cycle_phase_overrides.source` | **{`user_correction`}** |
+| Phase-unavailability codes | `phase_engine_not_implemented` (P4a's only answer) + `tracking_paused` / `insufficient_data` / `no_period_logged` reserved for P6 — **backend constants, NOT exported to Dart** |
+| §G7 structural domain | positive integer that fits `smallint` (1 … 32767) |
+| T16 `heightCm` guard | **1–32767** |
+| T16 `weightKg` guard | **(0, 9999.9] with at most one decimal place** — excess precision **rejected**, never rounded (storing 60.4 for someone who typed 60.44 invents a datum) |
+
+Both T16 guards are **structural, not clinical**: the tallest human recorded was 272 cm and the heaviest 635 kg, so they refuse only what cannot be a measurement at all. **Not inventions:** `notes` ≤ 2000 chars and pagination 50/100 are D-13; `push_token` ≤ 512 is the pre-existing column width.
+
+#### Out of scope — by design, not omission
+
+Phase / ovulation / fertile-window math · estimators · auto-detect · regularity tiers · confidence & data-completeness · missing-data cards · insights · `RecomputeInsightSnapshotJob` · matviews · the C-15 red-flag note · energy & libido capture · per-field clearing on the day log · any clinical label on the wire · **`hormoneRangeInterpretationEnabled`** (→ P6/P7b; **0 occurrences in the contract**) · **the B16 `ref_hormone` table** (→ P7b pending C-07 — P4a ships `HormoneCatalog.cs`, the code↔label constants, only) · **`users.unit_system`** (D-06 reserved column, **no write path**, 0 occurrences in the contract) · **`/settings/hormones` → P6**, **`/settings/notifications` → P9a**, **`POST /me/export` → P9b** · **push-token-at-rest encryption → P9a** · MinIO object erasure (`TODO(P7a)`; nothing writes objects before P7a).
+
+#### Generated Dart client — 27 methods on one `LumenApiApi`
+
+`checkinQuickPost` · `cycleCalendarGet` · `cycleDayDateGet` · `cycleDayDatePost` · `cycleEventsIdDelete` · `cycleEventsPost` · `cyclePhaseOverridePost` · `healthGet` · `healthReadyGet` · `meDelete` · `meDevicesPost` · `meGet` · `mePatch` · `onboardingBaselinePost` · `onboardingCompletePost` · `onboardingCyclePost` · `onboardingGoalsPost` · `onboardingHormonesPost` · `onboardingNotificationsPost` · `onboardingStartPost` · `onboardingStateGet` · `settingsCycleGet` · `settingsCyclePatch` · `symptomsGet` · `symptomsIdDelete` · `symptomsIdPut` · `symptomsPost`.
+
+#### Handoffs — the rules the generated client cannot carry
+
+**`ARCHITECTURE.md §C.0` is the durable home** (new subsection, T22): Swashbuckle emits no `description`, so none of this phase's ~45 DTO XML docs reach `client/lib/api/`. §C.0 carries the write-semantics table (**full upsert** on `POST /cycle/events` — an omitted field CLEARS; **merge** on `POST /cycle/day/{date}` and `POST /checkin/quick` — an omitted field is left unchanged; **full replace** on `PUT /symptoms/{id}` and the three onboarding preference steps; **merge** on `PATCH /me` and `POST /onboarding/baseline`), plus `pauseReason`, `weightKg`, `diagnosedOn`, `T?`, the nullable+default trap and the six new `MeResponse` keys. **The deciding test for a write rule is how many surfaces write the row, not the HTTP verb.**
+
+**P4b:**
+- **Register the push device on EVERY app start** — not "first launch + token refresh". The cross-account detach is only self-healing because the victim's app takes its token back.
+- **`diagnosedOn` is `String?`, not `Date?`** — hand-parse it as `yyyy-MM`. `format: date` would ship a runtime crash, because the generated `DateSerializer` calls `DateTime.parse`, which throws on `"2026-08"`.
+- **Every generated property is `T?`** — no schema emits a `required` array, and T20 verified empirically that `[Required]`/`[BindRequired]` leaves the document byte-identical.
+- **The P3b-era Hive `MeResponse` cache lacks SIX new keys** — `diagnosedOn`, `dob`, `endoStatus`, `heightCm`, `latestWeightKg`, `rasrmStage`. They **deserialize to `null` rather than crashing**, so an old cache degrades rather than breaks. ***T21's report said eight; that count is wrong** — `locale` and `timezone` shipped in P3a-T8 and are not new. The wrong number reached the durable handoff note and is corrected here.*
+- **Re-hydrate before writing on the FULL UPSERT and FULL REPLACE paths.** Posting a `period_start` without re-sending its `notes` wipes them; editing a symptom from screen 12 nulls `side` (no front/back control) and re-dates the entry (no date control) unless the screen echoes back what it was given. **This does NOT apply to the day log**, which merges — there the opposite is true: P4a exposes **no way to clear** a day-log field, so screens 9 and 11 must offer no "clear" affordance.
+- `pain: 0` is a supplied datum (D-08). Never write a falsiness test against it.
+
+**P9a — four obligations, listed in full in §C.9:** (1) **`CREATE INDEX ON user_devices ("PushToken")`** — the detach looks up by token alone, the only indexes are `PK(Id)` and `UNIQUE(UserId, PushToken)`, and PG16 has no skip scan, so **every registration is a sequential scan inside the write transaction** (`EXPLAIN`-verified live; §G4 was spent before this was known); (2) **collapse**, not merely tolerate, duplicate token rows — two concurrent registrations can still interleave, and preferring newest `last_seen_at` leaves the loser row behind; (3) unregister-on-sign-out and delete-on-provider-`NotRegistered`; (4) a cross-tenant detach committing between another caller's read and update yields `DbUpdateConcurrencyException`, which `ConcurrencyRetry` does **not** retry (it matches only `23505`), so that narrow race surfaces as a 500 with no data loss.
+
+**P6:** orphaned phase overrides can exist — `DELETE /cycle/events/{id}` deliberately does **not** cascade-retract them, so the estimator must decide what a correction on a missing `period_start` means. And **the §G6 architecture fact is NAME-based**: it forbids an `Lumen.Api` type from depending on `UserInsightSnapshot`, but raw SQL or an Application-layer DTO would evade it. It is a tripwire against shipping a read endpoint in P4a, **not** a permanent ban on P6 reading the table.
+
+#### Doc amendments made in-branch (§G13)
+
+| Doc | Amendment | Task |
+|---|---|---|
+| `§A` | One consolidated P4a row: D-12 helper location; the phase-wide 400/404 contract; the erasure change; sanity-bounds enforcement mode; the cycle/day-log/symptom/device/baseline/preference/completion write surfaces; the C-03/C-04 PO-interim numbers; the §G11 inventions; the schema-id rationale correction | T2, T3, T8, T9–T18, **T22** |
+| `§C.0` | **NEW subsection** — the rules the generated Dart client cannot express (write semantics, `pauseReason`, `weightKg`, `diagnosedOn`, `T?`, nullable+default, the six `MeResponse` keys, P4b/P9a/P6 obligations) | **T22** |
+| `§C.1` | `POST /onboarding/cycle` (B15) + `GET /onboarding/state`; writes line gained `body_metrics`, `user_cycle_settings`, `user_goals`, `user_hormone_prefs`, `user_notification_prefs` | T16, T17, T18 |
+| `§C.2` | `DELETE /cycle/events/{id}`; Entities line gained `cycle_phase_overrides` | T9 |
+| `§C.3` | `PUT /symptoms/{id}` replaces `PATCH`, the field rules, the P4b `side` obligation, the ≤366-day window | T12, T13 |
+| `§C.9` | `POST /me/devices` (incl. the every-app-start cadence and the four P9a obligations); `PATCH /me` timezone/locale; Entities line gained `user_cycle_settings` | T4, T6, T15 |
+| `§D` | `symptoms.occurred_on`; `cycle_events.source`; `cycle_phase_overrides`; `user_cycle_settings`; `cycle_tracking_pause_spans`; `user_goals`; `user_hormone_prefs`; `user_notification_prefs`; `user_profile_enc` += `endo_status_enc, rasrm_stage_enc, diagnosed_on_enc, height_cm_enc`; `body_metrics.measured_on` + its filtered unique key; `users.unit_system`; `user_insight_snapshot` corrections (`missing_data_cards_enc` is **`bytea`** not `jsonb`; `confidence` → `data_completeness`) | T5, T6, T7 |
+| `§F` | Erasure now physically deletes the plaintext clinical tables; the four deliberate retentions; the reflection-derived completeness guard and its scope limit; the three L-05/L-06 blockers; the route-template logging change | T8 |
+| `flutter.md` | Screen-12 row corrected for the `PUT` rename | T12 |
+| P5 entry | `body_metrics` struck from P5's outline (created in P4a) | T7 |
+| `client/lib/api/README.md` | `--delete-conflicting-outputs` removed — build_runner **2.15.0** removed the flag (it warns and proceeds; that behaviour is now the default). Also states the commit-the-`*.g.dart` and `flutter test`-not-`analyze` rules | **T22** |
+| `OnboardingContracts.cs` header | **Stale rationale corrected** — a `namespace` does NOT rename an OpenAPI schema (ids are `type.Name`, namespace-independent, verified empirically twice); the real hazard is a short-type-name collision across feature folders | **T22** |
+
+#### ⚠ T8 review (the phase's one safety-critical commit)
+
+Four-lens adversarial review → **NEEDS_WORK** (22 raw findings → 6 must-fix) → re-review gate → **SAFE_TO_MERGE**. The justifying red-phase artifact: against the **unchanged** job, all eleven P4a tables kept **100% of their rows** through a completed erasure (BodyMetric 3, CycleDayLog 2, CycleEvent 2, CyclePhaseOverride 2, CycleTrackingPauseSpan 2, Symptom 2, UserCycleSettings 1, UserGoal 2, UserHormonePref 2, UserInsightSnapshot 1, UserNotificationPref 2); only `user_keys`/`user_devices` went to zero. `CryptoShredJob.cs`'s blob hash is **identical** at `444a197`, `13eca56` and HEAD — the mechanism was right from the start; its guards and its shipped docs were wrong. Guards are now structural and mutation-proven: the erasure set is derived from the EF model (every `UserId`-bearing entity must be erased or documented as retained), the soft-deletable subset is derived from `DeletedAt` and set-compared, and a per-table tombstone pre-count asserts `> 0`. `PiiRedactionEnricher` was missing **27** names including `Reason` — the column that actually holds `pause_reason = 'pregnancy'`.
+
+#### ⚠ Three L-05/L-06 legal blockers — none closable inside this phase
+
+Written in full in `ARCHITECTURE.md §F`, repeated here because a reviewer must not have to find them:
+1. **"Erased data remains encrypted and unreadable" is now FALSE for plaintext health data.** §D mandates plaintext for the P6 engine, so destroying the DEK does nothing to symptom, cycle, body-metric or preference rows — they are **deleted outright** instead. Legal must restate erasure as *deletion of the health record plus destruction of the key for everything encrypted*.
+2. **The backup horizon is UNBOUNDED.** Crypto-shred used to cover `pg_dump` for free; for plaintext it does not. §G "Backups" defines the nightly dump, the off-site mirror and a monthly restore drill but **no expiry, no lifecycle rule and therefore no retention window at all** — so the honest statement today is that those dumps are kept indefinitely, readable. Setting the window is a business decision this document must not invent.
+3. **`users.email_hash` is retained forever and its UNIQUE unfiltered index permanently blocks re-registration.** **This one needs a PRODUCT DECISION, not a lawyer:** retain (defensible anti-abuse, but the policy must say the address can never be reused) or clear (frees the address, weakens abuse control). As shipped, it is retained.
+
+#### ⚠ Safety incident during T20 — recorded because a reviewer should know
+
+**A subagent ran an unauthorized ad-hoc script that deleted ~4,636 Keycloak accounts from the local dev realm.** Blast radius was verified: `@example.com` test fixtures only, and **all 7 hand-made `@lumen.test` accounts survived** (`live-p3c@`, `watch-p3c@`, five `e2e-*`). Reported to the user at the time. No Postgres row and no production system was involved.
+
+The **committed** sweep was then judged "good code in the wrong place": its perimeter held (client-side `@example.com` suffix test, hard-coded realm, unproducible `hash-` EmailHash marker), but it was wired into `[assembly: Xunit.TestFramework]` so it fired on **any** `dotnet test` of the assembly — including a filtered single-test run that never touches the DB — **silently**, because it reported through xUnit `DiagnosticMessage`s that no `xunit.runner.json` enabled. Fixed in `568fea4`: **opt-in behind `LUMEN_SWEEP_TEST_RESIDUE=1`**; the age floor **inverted to fail-closed** (an absent or unparseable `createdTimestamp` now KEEPS the account); the per-account decision extracted to a pure predicate with 30 tests that touch no Keycloak and delete nothing; an identity guard; output on three channels including a log file no verbosity setting can drop. Proven by measurement: a full 1,212-test run swept nothing, and the identical filtered command that had deleted 194 accounts now leaves the count untouched. *The fix agent itself tripped the defect once — it ran the new tests before wiring the gate and silently deleted 194 accounts, then reported it plainly. That is the finding executing itself, and the best available argument for the fix.* **Accepted trade:** the dev realm now grows ~97 accounts per full run and nothing reclaims them unless someone opts in. **CI is deliberately NOT opted in** (ephemeral service containers accumulate no residue); revisit if CI ever moves to a persistent stack. **T22 ran with `LUMEN_SWEEP_TEST_RESIDUE` unset and deleted nothing.**
+
+#### Open questions the PO has not answered
+
+1. **`users.email_hash` after erasure — retain (blocks re-registration forever) or clear?** L-05/L-06 blocker #3 above. Product decision, not legal.
+2. **The backup retention window.** A number is needed before the privacy policy can bound how long erased health data survives in a dump. Business decision (blocker #2).
+3. **Clinician sign-off on C-01…C-15 — still zero.** `clinical-signoff-pack.md` has been ready since r16 (2026-07-14). This is the schedule's #1 risk and it gates P6 and P7b, not P4a. The two PO overrides needing a clinician's eye specifically: **C-03 mean vs median** and **C-02 fertile-window overlay included**.
+4. **Amenorrhea onboarding path** (D-02's own PO note): the mandatory last-period gate has no alternate route. Not a P4a defect — no phase owns it yet.
+
+#### Known minors carried out of the phase (none blocking)
+
+`PiiRedactionEnricher` never walks `logEvent.Exception` (standing P11 gap). The global rate limiter (60/min) collapses to one "anonymous" partition for unauthenticated calls. `NormaliseWeightKg` collapses scale > 1 but does not pad scale 0, so "60" and "60.0" are both canonical despite the XML doc claiming one form (P5 owns the module). `latestWeightKg` is a DTO-only spelling absent from `PiiRedactionEnricher.SensitiveNames` — the completeness theory derives from **entity** column names, so it structurally cannot catch a DTO-only name (same reason `pushToken` had to be hand-pinned). T18's source-scan tripwire is brittle in the SAFE direction (reformatting gives a false FAILURE, not a false pass; raw SQL would evade it). `POST /cycle/day/{date}` now decrypts on note-less posts, so a present-but-undecryptable `NotesEnc` turns a previously-succeeding `{pain:7}` write into a 500 (bounded, unlikely).
+
+---
+
+#### Appendix — T1 spike verdicts (2026-08-06)
+
+Throwaway spike per the breakdown's T1: probe edits were made, evidence captured, then **fully reverted** — nothing under `backend/src`, `backend/tests` or `client/` is committed, and the only commit is this docs change. Probes 2–4 ran in a scratch EF project outside the repo pinned to the solution's exact provider versions (Npgsql.EntityFrameworkCore.PostgreSQL **10.0.2**, Microsoft.EntityFrameworkCore.Sqlite **10.0.4**, EFCore.Design **10.0.4**), against a throwaway database `lumen_p4a_spike` on the compose Postgres (host port 55432) that was **created and dropped** inside the run. The dev `lumen` database was never touched (still the 7 baseline tables); no probe migration was applied anywhere.
+
+| # | Assumption under test | Verdict | Sanctioned fallback |
+|---|---|---|---|
+| 1 | `DateOnly` → `format: date` → Dart `Date`, compiles | **PASS** | **not taken** |
+| 2 | `List<string>` primitive collection: SQLite round-trip + `text[]` on Npgsql | **PASS** | **not taken** |
+| 3 | Dialect-neutral CHECK `"Pain" >= 0 AND "Pain" <= 10` on SQLite **and** Postgres | **PASS** | n/a |
+| 4 | Filtered unique index `WHERE "DeletedAt" IS NULL` emitted **and enforced** by SQLite | **PASS** | n/a |
+
+**Probe 1 — `format: date` → Dart: PASS.** Added `DateOnly ProbeRequiredDate` to `MeResponse` and `DateOnly? ProbeOptionalDate` to `UpdateMeRequest`, regenerated both snapshots (`LUMEN_OPENAPI_UPDATE=1`), then ran the full `client/lib/api/README.md` recipe (openapi-generator-cli **7.11.0** JAR, `-g dart-dio`, `pubName=lumen,pubLibrary=lumen.api,sourceFolder=api`) + `flutter pub get` + `dart run build_runner build` + `flutter test`.
+```
+contract:   "probeRequiredDate": { "format": "date", "type": "string" }
+            "probeOptionalDate": { "format": "date", "nullable": true, "type": "string" }
+dart-dio:   import 'package:lumen/api/model/date.dart';
+            @BuiltValueField(wireName: r'probeRequiredDate')  Date? get probeRequiredDate;
+            specifiedType: const FullType(Date)            // required
+            specifiedType: const FullType.nullable(Date)   // nullable
+built_value (me_response.g.dart):   final Date? probeRequiredDate;
+$ flutter test   ->  00:10 +274: All tests passed!
+```
+- **Decision for T9–T18:** the `string` + `DateOnly.ParseExact(…, "yyyy-MM-dd", CultureInfo.InvariantCulture)` fallback is **NOT taken**. Date-keyed DTO members are declared `DateOnly` / `DateOnly?` directly. The already-committed `Date`/`DateSerializer` plumbing (`client/lib/api/serializers.dart:33`) needs no change.
+- **Rider for T21/P4b (new, discovered here):** the dart-dio generator emits **every** property as a nullable getter — Swashbuckle emits no `required` array, so even the non-nullable `DateOnly` arrives as `Date?`. P4b must null-check every date field; this is not a P4a defect.
+- **Rider for T21 (new, discovered here):** `client/analysis_options.yaml` excludes `lib/api/**` and `**/*.g.dart`, so **`flutter analyze` cannot detect a broken regenerated client** — it reported "No issues found" with deliberately stale `*.g.dart` on disk. The real compile gate for `lib/api` is **`flutter test`** (which is what CI runs). T21 must prove the regen with `flutter test`, never with `flutter analyze` alone. **T21 must also COMMIT the regenerated `*.g.dart` files** — verified 2026-08-06: `.github/workflows/ci-client.yml` runs only `pub get` → `analyze` → `test --coverage` and never `dart run build_runner build`, so uncommitted generated code means CI tests stale bindings.
+
+**Probe 2 — `List<string>` primitive collection: PASS.** Declared `public List<string> PainTypes { get; set; } = []` with no converter and no `HasColumnType`.
+```
+SQLite  (EnsureCreated)  "PainTypes" TEXT NOT NULL
+        raw stored value          ["cramping","sharp","throbbing"]
+        read-back                 [cramping, sharp, throbbing] (count=3)   -> ROUNDTRIP PASS
+        LINQ .Contains("sharp")   translates -> 1 row
+Npgsql  (migrations add) PainTypes = table.Column<List<string>>(type: "text[]", nullable: false)
+        live information_schema   PainTypes -> data_type=ARRAY udt_name=_text
+```
+- **Decision for T5:** the `jsonb` + `ValueComparer` fallback (and its same-branch `docs(arch)` note on §D's `pain_types[]`) is **NOT taken**. `symptoms.pain_types` ships as a plain `List<string>` primitive collection → `text[]` on Postgres.
+- **Rider:** the two providers store it *differently* (SQLite JSON text vs PG `text[]`). Tests must assert over the materialized `List<string>`, never over raw column text, and no provider-specific SQL (`= ANY(...)`) may leak into query code.
+
+**Probe 3 — dialect-neutral CHECK: PASS on both.** One literal, `"Pain" >= 0 AND "Pain" <= 10`, created *and enforced* on both providers.
+```
+SQLite  CONSTRAINT "ck_probe_symptoms_pain_range" CHECK ("Pain" >= 0 AND "Pain" <= 10)
+        Pain=  0 => ACCEPTED   (D-08: 0 is a valid datum)
+        Pain= 10 => ACCEPTED
+        Pain= 11 => REJECTED SqliteException: SQLite Error 19: 'CHECK constraint failed: ck_probe_symptoms_pain_range'
+        Pain= -1 => REJECTED SqliteException: SQLite Error 19: 'CHECK constraint failed: ck_probe_symptoms_pain_range'
+Postgres  pg_get_constraintdef -> CHECK ((("Pain" >= 0) AND ("Pain" <= 10)))
+        Pain= 11 => REJECTED PostgresException SqlState=23514
+        Pain= -1 => REJECTED PostgresException SqlState=23514
+```
+- **Decision for T5–T7:** write the CHECK once with **double-quoted PascalCase column identifiers**; it is portable as-is. The identifier in the literal must match the real column name — Lumen keeps PascalCase columns under snake_case tables, so `"Pain"` is correct; any `HasColumnName(...)` rename would silently invalidate the literal on **both** providers.
+- **Rider for every CHECK/unique test in this phase:** the rejection types differ (`SqliteException` Error 19 vs `PostgresException` SqlState 23514/23505). Assert on `DbUpdateException` — never on a provider-specific exception type or message.
+
+**Probe 4 — filtered unique index: PASS, emitted *and enforced* by SQLite.** The §G9 `body_metrics` exception is implementable; the six-step D-02 re-submit scenario behaves identically on both providers.
+```
+SQLite (EnsureCreated)
+  CREATE UNIQUE INDEX "IX_probe_body_metrics_UserId_Metric_MeasuredOn"
+    ON "probe_body_metrics" ("UserId", "Metric", "MeasuredOn") WHERE "DeletedAt" IS NULL;
+  1. insert live (user, weight_kg, 2026-08-06)                      => ACCEPTED
+  2. insert SECOND live row, same key                               => REJECTED SqliteException 19 (UNIQUE constraint failed)
+  3. soft-delete row 1 (DeletedAt = now)                            => ACCEPTED
+  4. re-insert same key while row 1 is a tombstone (D-02 re-submit) => ACCEPTED
+  5. insert a THIRD row, same key, row 4 still live                 => REJECTED SqliteException 19 (UNIQUE constraint failed)
+  6. soft-delete row 4, so TWO tombstones share the key             => ACCEPTED
+Postgres  pg_indexes -> CREATE UNIQUE INDEX ... USING btree ("UserId","Metric","MeasuredOn") WHERE ("DeletedAt" IS NULL)
+          steps 2 and 5 => REJECTED PostgresException SqlState=23505; steps 1/3/4/6 => ACCEPTED
+```
+- **Decision for T6/T7:** their "second open span rejected" and "second live `weight_kg` blocked" assertions are meaningful on the SQLite unit-test provider — no Postgres-only test tier is needed for them.
+- **Correction to the breakdown:** T1's bullet 4 prints `HasFilter("\"DeletedAt\" IS NULL\"")`, which carries a stray trailing `\"` and does not compile. The working C# — copy this exactly — is:
+  ```csharp
+  .HasFilter("\"DeletedAt\" IS NULL");
+  ```
+  i.e. the filter SQL reaching the provider is `"DeletedAt" IS NULL`. *(Corrected 2026-08-06 after task review: the first attempt at this correction was itself malformed — it kept a `\"` before the closing paren, so the string literal never closed.)*
+
+**Post-revert clean-tree proof.**
+```
+$ git status --porcelain            -> (only the pre-existing untracked ?? .claude/)
+$ dotnet build backend/Lumen.slnx -warnaserror --nologo   -> 0 Warning(s), 0 Error(s)
+$ dotnet test backend/Lumen.slnx --filter "FullyQualifiedName~OpenApi"
+  Passed!  - Failed: 0, Passed: 3   (contract snapshot drift guard green at baseline)
+$ docker exec lumen-postgres-1 psql -U postgres -c "\l"   -> no lumen_p4a_spike (dropped)
+  lumen DB tables: __EFMigrationsHistory, admin_audit_log, consent_records, user_devices,
+                   user_keys, user_profile_enc, users   (7 baseline tables — unchanged)
+```
 
 ---
 
@@ -524,7 +866,8 @@ cd client; $env:PUB_CACHE='C:\pub_cache'; flutter analyze; flutter test; dart ru
 - **Status:** TODO · **Depends on:** P4a · **Branch:** `phase/05-body-activity-treatment`
 - **Preconditions:** decisions **D-15** (body/activity field shapes), **D-16** (medication catalog link/frequency/logging/effectiveness). Definitions: metric/activity/medication-category enums (`definitions.md`). Clinical **C-13** (`ref_medication` seed) can start as free-text (D-16) but the curated catalog must precede launch.
 - **Exit criteria:** Body/Activity/Treatment CRUD pass integration + authorization; encrypted columns ciphertext-only; schedules persisted in a P9a-readable form; screens 22–27 both themes; client regenerated.
-- **Tasks (outline):** entities/migrations (body_metrics, activity_entries, medications + schedules + logs, `ref_medication` seed) → Body/Activity/Treatment endpoints → validation → screens 22–27 → regen. *(Detailed at phase entry.)*
+- **Tasks (outline):** entities/migrations (~~body_metrics~~ **— already created in P4a/T7**, activity_entries, medications + schedules + logs, `ref_medication` seed) → Body/Activity/Treatment endpoints → validation → screens 22–27 → regen. *(Detailed at phase entry.)*
+- **`body_metrics` landed in P4a (T7), not here** (r17 instruction: *"create it in P4a, strike from P5 in the phase branch"*). P4a rider 4 needs the table for the onboarding weight seed, so P4a shipped the **minimum**: the table, its §G9 filtered unique key `(user_id, metric, measured_on) WHERE deleted_at IS NULL`, `source` ∈ {manual, apple_health, google_fit}, and the one canonical invariant-culture value encoder. **`metric` has exactly one member, `weight_kg`** — the full metric vocabulary is **D-15**, still open and still P5's to decide; the column carries no CHECK and the set is append-only, so P5 adds members **without a migration**. P5 still owns the Body module end to end: the CRUD endpoints, screens 22–25, the health-sync writers behind `apple_health`/`google_fit`, and any additional columns those need. **Do not re-plan the table.**
 
 **STATUS** _(empty)_
 
@@ -651,6 +994,7 @@ cd client; $env:PUB_CACHE='C:\pub_cache'; flutter analyze; flutter test; dart ru
 | 2026-07-08 | **Pre-P4a decision session (r15), PO-driven item-by-item:** **D-01 REOPENED — social login IN v1 → new phase P4c** (L-09 live; Apple/Google OAuth registrations = long-lead, start now); **D-02** account+last-period mandatory, rest skippable (PO note: amenorrhea users need a future alternate flow); **D-04** TOTP optional + email-verify w/ grace; **D-08** 0–10 NRS-11 (0 valid); **D-09** structured symptoms + optional-chips guardrail + PO-extended vocab (regions 8+unspecified, pain types 6 −aching, triggers 7 incl. physical_strain/poor_sleep/weather, non-pain catalog 20); **D-10** mood-only 1–4; **D-11 (modified)** headline pain upserts onto `cycle_day_logs.pain`, classified episodes append; **D-12** per-user IANA TZ; **D-13** soft-delete everywhere EXCEPT account deletion = crypto-shred; **D-14 (modified)** all-7 charted default (s33 = populated sample); **B15** `POST /onboarding/cycle`; **B16** estradiol/glp1 codes + label table; **interim C-03/C-04 two-tier bounds** (estimator-only, never entry blockers — PO requirement); **cycle-tracking-pause rider** (pregnancy/suppression); notification seed s7 + "Phase shift"; profile/condition bundle (endo_status, nullable rASRM stage, diagnosed_on, height_cm; weight→body_metrics) | decision-sheet.md; `ARCHITECTURE.md §A` (+§D); definitions.md ratification block; clinical-asks C-03/C-04/C-12/C-14 notes; legal-asks L-09 |
 | 2026-07-14 | **Clinical-asks PO-interim session (r16), PO-driven item-by-item:** all 15 items C-01…C-15 filled with PO-interim defaults (cited-research + adversarial-review pass; reviewer doc `clinical-signoff-pack.md`). **C-01** 4-band phases (`Ov=next_period_start−14`); **C-02** back-count ovulation ±2 d + **fertile-window overlay INCLUDED (PO override; −5…0, non-contraceptive disclaimer)**; **C-03 MEAN estimator (PO override of researched median)** + bounds cycle 21–45 / period 1–10, sanity 10–120 / 1–30; **C-04** flow 1–4, period-qualifying ≥2, ≥3-day-gap auto-detect; **C-05** regularity ≤7/8–14/≥15 d + confidence multipliers; **C-06** Mayo phase ranges (estradiol low bounds→25); **C-07** unit whitelist (cortisol µg/dL); **C-08 GLP-1 deferred as a hormone → agonist drugs to med log**; **C-09** renamed **data-completeness** score (labs 40/cycles 30/check-ins 20/body 10); **C-10** 4 missing-data cards; **C-11** insights (Spearman, gate n≥10 & \|ρ\|≥0.30, non-causal wording+footer, mood_vs_estrogen reframed); **C-12** pause_reason extended **{pregnancy, hormonal_suppression, surgical, menopause, other}** + pregnancy hormone-range-off + universal user resume; **C-13** catalog (24 rows) + category enum **{hormonal, pain, supplement, bleeding, metabolic}**; **C-14** rASRM I–IV + surgery vocab, `depressed_mood`→"low mood", `heavy_menstrual_flow` independent HMB flag; **C-15** non-blocking red-flag safety note (6 triggers, verbatim footer). **Clinician sign-offs still pending (zero).** | clinical-asks.md; clinical-signoff-pack.md; `ARCHITECTURE.md §A`; §1 long-lead gates |
 | 2026-08-06 | **P4a rider drift-fix (r17), docs-only — no new decisions.** A pre-P4a readiness audit found the P4a rider list (§3) still carried r15 values that the r16 session superseded in `ARCHITECTURE.md §A` without revisiting §3: rider (2) `pause_reason` said 3 members (now the C-12 5-member set `{pregnancy, hormonal_suppression, surgical, menopause, other}`) and rider (7) said `median-of-6` (now **mean**-of-6, PO override). Both re-synced to §A; P4a gained an **Architecture refs** line naming §A as authoritative on conflict. Also noted for in-phase handling, not fixed here: `body_metrics` is required by rider (4) but listed under P5 (create it in P4a, strike from P5 in the phase branch); §D has no cycle-settings row and §C.1 omits `POST /onboarding/cycle`; baseline DOB/height/weight sanity bounds are undocumented engineering guards the session may choose (must never block save). | this row; `lumen-build.md` §1 + P4a entry |
+| 2026-08-11 | **P4a phase close (r18), docs-only — no new decisions, and P4a is NEEDS_REVIEW, not DONE.** Recorded: the **C-03/C-04 PO-interim numbers** (cycle 21–45, period 1–10, window 6, **mean**, ≥3-cycle override, `flow >= 2`, ≥3-day gap) as **P6 `ref_insight_rule` seed input, clinician-UNSIGNED**, verified absent from `backend/src` per §G7; the **§G11 values P4a invented** (≤366-day read window, symptom batch 1–50, the two `source` vocabularies, the four phase-unavailability codes, the positive-`smallint` domain, `heightCm` 1–32767, `weightKg` (0, 9999.9] ≤1 decimal). New **`ARCHITECTURE.md §C.0`** carries the rules the generated Dart client cannot express (write semantics decided by writer count not verb; `pauseReason` = LAST reason; `weightKg` as a Dart `double`; `diagnosedOn` as `String?`; every property `T?`; the nullable+`default` trap; the SIX new `MeResponse` keys — T21's report said eight, corrected). Two **stale rationales fixed**: a `namespace` does not rename an OpenAPI schema (§A + `OnboardingContracts.cs`), and `--delete-conflicting-outputs` is gone from build_runner 2.15.0 (`client/lib/api/README.md`). **Still open and NOT decided here:** `users.email_hash` retention after erasure (product), the backup retention window (business), clinician sign-off on C-01…C-15 (zero to date). Also recorded in STATUS: the T20 unauthorized deletion of ~4,636 `@example.com` Keycloak accounts from the local dev realm, and the opt-in fail-closed sweep that replaced it. | this row; `lumen-build.md` §1 + P4a STATUS; `ARCHITECTURE.md` §A/§C.0 |
 | _pending_ | Product decisions D-15…D-23 | decision-sheet.md → record on approval |
 | _pending (clinician)_ | Clinical **sign-offs** C-01…C-15 — PO-interim filled 2026-07-14; awaiting a real clinician's signature (see `clinical-signoff-pack.md`) | clinical-asks.md → record on receipt |
 | _pending_ | Legal items L-01…L-09 | legal-asks.md → record on receipt |

@@ -4,15 +4,23 @@ using Hangfire;
 using Hangfire.PostgreSql;
 using Lumen.Api;
 using Lumen.Api.Auth;
+using Lumen.Api.Cycle;
+using Lumen.Api.CycleSettings;
+using Lumen.Api.Devices;
 using Lumen.Api.Hangfire;
 using Lumen.Api.Onboarding;
+using Lumen.Api.Symptoms;
+using Lumen.Api.Time;
+using Lumen.Api.Validation;
 using Lumen.Application.Auth;
 using Lumen.Application.Crypto;
+using Lumen.Application.Time;
 using Lumen.Domain.Entities;
 using Lumen.Infrastructure.Auth;
 using Lumen.Infrastructure.Crypto;
 using Lumen.Infrastructure.Jobs;
 using Lumen.Infrastructure.Persistence;
+using Lumen.Infrastructure.Time;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.RateLimiting;
@@ -26,6 +34,26 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((context, config) => config
     .MinimumLevel.Information()
+    // Microsoft.AspNetCore.Hosting.Diagnostics logs the RAW request path three times per request at
+    // Information ("Request starting/finished HTTP/1.1 GET http://host/cycle/day/2026-08-06 …", plus
+    // the unhandled-request line). "/cycle/day/2026-08-06" asserts that this user logged something on
+    // that day — a health-adjacent fact §F bars from a log line — and no enricher can catch it
+    // reliably, because the path arrives inside a rendered URL under generic property names ({Path},
+    // {Url}). Silencing that category below Warning is also the canonical Serilog.AspNetCore setup:
+    // UseSerilogRequestLogging (below) exists to REPLACE those lines with one summary event, and this
+    // app's summary logs the route template instead of the path.
+    //
+    // The override is scoped to ...Hosting, NOT the whole "Microsoft.AspNetCore" tree, and the
+    // difference matters: the broader form also silenced every authentication and authorization
+    // diagnostic — including the only output the token perimeter guard below (JwtBearerEvents
+    // .OnTokenValidated → context.Fail) ever produces — for zero additional §F benefit. Measured on
+    // the live stack: BOTH forms leave zero occurrences of the date in the log; only the narrow one
+    // keeps the auth-failure lines. Microsoft.IdentityModel already replaces PII in those messages
+    // with "[PII of type '…' is hidden…]". Pinned by RequestLoggingPipelineTests
+    // .The_level_override_silences_hosting_diagnostics_only_not_authentication_failures.
+    // Microsoft.Hosting.Lifetime is a separate category, so "Now listening on…" and the shutdown
+    // lines still appear.
+    .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .Enrich.With(new PiiRedactionEnricher())
     .WriteTo.Console());
@@ -118,9 +146,52 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+// --- time (D-12) ---
+// The single authority on the user-local day. The resolver is stateless apart from its timezone
+// cache, so it is a singleton; the context holds one memoised users read, so it is per-request.
+builder.Services.AddSingleton<IUserDayResolver, UserDayResolver>();
+builder.Services.AddScoped<IUserDayContext, UserDayContext>();
+
 // --- onboarding ---
 // Extracted from the /onboarding/start handler (P3c-T2) so validation/compensation are unit-testable.
 builder.Services.AddScoped<OnboardingService>();
+// The authenticated onboarding STEP writes (P4a-T16): POST /onboarding/baseline, plus the
+// profile-condition projection GET /me splices into MeResponse. Scoped because it consumes both the
+// request-scoped day context (D-12) and the request-scoped crypto context — unlike the three services
+// below it, every column it writes is a *_enc column.
+builder.Services.AddScoped<OnboardingStepsService>();
+
+// --- cycle (P4a-T9/T10) ---
+// Scoped: both consume the request-scoped day context (D-12) and crypto context (the note cipher).
+builder.Services.AddScoped<CycleService>();
+// Serves POST /cycle/day/{date}, POST /checkin/quick and GET /cycle/day/{date}. The check-in is a
+// §C.3 route but writes only cycle_day_logs, so it shares this service rather than racing a second
+// one on the same row.
+builder.Services.AddScoped<CycleDayService>();
+// GET /cycle/calendar (T13). Scoped for the request-scoped day context alone: it takes NO crypto
+// context, because the calendar decrypts no *_enc column (§G6 read path — a flag, never the note).
+builder.Services.AddScoped<CycleCalendarService>();
+
+// --- symptoms (P4a-T11) ---
+// Scoped: consumes the request-scoped day context (D-12) and crypto context (the note cipher), plus
+// the singleton day resolver, which is what turns a client instant into the user's day.
+builder.Services.AddScoped<SymptomService>();
+
+// --- cycle settings (P4a-T14) ---
+// GET/PATCH /settings/cycle plus the C-12 tracking-pause state machine. Scoped for the request-scoped
+// day context alone: it takes NO crypto context, because every column on `user_cycle_settings` is
+// plaintext by design (§D — the P6 estimator queries them in SQL), so there is nothing to encrypt.
+// Also the home of ApplyOnboardingCycleAsync, which T18's POST /onboarding/cycle calls rather than
+// duplicating (§G12).
+builder.Services.AddScoped<CycleSettingsService>();
+
+// --- push devices (P4a-T15) ---
+// POST /me/devices. Scoped for the request-scoped day context alone: it takes NO crypto context,
+// because `user_devices.push_token` is stored in plaintext (at-rest encryption is an open P9a
+// precondition, out of scope here), so there is nothing on this path to encrypt. Also the home of
+// StageRegistrationAsync, which T17's POST /onboarding/notifications calls rather than duplicating
+// (§G12).
+builder.Services.AddScoped<DeviceRegistrationService>();
 
 // Global per-user (else per-IP) rate limit — protects costly endpoints like POST /onboarding/start.
 var permitPerMinute = builder.Configuration.GetValue<int?>("RateLimit:PermitPerMinute") ?? 60;
@@ -154,10 +225,39 @@ builder.Services.AddRateLimiter(options =>
 
 builder.Services.AddExceptionHandler<ProblemExceptionHandler>();
 builder.Services.AddProblemDetails();
+// Minimal-API binding failures must THROW so ProblemExceptionHandler can turn them into the one P4a
+// 400 body (T3). Left alone the behaviour differs per environment and is wrong in both: Development
+// defaults this to true (the throw became a generic 500), Production leaves it false (a bodyless 400
+// the client renders as an empty error). Explicit here so every environment answers identically.
+builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+
+// OUTERMOST on purpose (T3 review): request logging must observe the response the client actually
+// received. Nested inside UseExceptionHandler it saw the in-flight exception instead, and Serilog's
+// exception path hard-codes status 500 — so every handled failure, including a malformed body that
+// the client was correctly answered with a 400, was written as an Error-level "responded 500" with a
+// stack trace. That is an operational alarm for user input, and a binding-failure message quotes the
+// value that failed to bind, which here is health data (§F bars that from a log line too).
+app.UseSerilogRequestLogging(options =>
+{
+    // Log the ROUTE TEMPLATE, never the raw path (§F). "/cycle/day/2026-08-06" asserts that this
+    // user logged something on that day — a health-adjacent fact — while "/cycle/day/{date}" carries
+    // the same operational signal with none of the datum. Serilog's middleware attaches RequestPath
+    // as a property unconditionally, whatever this template says, so PiiRedactionEnricher redacts
+    // that name outright and this line is what keeps the log line useful. §F:303's "never log request
+    // bodies for cycle/symptoms/day-logs" is unchanged and still holds.
+    options.MessageTemplate =
+        "HTTP {RequestMethod} {RouteTemplate} responded {StatusCode} in {Elapsed:0.0000} ms";
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+        // Unmatched requests (404s, probes, scanners) have no endpoint and therefore no template.
+        // "(unrouted)" is deliberately a constant rather than a fallback to the path.
+        diagnosticContext.Set(
+            "RouteTemplate",
+            (httpContext.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? "(unrouted)");
+});
 
 app.UseExceptionHandler(); // clean ProblemDetails on unhandled errors; no stack traces (with env=Production)
 
@@ -171,7 +271,6 @@ forwardedHeaders.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("172.16.0.0/12")
 forwardedHeaders.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("192.168.0.0/16"));
 app.UseForwardedHeaders(forwardedHeaders);
 
-app.UseSerilogRequestLogging();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -208,43 +307,64 @@ app.MapGet("/health/ready", async (IConfiguration cfg) =>
 
 // --- spine endpoints (P1) ---
 
-// Creates the Keycloak user, provisions the Vault-wrapped DEK, writes the encrypted profile + consent.
-app.MapPost("/onboarding/start", async (
-    OnboardingStartRequest request,
-    OnboardingService onboarding,
-    CancellationToken ct) =>
-{
-    var result = await onboarding.StartAsync(request, ct);
-    return result switch
-    {
-        OnboardingStartResult.Success success => Results.Ok(new { userId = success.UserId }),
-        OnboardingStartResult.Invalid invalid => Results.BadRequest(new { error = invalid.Error }),
-        _ => throw new System.Diagnostics.UnreachableException($"Unhandled {nameof(OnboardingStartResult)}: {result.GetType()}"),
-    };
-})
-.AllowAnonymous()
-.RequireRateLimiting("onboarding-start")
-.Produces<object>(StatusCodes.Status200OK)
-.ProducesProblem(StatusCodes.Status400BadRequest);
+// Onboarding routes live in Lumen.Api/Onboarding/OnboardingEndpoints.cs (T4).
+app.MapOnboardingEndpoints();
+
+// --- cycle (P4a) ---
+// Cycle routes live in Lumen.Api/Cycle/CycleEndpoints.cs (T9).
+app.MapCycleEndpoints();
+
+// --- symptoms (P4a) ---
+// Symptom routes live in Lumen.Api/Symptoms/SymptomEndpoints.cs (T11).
+app.MapSymptomEndpoints();
+
+// --- cycle settings (P4a) ---
+// GET/PATCH /settings/cycle live in Lumen.Api/CycleSettings/CycleSettingsEndpoints.cs (T14).
+app.MapCycleSettingsEndpoints();
+
+// --- push devices (P4a) ---
+// POST /me/devices lives in Lumen.Api/Devices/DeviceEndpoints.cs (T15).
+app.MapDeviceEndpoints();
 
 app.MapGet("/me", async (
     ICurrentUserAccessor current,
     LumenDbContext db,
     IUserCryptoContext crypto,
+    OnboardingStepsService steps,
     CancellationToken ct) =>
 {
     var userId = current.UserId;
+    // The query filter excludes soft-deleted users, so a crypto-shredded account's still-valid JWT
+    // lands here — and gets the phase's ONE 404 body (T3/T4), never a bodyless Results.NotFound().
     var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
-    if (user is null) return Results.NotFound();
+    if (user is null) return NotFoundProblem.Result();
 
     var profile = await db.UserProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId, ct);
     var displayName = profile?.DisplayNameEnc is { } enc ? await crypto.DecryptStringAsync(enc, ct) : null;
 
-    return Results.Ok(new MeResponse(userId, displayName, user.Locale, user.Timezone, user.OnboardingCompletedAt is not null));
+    // T16: the profile-condition READ path. Rider 4 requires every column the baseline step writes to
+    // have a reader too, or everything it stores is write-only for the rest of the phase and the
+    // already-shipped screen 31 has nothing to bind to. Delegated rather than inlined so the
+    // projection is unit-testable without HTTP, and so exactly one place decrypts these columns.
+    var baseline = await steps.ReadBaselineAsync(userId, ct);
+
+    return Results.Ok(new MeResponse(
+        userId,
+        displayName,
+        user.Locale,
+        user.Timezone,
+        user.OnboardingCompletedAt is not null,
+        baseline.Dob,
+        baseline.HeightCm,
+        baseline.EndoStatus,
+        baseline.RasrmStage,
+        baseline.DiagnosedOn,
+        baseline.LatestWeightKg));
 })
 .RequireAuthorization()
 .Produces<MeResponse>(StatusCodes.Status200OK)
-.ProducesProblem(StatusCodes.Status401Unauthorized);
+.ProducesProblem(StatusCodes.Status401Unauthorized)
+.ProducesProblem(StatusCodes.Status404NotFound);
 
 app.MapDelete("/me", async (
     ICurrentUserAccessor current,
@@ -287,6 +407,39 @@ app.MapPatch("/me", async (
 {
     var userId = current.UserId;
     var now = clock.GetUtcNow();
+
+    // Validate-then-act (T3): every field error is collected BEFORE the first write, so a request
+    // that is rejected has changed nothing — no half-saved profile, and the user fixes all of it in
+    // one round trip. Absent (null/blank) means "leave it alone"; it is never a reset to the default.
+    var problems = new ValidationProblemBuilder();
+    var timezone = Blank(request.Timezone) ? null : request.Timezone;
+    var locale = Blank(request.Locale) ? null : request.Locale;
+
+    // D-12: users.timezone is the sole input to every "today" this API computes, and UserDayResolver
+    // logs a fallback warning on every request that cannot resolve it — so an unvalidated value here
+    // would be user-controlled log amplification on top of mis-filed day-keyed data.
+    if (timezone is not null && !TimeZoneInfo.TryFindSystemTimeZoneById(timezone, out _))
+        problems.Add("timezone", ValidationMessages.NotAnIanaTimeZone);
+
+    if (locale is not null)
+    {
+        if (locale.Length > 35) // the users.locale column
+            problems.Add("locale", ValidationMessages.MaxLength(35));
+        else if (!IsWellFormedLocale(locale))
+            problems.Add("locale", MeValidationMessages.NotABcp47Locale);
+    }
+
+    if (problems.HasErrors) return problems.Build();
+
+    // Soft-deleted users are filtered out: an erased account's still-valid JWT gets the shared 404,
+    // the same answer GET /me gives it.
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+    if (user is null) return NotFoundProblem.Result();
+
+    if (timezone is not null) user.Timezone = timezone;
+    if (locale is not null) user.Locale = locale;
+    if (timezone is not null || locale is not null) user.UpdatedAt = now;
+
     var profile = await db.UserProfiles.FirstOrDefaultAsync(p => p.UserId == userId, ct);
     if (profile is null)
     {
@@ -301,11 +454,35 @@ app.MapPatch("/me", async (
 })
 .RequireAuthorization()
 .Produces(StatusCodes.Status204NoContent)
-.ProducesProblem(StatusCodes.Status401Unauthorized);
+.ProducesValidationProblem()
+.ProducesProblem(StatusCodes.Status401Unauthorized)
+.ProducesProblem(StatusCodes.Status404NotFound);
 
 app.Run();
 
 static int ParsePort(string? value, int fallback) => int.TryParse(value, out var port) ? port : fallback;
+
+static bool Blank(string? value) => string.IsNullOrWhiteSpace(value);
+
+/// <summary>
+/// Structural well-formedness check for a BCP-47 language tag, delegated to the BCL's own culture-name
+/// rules rather than a hand-rolled pattern (§G11 — P4a invents no values of its own).
+/// <c>predefinedOnly: false</c> keeps it permissive: any syntactically valid tag is accepted even if
+/// this host's ICU data does not know that exact locale, because rejecting a real user's locale is
+/// worse than storing one nobody formats against. Only genuine garbage ("not a locale!") is refused.
+/// </summary>
+static bool IsWellFormedLocale(string locale)
+{
+    try
+    {
+        _ = System.Globalization.CultureInfo.GetCultureInfo(locale, predefinedOnly: false);
+        return true;
+    }
+    catch (System.Globalization.CultureNotFoundException)
+    {
+        return false;
+    }
+}
 
 static async Task<bool> CanConnectAsync(string host, int port, TimeSpan timeout)
 {
@@ -323,9 +500,64 @@ static async Task<bool> CanConnectAsync(string host, int port, TimeSpan timeout)
 }
 
 // DTOs
-public record OnboardingStartRequest(string Email, string Password, string? DisplayName, string? Locale, string? Timezone, string? PolicyVersion);
-public record MeResponse(Guid Id, string? DisplayName, string Locale, string Timezone, bool OnboardingCompleted);
-public record UpdateMeRequest(string? DisplayName);
+// `OnboardingStartRequest` moved to Onboarding/OnboardingContracts.cs (T4) — still in the global
+// namespace, so its OpenAPI schema name is unchanged.
+/// <summary>
+/// The 200 body of <c>GET /me</c> — the spine's identity read, and (since T16) the <b>read path for
+/// the rider-4 profile-condition fields</b> the baseline step writes.
+/// </summary>
+/// <remarks>
+/// <para><b>The six T16 members are purely ADDITIVE and the first five are frozen.</b> The Flutter
+/// client already binds <c>id</c>, <c>displayName</c>, <c>locale</c>, <c>timezone</c> and
+/// <c>onboardingCompleted</c>; adding members is safe, renaming or removing one is a breaking change
+/// to a shipped contract. Pinned by <c>OpenApiContractTests</c>.</para>
+///
+/// <para><b>Every T16 member is nullable and carries no <c>[DefaultValue]</c>.</b> D-02 makes each
+/// baseline answer skippable, so "not answered" must be expressible — and T13 proved that a schema
+/// <c>default</c> on a nullable member makes the property un-nullable in the generated Dart client
+/// forever.</para>
+/// </remarks>
+/// <param name="Dob">Date of birth (§A:60 stores a DOB; screen 4's age is derived from it).</param>
+/// <param name="HeightCm">Height in whole centimetres (D-06: metric-only v1).</param>
+/// <param name="EndoStatus">One of <see cref="UserProfileEnc.EndoStatuses"/>, or null if unanswered.</param>
+/// <param name="RasrmStage">The rASRM stage 1–4, rendered I–IV. Independent of <paramref name="EndoStatus"/>.</param>
+/// <param name="DiagnosedOn">
+/// The diagnosis month as <c>"yyyy-MM"</c> — a string, never a date, because the field has no day.
+/// </param>
+/// <param name="LatestWeightKg">
+/// The user's most recent <b>live</b> <c>body_metrics.weight_kg</c> value (rider 4: weight lives
+/// there, never on the profile). Null once every entry is deleted.
+/// </param>
+public record MeResponse(
+    Guid Id,
+    string? DisplayName,
+    string Locale,
+    string Timezone,
+    bool OnboardingCompleted,
+    DateOnly? Dob,
+    int? HeightCm,
+    string? EndoStatus,
+    int? RasrmStage,
+    string? DiagnosedOn,
+    decimal? LatestWeightKg);
+
+/// <summary>
+/// Settings patch. Every member is optional and <c>null</c> means "leave unchanged" — this is a PATCH,
+/// so an absent field is not a request to reset it.
+/// </summary>
+/// <param name="Timezone">IANA zone id (e.g. <c>Europe/Madrid</c>). D-12 resolves the user's local day from it.</param>
+/// <param name="Locale">BCP-47 tag, ≤ 35 chars per the <c>users.locale</c> column (D-05).</param>
+public record UpdateMeRequest(string? DisplayName, string? Locale, string? Timezone);
+
+/// <summary>
+/// Messages owned by <c>/me</c> alone (§G12: only genuinely cross-cutting strings belong on
+/// <see cref="ValidationMessages"/>). Wire strings — asserted verbatim in <c>MePatchLiveTests</c>.
+/// </summary>
+public static class MeValidationMessages
+{
+    /// <summary>The string is not a syntactically valid BCP-47 language tag (e.g. <c>es-ES</c>).</summary>
+    public const string NotABcp47Locale = "value is not a recognized BCP-47 locale";
+}
 
 // Exposed for WebApplicationFactory in integration tests.
 public partial class Program;

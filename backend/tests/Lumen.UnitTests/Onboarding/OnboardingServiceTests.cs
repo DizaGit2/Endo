@@ -61,6 +61,12 @@ public sealed class OnboardingServiceTests : IDisposable
         => new(email!, password!, displayName, locale, timezone, policyVersion);
 
     // --- validation: email / password required -------------------------------
+    //
+    // Every case below pins BOTH halves of OnboardingStartResult.Invalid (T4). The message strings are
+    // GRANDFATHERED and asserted as literals: they predate ValidationMessages, they are already on the
+    // wire, and rewording one would be a contract change dressed up as a copy edit. The `Field` is the
+    // camelCase JSON field name the client attaches the message to — "request" (the reserved
+    // ValidationProblemBuilder key) whenever no single input owns the error.
 
     [Theory]
     [InlineData(null)]
@@ -70,7 +76,9 @@ public sealed class OnboardingServiceTests : IDisposable
     {
         var result = await CreateSut().StartAsync(ValidRequest(email: email), CancellationToken.None);
 
-        result.ShouldBeOfType<OnboardingStartResult.Invalid>().Error.ShouldBe("email and password are required");
+        var invalid = result.ShouldBeOfType<OnboardingStartResult.Invalid>();
+        invalid.Field.ShouldBe("request"); // neither field alone owns "one of the two is missing"
+        invalid.Error.ShouldBe("email and password are required");
         _keycloak.CreateCalls.ShouldBeEmpty();
     }
 
@@ -82,7 +90,9 @@ public sealed class OnboardingServiceTests : IDisposable
     {
         var result = await CreateSut().StartAsync(ValidRequest(password: password), CancellationToken.None);
 
-        result.ShouldBeOfType<OnboardingStartResult.Invalid>().Error.ShouldBe("email and password are required");
+        var invalid = result.ShouldBeOfType<OnboardingStartResult.Invalid>();
+        invalid.Field.ShouldBe("request");
+        invalid.Error.ShouldBe("email and password are required");
         _keycloak.CreateCalls.ShouldBeEmpty();
     }
 
@@ -93,7 +103,9 @@ public sealed class OnboardingServiceTests : IDisposable
     {
         var result = await CreateSut().StartAsync(ValidRequest(email: "not-an-email"), CancellationToken.None);
 
-        result.ShouldBeOfType<OnboardingStartResult.Invalid>().Error.ShouldBe("invalid email format");
+        var invalid = result.ShouldBeOfType<OnboardingStartResult.Invalid>();
+        invalid.Field.ShouldBe("email");
+        invalid.Error.ShouldBe("invalid email format");
         _keycloak.CreateCalls.ShouldBeEmpty();
     }
 
@@ -107,7 +119,9 @@ public sealed class OnboardingServiceTests : IDisposable
         var result = await CreateSut().StartAsync(
             ValidRequest(email: "display name <inner@example.com>"), CancellationToken.None);
 
-        result.ShouldBeOfType<OnboardingStartResult.Invalid>().Error.ShouldBe("invalid email format");
+        var invalid = result.ShouldBeOfType<OnboardingStartResult.Invalid>();
+        invalid.Field.ShouldBe("email");
+        invalid.Error.ShouldBe("invalid email format");
         _keycloak.CreateCalls.ShouldBeEmpty();
     }
 
@@ -121,7 +135,9 @@ public sealed class OnboardingServiceTests : IDisposable
         var result = await CreateSut().StartAsync(
             ValidRequest(password: new string('a', length)), CancellationToken.None);
 
-        result.ShouldBeOfType<OnboardingStartResult.Invalid>().Error.ShouldBe("password must be between 12 and 128 characters");
+        var invalid = result.ShouldBeOfType<OnboardingStartResult.Invalid>();
+        invalid.Field.ShouldBe("password");
+        invalid.Error.ShouldBe("password must be between 12 and 128 characters");
         _keycloak.CreateCalls.ShouldBeEmpty();
     }
 
@@ -133,7 +149,11 @@ public sealed class OnboardingServiceTests : IDisposable
         var result = await CreateSut().StartAsync(
             ValidRequest(displayName: new string('a', 201)), CancellationToken.None);
 
-        result.ShouldBeOfType<OnboardingStartResult.Invalid>().Error.ShouldBe("a field exceeds its maximum length");
+        var invalid = result.ShouldBeOfType<OnboardingStartResult.Invalid>();
+        // One message covers four fields, so it cannot name the offending input — "request" is the
+        // honest key. Splitting it per field would change the four grandfathered strings.
+        invalid.Field.ShouldBe("request");
+        invalid.Error.ShouldBe("a field exceeds its maximum length");
         _keycloak.CreateCalls.ShouldBeEmpty();
     }
 
@@ -143,7 +163,9 @@ public sealed class OnboardingServiceTests : IDisposable
         var result = await CreateSut().StartAsync(
             ValidRequest(locale: new string('a', 36)), CancellationToken.None);
 
-        result.ShouldBeOfType<OnboardingStartResult.Invalid>().Error.ShouldBe("a field exceeds its maximum length");
+        var invalid = result.ShouldBeOfType<OnboardingStartResult.Invalid>();
+        invalid.Field.ShouldBe("request");
+        invalid.Error.ShouldBe("a field exceeds its maximum length");
         _keycloak.CreateCalls.ShouldBeEmpty();
     }
 
@@ -153,7 +175,11 @@ public sealed class OnboardingServiceTests : IDisposable
         var result = await CreateSut().StartAsync(
             ValidRequest(timezone: new string('a', 65)), CancellationToken.None);
 
-        result.ShouldBeOfType<OnboardingStartResult.Invalid>().Error.ShouldBe("a field exceeds its maximum length");
+        // Length is checked before the IANA lookup, so an overlength zone id keeps the grandfathered
+        // message rather than becoming the new timezone error.
+        var invalid = result.ShouldBeOfType<OnboardingStartResult.Invalid>();
+        invalid.Field.ShouldBe("request");
+        invalid.Error.ShouldBe("a field exceeds its maximum length");
         _keycloak.CreateCalls.ShouldBeEmpty();
     }
 
@@ -163,8 +189,60 @@ public sealed class OnboardingServiceTests : IDisposable
         var result = await CreateSut().StartAsync(
             ValidRequest(policyVersion: new string('a', 65)), CancellationToken.None);
 
-        result.ShouldBeOfType<OnboardingStartResult.Invalid>().Error.ShouldBe("a field exceeds its maximum length");
+        var invalid = result.ShouldBeOfType<OnboardingStartResult.Invalid>();
+        invalid.Field.ShouldBe("request");
+        invalid.Error.ShouldBe("a field exceeds its maximum length");
         _keycloak.CreateCalls.ShouldBeEmpty();
+    }
+
+    // --- validation: timezone must be a real IANA zone (T4) -----------------------
+    //
+    // Until T4 this was a length check only, so "Mars/Olympus" persisted happily. That is not a
+    // cosmetic defect: P4a resolves the user's local day on every request (D-12), and UserDayResolver
+    // logs a PII-free WARN each time a zone id fails to resolve — so one bad value emits a warning per
+    // request, forever. T4 also puts `timezone` on PATCH /me, which would hand that lever to the user.
+
+    [Fact]
+    public async Task Unknown_timezone_is_rejected()
+    {
+        var result = await CreateSut().StartAsync(ValidRequest(timezone: "Mars/Olympus"), CancellationToken.None);
+
+        var invalid = result.ShouldBeOfType<OnboardingStartResult.Invalid>();
+        invalid.Field.ShouldBe("timezone");
+        invalid.Error.ShouldBe("value is not a recognized IANA time zone");
+        _keycloak.CreateCalls.ShouldBeEmpty(); // rejected before any Keycloak identity is provisioned
+    }
+
+    [Fact]
+    public async Task Valid_iana_timezone_is_accepted()
+    {
+        // Deliberately not the column default, and deliberately a three-segment id: the check must be
+        // a real TimeZoneInfo lookup, not a shape heuristic.
+        const string timezone = "America/Argentina/Buenos_Aires";
+
+        var result = await CreateSut().StartAsync(ValidRequest(timezone: timezone), CancellationToken.None);
+
+        var success = result.ShouldBeOfType<OnboardingStartResult.Success>();
+        (await _db.Users.SingleAsync(u => u.Id == success.UserId)).Timezone.ShouldBe(timezone);
+    }
+
+    [Fact]
+    public async Task Null_timezone_is_accepted()
+    {
+        // Absent stays valid — the field is optional and falls back to the users.timezone default.
+        var result = await CreateSut().StartAsync(ValidRequest(timezone: null), CancellationToken.None);
+
+        var success = result.ShouldBeOfType<OnboardingStartResult.Success>();
+        (await _db.Users.SingleAsync(u => u.Id == success.UserId)).Timezone.ShouldBe("Europe/Madrid");
+    }
+
+    [Fact]
+    public async Task Null_locale_is_accepted()
+    {
+        var result = await CreateSut().StartAsync(ValidRequest(locale: null), CancellationToken.None);
+
+        var success = result.ShouldBeOfType<OnboardingStartResult.Success>();
+        (await _db.Users.SingleAsync(u => u.Id == success.UserId)).Locale.ShouldBe("es-ES");
     }
 
     // --- defaults --------------------------------------------------------------

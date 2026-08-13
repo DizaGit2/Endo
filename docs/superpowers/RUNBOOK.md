@@ -183,6 +183,12 @@ docker compose -f deploy/docker-compose.yml ps
 dotnet watch --project backend/src/Lumen.Api run
 dotnet test backend/Lumen.slnx --nologo
 
+# reclaim the dev stack's test residue (OPT-IN — see below; prints every delete)
+$env:LUMEN_SWEEP_TEST_RESIDUE=1
+dotnet test backend/tests/Lumen.IntegrationTests --nologo --logger "console;verbosity=normal"
+Remove-Item Env:\LUMEN_SWEEP_TEST_RESIDUE
+Get-Content TestResults/residue-sweep.log -Tail 10     # the same lines, after the fact
+
 # review a phase diff
 git diff main...phase/NN-<slug> --stat
 
@@ -190,6 +196,20 @@ git diff main...phase/NN-<slug> --stat
 # /code-review high      (P1, P2, P6)
 # /code-review ultra     (P7b)
 ```
+
+**`LUMEN_SWEEP_TEST_RESIDUE` — the only switch that deletes dev data.** An aborted live run (killed
+runner, cancelled debugger) strands `users` rows in Postgres, and every onboarding test ever run has
+left a `@example.com` account in the `lumen` Keycloak realm. `backend/tests/Lumen.IntegrationTests`
+carries a sweep that reclaims them, and it is **off unless you set this variable to `1`** — so an
+ordinary `dotnet test`, a `--filter` run, and any IDE "run test" never delete anything. When you do set
+it, every action is announced prefixed `[residue-sweep]` and appended to `TestResults/residue-sweep.log`
+(gitignored) — pass `--logger "console;verbosity=normal"` to see it live, because `dotnet test`'s default
+console logger drops test-host output; the log file is there either way, and a run that logged nothing
+swept nothing. The sweep only ever takes rows that are **both** test-marked **and** more than an hour old
+(so it cannot touch a run still in flight), only `@example.com` accounts (never the `@lumen.test` dev
+and client-E2E accounts), and only after proving the realm behind `127.0.0.1:8080` is the one
+`deploy/keycloak/realm-lumen.json` imports — an address alone does not survive a port-forward. See
+`backend/tests/Lumen.IntegrationTests/TestResidueSweep.cs`.
 
 **Key paths**
 | What | Where |

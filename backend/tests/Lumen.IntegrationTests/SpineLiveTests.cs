@@ -107,4 +107,59 @@ public class SpineLiveTests(LumenApiFactory factory) : IClassFixture<LumenApiFac
         }
     }
 
+    /// <summary>
+    /// T4: <c>GET /me</c> answers the ONE 404 body the phase defines (<c>NotFoundProblem.Result()</c>),
+    /// not a bodyless <c>Results.NotFound()</c>. The case is real, not hypothetical: an erased user's
+    /// JWT stays cryptographically valid until it expires, and the tombstoned <c>users</c> row is what
+    /// makes it inert.
+    /// </summary>
+    [Fact]
+    public async Task Get_me_for_an_erased_user_returns_the_shared_404_problem()
+    {
+        var client = factory.CreateClient();
+        var email = $"erased-{Guid.NewGuid():N}@example.com";
+        const string password = "Sup3rSecretPassw0rd!";
+        Guid userId = default;
+
+        try
+        {
+            var start = await client.PostAsJsonAsync("/onboarding/start", new
+            { email, password, displayName = "Erased", locale = "es-ES", timezone = "Europe/Madrid", policyVersion = "v1-test" });
+            start.StatusCode.ShouldBe(HttpStatusCode.OK);
+            userId = (await start.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("userId").GetGuid();
+
+            var token = await TestFixtures.GetUserTokenAsync(email, password);
+
+            // Tombstone the users row exactly as the crypto-shred does; the Keycloak identity (and so
+            // the already-issued token) is untouched.
+            await using (var db = TestFixtures.NewDb())
+            {
+                await db.Users.Where(u => u.Id == userId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(u => u.DeletedAt, DateTimeOffset.UtcNow));
+            }
+
+            var authed = factory.CreateClient();
+            authed.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var me = await authed.GetAsync("/me");
+
+            me.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+            me.Content.Headers.ContentType!.MediaType.ShouldBe("application/problem+json");
+            var problem = await me.Content.ReadFromJsonAsync<JsonElement>();
+            problem.GetProperty("status").GetInt32().ShouldBe(404);
+            problem.GetProperty("title").GetString().ShouldBe("The requested resource was not found.");
+        }
+        finally
+        {
+            if (userId != default)
+            {
+                await using var db = new LumenDbContext(new DbContextOptionsBuilder<LumenDbContext>().UseNpgsql(TestFixtures.Db).Options);
+                await db.UserProfiles.Where(p => p.UserId == userId).ExecuteDeleteAsync();
+                await db.ConsentRecords.Where(c => c.UserId == userId).ExecuteDeleteAsync();
+                await db.UserKeys.Where(k => k.UserId == userId).ExecuteDeleteAsync();
+                // IgnoreQueryFilters: the row is soft-deleted by now, so the filtered set is empty.
+                await db.Users.IgnoreQueryFilters().Where(u => u.Id == userId).ExecuteDeleteAsync();
+            }
+        }
+    }
 }
