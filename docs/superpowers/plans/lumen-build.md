@@ -37,8 +37,9 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 
 ## §1 Status ledger  (the ONLY authority for "done")
 
-**NEXT PHASE TO RUN: P4b — Flutter screens 3–14, 32 — but ONLY after a human reviews P4a and flips its row to `DONE`.**  P4a is at **NEEDS_REVIEW** on `phase/04a-logging-backend`: 22/22 tasks, **1,220 backend tests + 278 client tests green**, OpenAPI and the Dart client regenerated. A **whole-branch review** then ran five independent lenses (28 raw findings) and returned **MERGE_WITH_FOLLOWUPS**; its four must-fix findings are closed in `3f7e958`. **No PR, no tag, not merged — the human does that** (RUNBOOK §5). P4b's preconditions ("P4a endpoints green + regenerated client") are satisfied by the branch but not by `main` until the merge lands, and P4b must read `ARCHITECTURE.md §C.0` before writing any client write path — Swashbuckle emits no `description`, so none of P4a's DTO documentation survives into `client/lib/api/`. Three things a reviewer should not have to hunt for, all in the P4a STATUS block: the **three L-05/L-06 legal blockers** (one needs a product decision, not a lawyer), the **T20 Keycloak deletion incident** in the local dev realm, and the **open PO questions**. *(P0a–P3c DONE. The 2026-07-08 session resolved **D-01 (REOPENED: social login IN v1 → new phase P4c)**, D-02, D-04, D-08..D-14, B15/B16, ratified the `definitions.md` extracts (with PO-extended symptom vocabularies), and adopted interim C-03/C-04 defaults (two-tier bounds) plus a **cycle-tracking-pause rider** — see the §4 r15 row, `ARCHITECTURE.md §A`, decision-sheet.md, and the definitions.md ratification block. Keep working the long-lead gates below — clinical outreach C-01..C-13, the Anthropic DPA, legal L-01/L-02/L-04, and now **Apple/Google OAuth registrations + L-09 (for P4c)** are the schedule's real critical path.)*
-**Plan revision:** r18   **Repo HEAD when ledger last updated:** `phase/04a-logging-backend` @ `9589803` **+ this ledger-ref correction commit**, which is the branch tip. After T21's single Dart-client regeneration (`e492a3d`) and the T22 docs commit (`5f67261`), the branch re-opened to close the whole-branch review's four must-fix findings (`3f7e958`) and record them (`5535a4f`, `9589803`) — see the P4a STATUS block. `main` is unchanged at `3930dda` (the r17 drift-fix, and the branch's merge-base) and does not yet contain P4a.
+**NEXT PHASE TO RUN: P4b — Flutter screens 3–14, 32.**  **P4a is DONE** — human-accepted and merged to `main` 2026-08-13 (`--no-ff`, tag `phase-04a`): 22/22 tasks, **1,220 backend tests + 278 client tests re-verified green at acceptance**, OpenAPI and the Dart client regenerated. A **whole-branch review** ran five independent lenses (28 raw findings) and returned **MERGE_WITH_FOLLOWUPS**; its four must-fix findings are closed in `3f7e958`. P4b's preconditions ("P4a endpoints green + regenerated client") are now satisfied on `main`, and P4b must read `ARCHITECTURE.md §C.0` before writing any client write path — Swashbuckle emits no `description`, so none of P4a's DTO documentation survives into `client/lib/api/`. Three things carried out of P4a and still open, all detailed in its STATUS block: the **three L-05/L-06 legal blockers** (one needs a product decision, not a lawyer), the **T20 Keycloak deletion incident** in the local dev realm, and the **open PO questions**. *(P0a–P3c DONE. The 2026-07-08 session resolved **D-01 (REOPENED: social login IN v1 → new phase P4c)**, D-02, D-04, D-08..D-14, B15/B16, ratified the `definitions.md` extracts (with PO-extended symptom vocabularies), and adopted interim C-03/C-04 defaults (two-tier bounds) plus a **cycle-tracking-pause rider** — see the §4 r15 row, `ARCHITECTURE.md §A`, decision-sheet.md, and the definitions.md ratification block. Keep working the long-lead gates below — clinical outreach C-01..C-13, the Anthropic DPA, legal L-01/L-02/L-04, and now **Apple/Google OAuth registrations + L-09 (for P4c)** are the schedule's real critical path.)*
+**Plan revision:** r19   **Repo HEAD when ledger last updated:** `main` @ the `phase/04a-logging-backend` merge commit, tagged `phase-04a`. P4a's 52 branch commits — T1–T22, then the four whole-branch-review must-fix fixes (`3f7e958`) and their records (`5535a4f`, `9589803`, `4ed97ed`) — are now on `main`, which was `3930dda` (the r17 drift-fix, and the branch's merge-base) before this merge.
+**r19 = P4a acceptance (2026-08-13, docs-only).** Human review passed against RUNBOOK §4 + §9: build `-warnaserror` 0 warnings; **1,220 backend tests green re-run at branch HEAD** (1008 unit / 205 integration-LiveStack / 7 security); 278 client tests + `flutter analyze` clean; secret scan over the 222-file diff clean; contract gate green (`openapi.json` + 91 client files, 43 `*.g.dart` committed); full compose stack healthy with `/health` + `/health/ready` 200 through Caddy over TLS. Ledger row → DONE, NEXT advanced to P4b, merged `--no-ff` + tagged `phase-04a` per §8. **The stale verification paste below was refreshed** — it showed 1003/202/7 = 1,212 from before `3f7e958`, while the prose beside it claimed the (correct) re-verified 1,220. **One environment defect found during acceptance, not a P4a code defect — see "Dev-stack fragility" in the STATUS block: a recreated Vault container silently loses the Transit engine and `lumen-dev-kek`, reddening 96 integration tests while `docker compose ps` still looks healthy.**
 **r18 = P4a phase close (2026-08-11, docs-only, T22).** Filled the P4a STATUS block with pasted verification output and ticked the six exit criteria (criterion 6 passes on the §G15 hand-written denominator and is stated as NOT met against a literal whole-tree reading); added `ARCHITECTURE.md §C.0` for the rules the generated Dart client cannot express; recorded the C-03/C-04 PO-interim numbers and the §G11 inventions in STATUS and the §A P4a row; corrected the stale "a namespace renames the schema" rationale in §A and in `OnboardingContracts.cs`; dropped `--delete-conflicting-outputs` from `client/lib/api/README.md` (removed in build_runner 2.15.0); set this row to NEEDS_REVIEW. Earlier: r17 = P4a rider drift-fix (2026-08-06, docs-only) — the r16 session updated `ARCHITECTURE.md §A`, §1 and §4 but left the P4a rider list at its r15 values; riders (2) and (7) were re-synced to §A, and P4a gained an **Architecture refs** line so the §0 kickoff template routes the session to §A, which is authoritative on conflict.
 
 | Phase | Name | Status | Branch | PR | Verified by | Notes |
@@ -50,7 +51,7 @@ set the §1 ledger row to NEEDS_REVIEW, and STOP for human review.
 | P3a | Flutter foundation + theming + OpenAPI pipeline | DONE | phase/03a-client-foundation | tag `phase-03a` | 2026-06-14 | merged to main (merge `39acac4`); 106 client + 3 OpenAPI tests; cov 97.60% |
 | P3b | Client OIDC + cache + screens 2/31 | DONE | phase/03b-client-spine | [#2](https://github.com/DizaGit2/Endo/pull/2) | 2026-07-06 | merged 2026-06-15 (ff, PR #2); tag `phase-03b` @ `6d122d4` cut retroactively r13; +4 post-merge fixes on main (see STATUS); iOS-redirect + screen-31-retry corrections → P3c, onboarding-gate → P4b |
 | P3c ⚠* | Consolidation & hardening (perimeter, crypto dedup, client/CI debt) | DONE | phase/03c-hardening | [#3](https://github.com/DizaGit2/Endo/pull/3) | 2026-07-08 | merged --no-ff, tag `phase-03c`; T1–T14 + review-fixes (19 commits); per-task two-stage review + whole-branch /code-review high + headless & on-device E2E |
-| P4a | Backend Onboarding-rest + Cycle + Symptoms | **NEEDS_REVIEW** | `phase/04a-logging-backend` | not opened — human opens it | — | 22/22 tasks, 49 commits; 1008 unit + 205 integration + 7 security green; whole-branch review = MERGE_WITH_FOLLOWUPS, 4 must-fix findings closed in `3f7e958`; coverage 97.15% hand-written / 56.33% whole-tree (§G15); OpenAPI + Dart client regenerated; **⚠ T8 (erasure) reviewed SAFE_TO_MERGE**; see the P4a STATUS block for the three L-05/L-06 legal blockers, the T20 Keycloak incident, and the PO questions |
+| P4a | Backend Onboarding-rest + Cycle + Symptoms | DONE | phase/04a-logging-backend | no PR — merged locally `--no-ff`, tag `phase-04a` | 2026-08-13 | merged to main; 22/22 tasks, 52 commits; **re-verified at acceptance: 1008 unit + 205 integration + 7 security green, `-warnaserror` 0 warnings, 278 client tests + `flutter analyze` clean**; whole-branch review = MERGE_WITH_FOLLOWUPS, 4 must-fix findings closed in `3f7e958`; coverage re-measured at acceptance **97.24% hand-written / 56.96% whole-tree** (§G15 denominator; up from T20's 97.15%, ratchet holds); OpenAPI + Dart client regenerated; **⚠ T8 (erasure) reviewed SAFE_TO_MERGE**; see the P4a STATUS block for the three L-05/L-06 legal blockers, the T20 Keycloak incident, and the PO questions |
 | P4b | Flutter screens 3–14, 32 | TODO | — | — | — | screen-2 social buttons land in P4c, not here |
 | P4c | Social login (Apple/Google via Keycloak brokering) | TODO | — | — | — | NEW r15 (D-01 reopened 2026-07-08); needs OAuth app registrations + L-09; runs after P4b |
 | P5 | Body + Activity + Treatment | TODO | — | — | — | needs D-15/D-16 |
@@ -484,7 +485,7 @@ cd client; $env:PUB_CACHE='C:\pub_cache'; flutter analyze; flutter test; dart ru
 
 ### Phase P4a — Backend: Onboarding-rest + Cycle + Symptoms
 
-- **Status:** **NEEDS_REVIEW** (2026-08-11 — see the STATUS block at the end of this entry) · **Depends on:** P3c · **Branch:** `phase/04a-logging-backend`
+- **Status:** **DONE** (accepted + merged 2026-08-13 — see the STATUS block at the end of this entry) · **Depends on:** P3c · **Branch:** `phase/04a-logging-backend`
 - **Goal:** first wide band of encrypted CRUD reusing `IUserCryptoContext`; onboarding completion; Cycle + Symptoms modules; non-clinical placeholder snapshot.
 - **Architecture refs:** §A (decision rows — **authoritative: §A wins wherever the rider text below disagrees**), §C.1/§C.9 (onboarding + settings endpoints), §D (schema), §F (encryption).
 - **Preconditions (MUST resolve — this is the dense product-decision phase):** **P3c DONE** (r13). One decision-resolution session (fast-path like D-05/06/07, 2026-06-14): **D-02** (onboarding-complete criteria — the `complete` endpoint needs it; absent from the original list until r13), decisions **D-08** (intensity scale 0–10 vs 1–5), **D-09** (symptom type/triggers/related/region/body-map shape), **D-10** (mood/energy/libido), **D-11** (quick vs full payloads), **D-12** (timezone/today), **D-13** (soft-delete/pagination/future-dating/notes), **D-14** (goals + hormone-default), **B15** (cycle-setup endpoint home), **B16** (hormone code↔label). Definitions: goal enum, region seed, mood labels, hormone code-label table (from `definitions.md`). Clinical: **C-03/C-04 bounds** can use documented defaults from decision-sheet/clinical-asks but flag for sign-off.
@@ -495,7 +496,7 @@ cd client; $env:PUB_CACHE='C:\pub_cache'; flutter analyze; flutter test; dart ru
 - **Phase-entry decisions (2026-08-06):** PO confirmed — (1) **crypto-shred now hard-deletes the new plaintext health rows** (§D mandates plaintext for the P6 engine, so DEK deletion no longer suffices; §2's erasure invariant amended in §F, task T8 gets ⚠ treatment, privacy wording flagged for L-05/L-06); (2) `cycle_tracking_pause_spans` history table ships (rider 2's three fields cannot satisfy §A:59's "paused spans excluded from estimators"); (3) `POST /symptoms` is a **batch** (1–50, all-or-nothing); (4) four additive surfaces ship — timezone/locale on `PATCH /me`, `DELETE /cycle/events/{id}`, phase-override storage + `GET /onboarding/state` + `POST /me/devices`, and the `rasrm_stage`/`diagnosed_on` write+read path. Resolved from the docs without a PO call: sanity bounds are **soft/non-blocking** (no invented tier), the C-03/C-04 clinical numbers live in **documentation only** (no `Lumen.Domain.Clinical`, no `ref_insight_rule` this phase), and the B16 `ref_hormone` table **defers to P7b** (constants file ships now). Full rationale in the breakdown's "Decisions taken at phase entry".
 
 **STATUS**
-- **State:** **NEEDS_REVIEW** · **Branch:** `phase/04a-logging-backend` (from `3930dda`) · **22/22 tasks complete** · **49 commits** · closed 2026-08-11, then re-opened briefly to close the whole-branch review's four must-fix findings (`3f7e958`).
+- **State:** **DONE** — human-accepted 2026-08-13 and merged to `main` (`--no-ff`, tag `phase-04a`; no PR opened) · **Branch:** `phase/04a-logging-backend` (from `3930dda`) · **22/22 tasks complete** · **52 commits** · closed 2026-08-11, then re-opened briefly to close the whole-branch review's four must-fix findings (`3f7e958`).
 
 **Whole-branch review (2026-08-11, after T22 closed the phase).** Five independent lenses over all 48 commits — cross-task interaction, security/GDPR, clinical safety, docs-vs-code, and test integrity — produced 28 raw findings; an adjudicator verified every CRITICAL and IMPORTANT itself and returned **MERGE_WITH_FOLLOWUPS**, on the grounds that no surviving production defect loses data or leaks health data. Its **four must-fix findings are closed in `3f7e958`**:
 
@@ -505,8 +506,54 @@ cd client; $env:PUB_CACHE='C:\pub_cache'; flutter analyze; flutter test; dart ru
 4. **`POST /onboarding/cycle` full-replaced three columns on every re-post** — an omitted `avgPeriodLengthDays` / `avgCycleLengthDays` / `regularity` reset a stored answer rather than defaulting on create, and `GET /onboarding/state` returns none of the three, so the one read P4b resumes from could not restore what the re-post cleared. The only surviving finding that cost a user data. Fixed by merging on update (defaults apply only on create), which matches the ruling already made for `POST /cycle/day/{date}` and needs no contract change — so T21's single Dart regeneration still stands.
 
 Everything else the review raised is filed as a follow-up. **P5:** no synchronous erasure fence on `DELETE /me` (pre-existing and unchanged from merge-base, but P4a raises the stakes to eleven plaintext Art. 9 tables), and a shred that exhausts `[AutomaticRetry(Attempts = 10)]` parks in Hangfire's Failed state with no alert — the account is disabled, the user cannot log in to notice, and the data is retained, so a silently failed erasure is the one job failure nobody can observe from outside; `pause_reason` is un-erasable and un-correctable once set (Art. 5(1)(c) and Art. 16 bear on it); `users.onboarding_completed_at` survives the shred unmentioned. **P4b:** the Flutter debug interceptor prints the very request paths the backend spends three mechanisms redacting. **P6:** two clinician-UNSIGNED features ship consent-ON while their sibling ships OFF for being unsigned, so P4a's defaults must not be read as consent. Plus a batch of documentation corrections (§A self-contradicts on §G8's enforcement count; §F says erasure "empties push tokens" where the job deletes the rows; §D miscounts the tables without `deleted_at`).
-- **PR: not opened, no tag, not merged.** Per RUNBOOK §5 / plan §0.5 the human opens the PR, reviews, and flips this row to `DONE`.
+- **Accepted 2026-08-13.** Reviewed against RUNBOOK §4 + §9 with every verify command re-run rather than read (see "Acceptance re-verification" below), then merged to `main` with `git merge --no-ff` and tagged `phase-04a`. **No PR was opened** — the merge was local, matching the P0a/P1/P3a precedent rather than the P2/P3b/P3c PR route.
 - Per-task review record (every task reviewed, findings and fixes): [`../../.superpowers/sdd/progress.md`](../../../.superpowers/sdd/progress.md). Task breakdown + the binding §G1–§G15 constraints: [`../specs/2026-05-31-build-strategy/p4a-task-breakdown.md`](../specs/2026-05-31-build-strategy/p4a-task-breakdown.md).
+
+#### Acceptance re-verification — pasted output, run by the human reviewer at branch HEAD on 2026-08-13
+
+Every §9 gate re-run rather than read. `LUMEN_SWEEP_TEST_RESIDUE` was left unset throughout; nothing was deleted.
+
+```
+$ dotnet build backend/Lumen.slnx -warnaserror --nologo
+Build succeeded.  0 Warning(s)  0 Error(s)
+
+$ dotnet test backend/Lumen.slnx --nologo
+Passed!  - Failed: 0, Passed: 1008, Skipped: 0, Total: 1008, Duration: 5 s     - Lumen.UnitTests.dll (net10.0)
+Passed!  - Failed: 0, Passed:    7, Skipped: 0, Total:    7, Duration: 7 s     - Lumen.SecurityTests.dll (net10.0)
+Passed!  - Failed: 0, Passed:  205, Skipped: 0, Total:  205, Duration: 5 m 8 s - Lumen.IntegrationTests.dll (net10.0)
+
+$ dotnet run backend/tools/check-coverage.cs -- TestResults
+whole tree              4823/8468   =  56.96%
+  generated              809/4340   =  18.64%   (17 files, 51.3% of all instrumented lines)
+  hand-written  GATED   4014/4128   =  97.24%
+GATE PASS: hand-written coverage 97.24% >= 70%.
+
+$ cd client && flutter analyze          -> No issues found! (ran in 51.6s)
+$ cd client && flutter test             -> 00:07 +278: All tests passed!
+
+$ docker compose -f deploy/docker-compose.yml up -d ; curl -ksS https://localhost/health
+{"status":"healthy"}                                                    http=200
+$ curl -ksS https://localhost/health/ready
+{"status":"ready","dependencies":{"postgres":true,"vault":true}}        http=200
+
+$ git diff main...phase/04a-logging-backend | grep -iE "password|secret|api[_-]?key|BEGIN .*PRIVATE KEY"
+  -> test fixtures only (`Sup3rSecretPassw0rd!`), the `Password` DTO member, and PiiRedactionEnricher's
+     name list. No real secret committed.
+```
+
+**Coverage moved UP since T20** (97.15% → **97.24%** hand-written; denominator 4007 → 4128). The 121 new instrumented lines are `3f7e958`'s must-fix code, which T20's measurement predates. The §9 ratchet is satisfied.
+
+**§9 item 7 (safety mutation spot-check) was NOT re-run at acceptance** — it is taken on the documented in-branch evidence instead: T8's erasure guards were proven red by deleting them (the eleven-table retention artifact), and finding 2's two new `ConcurrencyRetry` tests were each proven red with `ChangeTracker.Clear()` removed. P4a is not one of the four ⚠ phases; T8 alone carried ⚠ treatment and passed its re-review gate as SAFE_TO_MERGE.
+
+#### ⚠ Dev-stack fragility found during acceptance — an ENVIRONMENT defect, not a P4a code defect
+
+The first acceptance run came back **96 of 205 integration tests RED**, every failure funnelling through `OnboardAndLoginAsync` with a 500. Root cause: **Vault runs `-dev` (in-memory storage), so a recreated container loses the Transit engine and `lumen-dev-kek` entirely** — `vault secrets list` showed no `transit/` path at all. The `vault-init` one-shot that creates them had not re-run on that start. Re-running it (`docker compose up vault-init`, the documented single init path from P3c-T3) turned the same suite fully green with no code change, which is the proof that the branch was never at fault.
+
+**Why this is worth fixing rather than remembering:** the stack *looks* healthy while broken — `docker compose ps` shows every container Up, Postgres reports healthy, and Keycloak's OIDC discovery answers 200. Only a DEK path fails. `vault` carries `restart: unless-stopped` but `vault-init` is a one-shot with no such policy, so any host reboot or `docker start` reproduces it silently. P0a's verify commands catch it; **RUNBOOK §4's per-phase review checklist does not**, which is why it surfaced here as 96 red tests instead of one clear line.
+
+**Follow-ups (neither done here — both are outside P4a's scope):**
+1. Make the dev stack self-healing or self-diagnosing — e.g. give `vault-init` a restart policy, fold the Transit check into `/health/ready`, or add the `vault read transit/keys/lumen-dev-kek` probe to RUNBOOK §4's checklist. **Owner: P11** (infra hardening) or a standalone chore.
+2. **14 rows in `user_keys` are now permanently undecryptable.** Their DEKs were wrapped by the *old* in-memory KEK, which is unrecoverable; the fresh KEK cannot unwrap them. This is pre-existing dev-realm test residue and no production system is involved — the rows were **deliberately left in place**, not cleaned up, given the T20 precedent about unrequested deletion.
 
 #### Verification — pasted output, run at HEAD on 2026-08-11
 
@@ -527,11 +574,13 @@ Build succeeded.
 
 ```
 $ dotnet test backend/Lumen.slnx --nologo          # LiveStack up: lumen-postgres-1, lumen-keycloak-1, lumen-vault-1
-Passed!  - Failed:     0, Passed:  1003, Skipped:     0, Total:  1003, Duration: 5 s     - Lumen.UnitTests.dll (net10.0)
+Passed!  - Failed:     0, Passed:  1008, Skipped:     0, Total:  1008, Duration: 5 s     - Lumen.UnitTests.dll (net10.0)
 Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7, Duration: 7 s     - Lumen.SecurityTests.dll (net10.0)
-Passed!  - Failed:     0, Passed:   202, Skipped:     0, Total:   202, Duration: 5 m 8 s - Lumen.IntegrationTests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   205, Skipped:     0, Total:   205, Duration: 5 m 8 s - Lumen.IntegrationTests.dll (net10.0)
 ```
-**1,220 backend tests green** (1008 unit / 205 integration-LiveStack / 7 security) — re-verified at `3f7e958`, the final commit. Baseline before any P4a code was 74 + 37 + 5 = **116**. The OpenAPI suite is inside the integration assembly and is broken out below.
+**1,220 backend tests green** (1008 unit / 205 integration-LiveStack / 7 security) — re-verified at `3f7e958`, the final commit, and again at acceptance on 2026-08-13. Baseline before any P4a code was 74 + 37 + 5 = **116**. The OpenAPI suite is inside the integration assembly and is broken out below.
+
+> *r19 correction:* the numbers pasted above originally read `1003 / 202 / 7` = **1,212** — captured before `3f7e958` and never re-pasted, while the prose beneath already claimed the re-verified 1,220. The acceptance re-run (below) confirmed **1,220** is the true figure, so the block was corrected to match its own caption. A stale paste is exactly what RUNBOOK §4's "don't trust the pasted output, re-run it" exists to catch.
 
 ```
 $ dotnet test backend/Lumen.slnx --settings backend/coverlet.runsettings --collect:"XPlat Code Coverage" --nologo --results-directory TestResults
