@@ -286,6 +286,32 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 // The tab shell — chrome around the five branch Navigators
 // ---------------------------------------------------------------------------
 
+/// What a bottom-nav tap does: switch [shell] to the branch at [index].
+///
+/// The whole behavioural contract of the tab bar lives in this one line, and it
+/// is a line with three plausible-looking spellings that behave very
+/// differently once a tab is more than one route deep:
+///
+/// - `goBranch(index)` — re-tapping the tab you are on does nothing, so a user
+///   deep inside a tab has no way back to its top;
+/// - `goBranch(index, initialLocation: true)` — every tab switch resets the
+///   branch, throwing away the open day/detail the user was on. That is exactly
+///   the loss [StatefulShellRoute.indexedStack] was chosen to prevent;
+/// - `initialLocation: index == shell.currentIndex` — the correct one, and the
+///   standard go_router idiom: tapping the current tab returns to its top,
+///   tapping a different tab resumes it where it was left.
+///
+/// It is a named top-level function rather than a closure inside [_TabShell] so
+/// that the mirror route table in `route_table_test.dart` — the only table with
+/// a branch deep enough to tell the three spellings apart — calls **this**
+/// function rather than a hand-retyped copy of it. Sharing the callback is what
+/// makes those branch-stack tests production tests; the route table itself
+/// stays a deliberate hand-maintained mirror (that duplication is load-bearing
+/// and must not be removed).
+void switchToBranch(StatefulNavigationShell shell, int index) {
+  shell.goBranch(index, initialLocation: index == shell.currentIndex);
+}
+
 /// Wraps the active branch's [Navigator] in the app's persistent chrome.
 ///
 /// [navigationShell] is both the content (it renders the branch [IndexedStack])
@@ -294,13 +320,9 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 /// link straight to `/cycle` shows the Cycle tab selected without anything
 /// having to synchronise.
 ///
-/// `initialLocation: index == currentIndex` is the standard go_router idiom for
-/// "tapping the tab you are already on returns you to the top of that tab";
-/// tapping a different tab resumes it exactly where it was left.
-///
 /// It reuses [LumenBottomNav] as-is rather than declaring a second nav widget —
 /// that stub existed with no production caller since P3c, and this is its
-/// caller.
+/// caller. Tap handling is [switchToBranch].
 class _TabShell extends StatelessWidget {
   const _TabShell({required this.navigationShell});
 
@@ -312,10 +334,8 @@ class _TabShell extends StatelessWidget {
       body: navigationShell,
       bottomNavigationBar: LumenBottomNav(
         currentIndex: navigationShell.currentIndex,
-        onDestinationSelected: (index) => navigationShell.goBranch(
-          index,
-          initialLocation: index == navigationShell.currentIndex,
-        ),
+        onDestinationSelected: (index) =>
+            switchToBranch(navigationShell, index),
       ),
     );
   }

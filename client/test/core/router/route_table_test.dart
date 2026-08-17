@@ -60,6 +60,13 @@ class _Probe extends StatelessWidget {
 
 /// Mirrors the production shell chrome (`_TabShell` in `app_router.dart`) so a
 /// probe test can switch branches the way a user does — by tapping the nav.
+///
+/// The tap handler is NOT mirrored: it calls the production [switchToBranch]
+/// directly. Every production branch is one route deep today, so `goBranch(i)`,
+/// `initialLocation: true` and the correct expression are indistinguishable
+/// there — a retyped copy here would leave the real call site untested until
+/// T15/T16 made a regression user-visible. Only the ROUTE TABLE below is a
+/// deliberate hand-maintained mirror.
 class _ProbeShell extends StatelessWidget {
   const _ProbeShell({required this.navigationShell});
 
@@ -71,10 +78,8 @@ class _ProbeShell extends StatelessWidget {
       body: navigationShell,
       bottomNavigationBar: LumenBottomNav(
         currentIndex: navigationShell.currentIndex,
-        onDestinationSelected: (index) => navigationShell.goBranch(
-          index,
-          initialLocation: index == navigationShell.currentIndex,
-        ),
+        onDestinationSelected: (index) =>
+            switchToBranch(navigationShell, index),
       ),
     );
   }
@@ -352,6 +357,11 @@ void main() {
   // Requirement 1: each branch keeps its OWN navigation stack. This is the
   // whole reason for StatefulShellRoute.indexedStack over a plain IndexedStack
   // of branch roots — so the assertion is about the PUSHED route, not the root.
+  //
+  // These two run against the PRODUCTION tap handler (`switchToBranch`), not a
+  // copy of it: the mirror table exists to give that handler a branch that is
+  // two routes deep, which no production branch is yet. Simplifying
+  // `switchToBranch` to `shell.goBranch(index)` turns the second one red.
   // -------------------------------------------------------------------------
 
   group('branch navigation stacks', () {
