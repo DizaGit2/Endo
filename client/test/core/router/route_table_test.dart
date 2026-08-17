@@ -1,4 +1,5 @@
-// Tests for the route table as the single source of truth (P4b-T1).
+// Tests for the route table as the single source of truth (P4b-T1, extended by
+// P4b-T2).
 //
 // TDD (RED first). Before P4b-T1 the redirect consulted a hand-maintained
 // `const _knownPaths = { … }` of literal strings: a GoRoute added to the table
@@ -11,11 +12,20 @@
 //     NOWHERE else — no constant, no set membership, no production edit. If the
 //     "known" decision stops deriving from the route table, this route is
 //     swallowed by the unknown-location fallback and the test goes red.
+//   • `/t2-shell-branch-route` is the same trick one level harder: its only
+//     registration is inside a StatefulShellBranch.
 //   • `/cycle/day/:date` is matched by the concrete location
 //     `/cycle/day/2026-04-07`, which no `Set<String>` of literals can express.
-//   • the parameterised route is registered as a CHILD of `/cycle`, so the
-//     derivation is proven to walk the route tree rather than only its top
-//     level (P4b-T2 replaces the flat table with a StatefulShellRoute).
+//   • that parameterised route is registered as a CHILD of a shell branch's
+//     root route, so the derivation is proven to walk into the branch
+//     Navigators rather than only the top level. T1 could only reason about
+//     this from go_router's source; T2 introduced a real StatefulShellRoute, so
+//     it can be tested.
+//
+// `_probeRoutes` is a DELIBERATELY hand-maintained mirror of the production
+// table. It is not derived from `lumenRoutes()` and must not become derived:
+// the point of the two probe routes above is that they exist ONLY here, which
+// is what makes "registration is enough" falsifiable instead of tautological.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,6 +41,7 @@ import 'package:lumen/features/onboarding/application/onboarding_status_controll
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
+import 'package:lumen/shared/widgets/lumen_scaffold.dart';
 import 'package:mocktail/mocktail.dart';
 
 // ---------------------------------------------------------------------------
@@ -47,8 +58,34 @@ class _Probe extends StatelessWidget {
   }
 }
 
-/// A route table that mirrors the production one plus two routes that exist
-/// ONLY here. Nothing else in the repository mentions them.
+/// Mirrors the production shell chrome (`_TabShell` in `app_router.dart`) so a
+/// probe test can switch branches the way a user does — by tapping the nav.
+class _ProbeShell extends StatelessWidget {
+  const _ProbeShell({required this.navigationShell});
+
+  final StatefulNavigationShell navigationShell;
+
+  @override
+  Widget build(BuildContext context) {
+    return LumenScaffold(
+      body: navigationShell,
+      bottomNavigationBar: LumenBottomNav(
+        currentIndex: navigationShell.currentIndex,
+        onDestinationSelected: (index) => navigationShell.goBranch(
+          index,
+          initialLocation: index == navigationShell.currentIndex,
+        ),
+      ),
+    );
+  }
+}
+
+/// A route table that mirrors the production one (five shell branches in
+/// CLAUDE.md order) plus three routes that exist ONLY here. Nothing else in the
+/// repository mentions them.
+///
+/// A function, not a constant: `StatefulShellRoute`/`StatefulShellBranch` each
+/// allocate a `GlobalKey`, so two live routers must not share one instance.
 List<RouteBase> _probeRoutes() => <RouteBase>[
   GoRoute(path: Routes.splash, builder: (_, _) => const _Probe('splash')),
   GoRoute(path: Routes.welcome, builder: (_, _) => const _Probe('welcome')),
@@ -63,14 +100,54 @@ List<RouteBase> _probeRoutes() => <RouteBase>[
     path: '/t1-newly-registered-route',
     builder: (_, _) => const _Probe('newly registered'),
   ),
-  // Parameterised, and nested one level down (T2 nests routes under a shell).
-  GoRoute(
-    path: '/cycle',
-    builder: (_, _) => const _Probe('cycle'),
-    routes: <RouteBase>[
-      GoRoute(
-        path: 'day/:date',
-        builder: (_, state) => _Probe('day ${state.pathParameters['date']}'),
+  StatefulShellRoute.indexedStack(
+    builder: (_, _, navigationShell) =>
+        _ProbeShell(navigationShell: navigationShell),
+    branches: <StatefulShellBranch>[
+      StatefulShellBranch(
+        routes: <RouteBase>[
+          GoRoute(path: Routes.home, builder: (_, _) => const _Probe('home')),
+        ],
+      ),
+      StatefulShellBranch(
+        routes: <RouteBase>[
+          GoRoute(
+            path: Routes.cycle,
+            builder: (_, _) => const _Probe('cycle'),
+            routes: <RouteBase>[
+              // Parameterised AND nested under a shell branch's root — the
+              // shape T15–T17 will use for screens 10/11.
+              GoRoute(
+                path: 'day/:date',
+                builder: (_, state) =>
+                    _Probe('day ${state.pathParameters['date']}'),
+              ),
+            ],
+          ),
+          // Registered ONLY as a route of a shell branch — nowhere else.
+          GoRoute(
+            path: '/t2-shell-branch-route',
+            builder: (_, _) => const _Probe('shell branch route'),
+          ),
+        ],
+      ),
+      StatefulShellBranch(
+        routes: <RouteBase>[
+          GoRoute(
+            path: Routes.hormones,
+            builder: (_, _) => const _Probe('hormones'),
+          ),
+        ],
+      ),
+      StatefulShellBranch(
+        routes: <RouteBase>[
+          GoRoute(path: Routes.body, builder: (_, _) => const _Probe('body')),
+        ],
+      ),
+      StatefulShellBranch(
+        routes: <RouteBase>[
+          GoRoute(path: Routes.more, builder: (_, _) => const _Probe('more')),
+        ],
       ),
     ],
   ),
@@ -95,6 +172,9 @@ Future<void> _pumpProbeRouter(
   await tester.pumpWidget(MaterialApp.router(routerConfig: router));
   await tester.pumpAndSettle();
 }
+
+int _selectedIndex(WidgetTester tester) =>
+    tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex;
 
 // ---------------------------------------------------------------------------
 // Production-router harness
@@ -208,10 +288,48 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // Parameterised + nested routes — impossible with a Set<String> of literals.
+  // Requirement 6: the derivation reaches INSIDE a StatefulShellRoute branch.
+  // T1 could only reason about this; the shell exists now, so it is tested.
   // -------------------------------------------------------------------------
 
-  group('parameterised routes', () {
+  group('routes inside a StatefulShellRoute branch', () {
+    testWidgets(
+      'a route registered ONLY inside a shell branch is recognised',
+      (tester) async {
+        await _pumpProbeRouter(
+          tester,
+          initialLocation: '/t2-shell-branch-route',
+        );
+
+        expect(find.text('shell branch route'), findsOneWidget);
+        expect(find.text('profile'), findsNothing);
+      },
+    );
+
+    testWidgets('a shell branch\'s root route is recognised', (tester) async {
+      await _pumpProbeRouter(tester, initialLocation: Routes.cycle);
+
+      expect(find.text('cycle'), findsOneWidget);
+      expect(find.byType(LumenBottomNav), findsOneWidget);
+    });
+
+    testWidgets(
+      'a location that matches nothing UNDER a branch root still falls back',
+      (tester) async {
+        await _pumpProbeRouter(tester, initialLocation: '/cycle/not-a-route');
+
+        // The shell must not swallow unmatched deep links into its branch.
+        expect(find.text('profile'), findsOneWidget);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // Parameterised routes — impossible with a Set<String> of literals. These
+  // now live one level down inside a shell branch as well.
+  // -------------------------------------------------------------------------
+
+  group('parameterised routes nested under a shell branch root', () {
     testWidgets('"/cycle/day/2026-04-07" matches the "/cycle/day/:date" route', (
       tester,
     ) async {
@@ -228,11 +346,50 @@ void main() {
 
       expect(find.text('day 2025-12-31'), findsOneWidget);
     });
+  });
 
-    testWidgets('the nested route\'s parent is recognised too', (tester) async {
-      await _pumpProbeRouter(tester, initialLocation: '/cycle');
+  // -------------------------------------------------------------------------
+  // Requirement 1: each branch keeps its OWN navigation stack. This is the
+  // whole reason for StatefulShellRoute.indexedStack over a plain IndexedStack
+  // of branch roots — so the assertion is about the PUSHED route, not the root.
+  // -------------------------------------------------------------------------
+
+  group('branch navigation stacks', () {
+    testWidgets(
+      'switching away from a branch and back leaves you on the pushed route',
+      (tester) async {
+        await _pumpProbeRouter(tester, initialLocation: '/cycle/day/2026-04-07');
+        expect(find.text('day 2026-04-07'), findsOneWidget);
+        expect(_selectedIndex(tester), 1);
+
+        await tester.tap(find.text('Home'));
+        await tester.pumpAndSettle();
+        expect(_selectedIndex(tester), 0);
+        expect(find.text('home'), findsOneWidget);
+        expect(find.text('day 2026-04-07'), findsNothing);
+
+        await tester.tap(find.text('Cycle'));
+        await tester.pumpAndSettle();
+
+        expect(_selectedIndex(tester), 1);
+        // Still on the SECOND route of the branch, not its root: a shell that
+        // only remembered which branch was selected would show 'cycle' here.
+        expect(find.text('day 2026-04-07'), findsOneWidget);
+        expect(find.text('cycle'), findsNothing);
+      },
+    );
+
+    testWidgets('tapping the already-selected tab returns to the branch root', (
+      tester,
+    ) async {
+      await _pumpProbeRouter(tester, initialLocation: '/cycle/day/2026-04-07');
+      expect(find.text('day 2026-04-07'), findsOneWidget);
+
+      await tester.tap(find.text('Cycle'));
+      await tester.pumpAndSettle();
 
       expect(find.text('cycle'), findsOneWidget);
+      expect(find.text('day 2026-04-07'), findsNothing);
     });
   });
 

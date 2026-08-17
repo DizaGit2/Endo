@@ -24,6 +24,7 @@ import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/presentation/help_about_screen.dart';
 import 'package:lumen/features/settings/presentation/privacy_screen.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
+import 'package:lumen/features/shell/presentation/tab_placeholder_screen.dart';
 
 // ---------------------------------------------------------------------------
 // Banned glyphs + helpers
@@ -171,5 +172,16 @@ void main() {
     );
     await tester.pumpAndSettle();
     _expectNoDingbats(tester, 'HelpAboutScreen');
+  });
+
+  testWidgets('TabPlaceholderScreen has no dingbat glyphs', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: lumenTheme(Brightness.light),
+        home: const TabPlaceholderScreen(heading: 'More isn\'t here yet'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    _expectNoDingbats(tester, 'TabPlaceholderScreen');
   });
 }

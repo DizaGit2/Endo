@@ -52,12 +52,17 @@ class LumenScaffold extends StatelessWidget {
   }
 }
 
-/// Visual stub for Lumen's 5-destination bottom navigation bar.
+/// Lumen's 5-destination bottom navigation bar.
 ///
 /// Uses Material 3 [NavigationBar] with the five tabs defined by the Lumen
-/// design: Home, Cycle, Hormones, Body, More. Navigation logic is intentionally
-/// absent — wiring happens in a later phase. This stub is used by golden tests
-/// and static layouts.
+/// design: Home, Cycle, Hormones, Body, More. **The destination order is
+/// load-bearing** — it is the branch order of the `StatefulShellRoute` in
+/// `lumenRoutes()`, which addresses its branches by index. Reordering here
+/// without reordering there sends taps to the wrong tab.
+///
+/// It holds no state: since P4b-T2 the router is the selected-tab state, and
+/// the shell passes [currentIndex] down and turns [onDestinationSelected] into
+/// `StatefulNavigationShell.goBranch`.
 ///
 /// Props:
 /// - [currentIndex] — currently selected tab index (0–4).

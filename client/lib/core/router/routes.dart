@@ -26,4 +26,37 @@ abstract final class Routes {
   /// [lumenRedirect]. P4b-T8 replaces its placeholder screen with the real
   /// step-by-step flow (screens 3–7).
   static const onboarding = '/onboarding';
+
+  // ── The five bottom-nav tabs ───────────────────────────────────────────────
+  // Order is CLAUDE.md's, and it is the order of the branches in the
+  // `StatefulShellRoute.indexedStack` in [lumenRoutes] and of the destinations
+  // in [LumenBottomNav]. All three must stay in step: the shell addresses its
+  // branches by index.
+  //
+  // Each is a branch ROOT. Routes that live inside a tab are registered as
+  // children of these (e.g. `/cycle/day/:date`), which keeps them inside the
+  // branch's own Navigator and therefore inside its own back stack.
+
+  /// Home tab (screen 8, the dashboard) — branch 0.
+  ///
+  /// P4b-T15 replaces its placeholder with the real dashboard.
+  static const home = '/home';
+
+  /// Cycle tab (screens 10/11/14) — branch 1.
+  ///
+  /// P4b-T16/T17 replace its placeholder with the calendar and day detail.
+  static const cycle = '/cycle';
+
+  /// Hormones tab (screens 15–21) — branch 2. Not built in P4b.
+  static const hormones = '/hormones';
+
+  /// Body tab (screens 22–25) — branch 3. Not built in P4b.
+  static const body = '/body';
+
+  /// More tab (treatment, reports, settings) — branch 4. Not built in P4b.
+  ///
+  /// Note that [profile] (screen 31) is deliberately NOT inside this branch
+  /// yet: it is still the authenticated landing route and lives outside the
+  /// shell until a task owns the More tab's real contents.
+  static const more = '/more';
 }
