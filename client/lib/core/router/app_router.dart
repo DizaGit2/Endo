@@ -3,102 +3,150 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/routes.dart';
+import 'package:lumen/core/theme/lumen_tokens.dart';
+import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
 import 'package:lumen/features/onboarding/presentation/welcome_screen.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
+import 'package:lumen/shared/widgets/lumen_section_label.dart';
 
 // ---------------------------------------------------------------------------
 // Redirect logic (pure function — unit-testable without a router instance)
 // ---------------------------------------------------------------------------
-
-/// The paths actually registered as [GoRoute]s in [goRouterProvider].
-///
-/// [Routes.onboarding] is deliberately NOT included: the route has no screen
-/// yet (P4 will register it — see the TODO below), so until then it must be
-/// treated the same as any other unregistered path.
-const _knownPaths = {
-  Routes.splash,
-  Routes.welcome,
-  Routes.account,
-  Routes.profile,
-};
 
 /// Returns the path to redirect to, or null if no redirect is needed.
 ///
 /// [location] must be the path only (no query/fragment) — callers pass
 /// `state.uri.path`.
 ///
-/// [location] is first checked against [_knownPaths]. An UNKNOWN path (e.g. a
-/// stray deep link, or [Routes.onboarding] pre-P4) would otherwise reach
-/// GoRouter's built-in "page not found" error screen, so it is redirected by
-/// [status] alone, before the known-path truth table below ever runs.
+/// [isKnownLocation] is "does this location match a route in the table?".
+/// It is NOT computed here and it is NOT a membership test against a list of
+/// literals: [lumenRouteRedirect] takes it from GoRouter's own matcher, which
+/// is the only thing that can answer it for a parameterised route such as
+/// `/cycle/day/:date`. Registering a `GoRoute` is therefore the whole job of
+/// adding a route — there is no second place to edit.
 ///
-/// Truth table (KNOWN paths only — unknown paths are handled above):
-/// | status          | location                   | result       |
-/// |-----------------|-----------------------------|--------------|
-/// | unknown         | UNKNOWN path (any)          | "/splash"    |
-/// | unknown         | "/splash"                   | null         |
-/// | unknown         | known, other                | "/splash"    |
-/// | unauthenticated | UNKNOWN path (any)          | "/"          |
-/// | unauthenticated | "/" or "/account"            | null         |
-/// | unauthenticated | known, other (incl. /splash) | "/"          |
-/// | authenticated   | UNKNOWN path (any)          | "/profile"   |
-/// | authenticated   | "/profile"                   | null         |
-/// | authenticated   | known, other ("/", "/account", "/splash") | "/profile" |
+/// A location that matches NO route (a stray deep link, a typo) would otherwise
+/// reach GoRouter's built-in "page not found" error screen, so it never returns
+/// null: every status funnels it to that status's own destination. Only the
+/// `authenticated + completed` branch has to test [isKnownLocation] explicitly —
+/// it is the only branch whose "anything else" answer is "stay put".
 ///
-/// TODO(P4): Route authenticated-but-not-onboarded users to [Routes.onboarding]
-/// instead of [Routes.profile]. This requires reading an "onboarded" flag from
-/// the user profile (loaded after login) and is deferred to P4 — until then,
-/// [Routes.onboarding] falls through the UNKNOWN-path branch above.
-String? lumenRedirect(AuthStatus status, String location) {
-  // ── Unknown-route fallback ────────────────────────────────────────────────
-  if (!_knownPaths.contains(location)) {
-    switch (status) {
-      case AuthStatus.unknown:
-        return Routes.splash;
-      case AuthStatus.unauthenticated:
-        return Routes.welcome;
-      case AuthStatus.authenticated:
-        return Routes.profile;
-    }
-  }
-
-  // ── Known-path auth gate (unchanged) ──────────────────────────────────────
+/// Truth table:
+/// | status          | onboarding | location                | result        |
+/// |-----------------|------------|-------------------------|---------------|
+/// | unknown         | any        | "/splash"               | null          |
+/// | unknown         | any        | anything else           | "/splash"     |
+/// | unauthenticated | any        | "/" or "/account"       | null          |
+/// | unauthenticated | any        | anything else           | "/"           |
+/// | authenticated   | unknown    | "/splash"               | null          |
+/// | authenticated   | unknown    | anything else           | "/splash"     |
+/// | authenticated   | incomplete | "/onboarding"           | null          |
+/// | authenticated   | incomplete | anything else           | "/onboarding" |
+/// | authenticated   | completed  | "/", "/account", "/splash", "/onboarding" | "/profile" |
+/// | authenticated   | completed  | unmatched location      | "/profile"    |
+/// | authenticated   | completed  | any other known route   | null          |
+///
+/// The `authenticated + unknown` rows are the "profile not loaded yet" case:
+/// this function must not fetch `/me` (it runs synchronously and often), so it
+/// holds the user on the loading path the splash already provides rather than
+/// guessing a side of the gate. [OnboardingStatusController] resolves the value
+/// and the router's `refreshListenable` re-runs this function when it does.
+String? lumenRedirect({
+  required AuthStatus status,
+  required OnboardingStatus onboarding,
+  required String location,
+  required bool isKnownLocation,
+}) {
   switch (status) {
+    // ── Still initialising ───────────────────────────────────────────────────
+    // Hold on the splash so a cold start with a stored session never flashes
+    // the welcome screen before redirecting on.
     case AuthStatus.unknown:
-      // Still initialising — hold on the splash so a cold start with a stored
-      // session never flashes the welcome screen before redirecting to profile.
       return location == Routes.splash ? null : Routes.splash;
 
+    // ── Signed out ───────────────────────────────────────────────────────────
+    // Allow the welcome screen and the account (login/register) screen;
+    // everything else (incl. the splash and /onboarding) goes to welcome.
     case AuthStatus.unauthenticated:
-      // Allow the welcome screen and the account (login/register) screen;
-      // everything else (incl. the splash) goes to welcome.
       if (location == Routes.welcome || location == Routes.account) {
         return null;
       }
       return Routes.welcome;
 
+    // ── Signed in — the onboarding gate ──────────────────────────────────────
     case AuthStatus.authenticated:
-      // Authed users have no business on welcome / account / splash.
-      if (location == Routes.welcome ||
-          location == Routes.account ||
-          location == Routes.splash) {
-        return Routes.profile;
+      switch (onboarding) {
+        // The gate's answer has not loaded yet: wait on the splash.
+        case OnboardingStatus.unknown:
+          return location == Routes.splash ? null : Routes.splash;
+
+        // Gate closed: everything funnels into the onboarding flow, including
+        // unmatched locations. Already there → no redirect (no loop).
+        case OnboardingStatus.incomplete:
+          if (location == Routes.onboarding) return null;
+          return Routes.onboarding;
+
+        // Gate open: honour the requested route. Onboarded users have no
+        // business on welcome / account / splash / onboarding, and an unmatched
+        // location falls back to the authed default.
+        case OnboardingStatus.completed:
+          if (!isKnownLocation ||
+              location == Routes.welcome ||
+              location == Routes.account ||
+              location == Routes.splash ||
+              location == Routes.onboarding) {
+            return Routes.profile;
+          }
+          return null;
       }
-      return null;
   }
+}
+
+/// Adapts a [GoRouterState] to [lumenRedirect]. This is the production
+/// `redirect` callback body, shared with its tests so they exercise the real
+/// wiring rather than a copy of it.
+///
+/// `state.error` is GoRouter's own answer to "did this location match a route?"
+/// — `RouteConfiguration.buildTopLevelGoRouterState` copies it straight from
+/// `RouteMatchList.error`, which is set exactly when the matcher found no route
+/// for the URL (go_router 17.3.0, `src/configuration.dart`). Using it means the
+/// route table is the single source of truth: nested routes, shell branches and
+/// parameterised paths all answer correctly because the matcher walks the whole
+/// tree, and no hand-maintained path list can drift from it.
+String? lumenRouteRedirect(
+  GoRouterState state, {
+  required AuthStatus status,
+  required OnboardingStatus onboarding,
+}) {
+  return lumenRedirect(
+    status: status,
+    onboarding: onboarding,
+    // Path only — query/fragment must not break the location comparison.
+    location: state.uri.path,
+    isKnownLocation: state.error == null,
+  );
 }
 
 // ---------------------------------------------------------------------------
 // ChangeNotifier bridge — GoRouter refreshListenable
 // ---------------------------------------------------------------------------
 
-/// Bridges a Riverpod [ProviderListenable] to [ChangeNotifier] so GoRouter's
-/// [refreshListenable] can re-run redirect logic whenever [authStatusProvider]
-/// emits a new value.
-class _AuthStatusNotifier extends ChangeNotifier {
-  _AuthStatusNotifier(Ref ref) {
+/// Bridges the Riverpod state the redirect reads to a [ChangeNotifier] so
+/// GoRouter's [GoRouter.refreshListenable] re-runs [lumenRedirect] whenever it
+/// changes.
+///
+/// Both sources matter: [authStatusProvider] for sign-in/sign-out, and
+/// [onboardingStatusProvider] because the `/me` read that opens or closes the
+/// gate resolves a few frames after the router is built — without it an
+/// authenticated user would sit on the splash forever.
+class _RouterRefreshNotifier extends ChangeNotifier {
+  _RouterRefreshNotifier(Ref ref) {
     ref.listen<AuthStatus>(authStatusProvider, (_, _) => notifyListeners());
+    ref.listen<OnboardingStatus>(
+      onboardingStatusProvider,
+      (_, _) => notifyListeners(),
+    );
   }
 }
 
@@ -106,28 +154,33 @@ class _AuthStatusNotifier extends ChangeNotifier {
 // goRouterProvider
 // ---------------------------------------------------------------------------
 
-/// Provides the [GoRouter] singleton wired to [authStatusProvider].
+/// Provides the [GoRouter] singleton wired to [authStatusProvider] and
+/// [onboardingStatusProvider].
 ///
-/// The [refreshListenable] is a [_AuthStatusNotifier] that fires
-/// [ChangeNotifier.notifyListeners] whenever auth state changes, causing
-/// GoRouter to re-evaluate the [redirect] callback.
+/// Adding a screen is: add a constant to [Routes], add a [GoRoute] to the
+/// `routes` list below, import the screen. Nothing else — the redirect derives
+/// what it knows from this table.
 final goRouterProvider = Provider<GoRouter>((ref) {
-  final notifier = _AuthStatusNotifier(ref);
+  final notifier = _RouterRefreshNotifier(ref);
   ref.onDispose(notifier.dispose);
 
   return GoRouter(
     initialLocation: Routes.splash,
     refreshListenable: notifier,
-    redirect: (context, state) {
-      final authStatus = ref.read(authStatusProvider);
-      // Path only — query/fragment must not break the location comparison.
-      return lumenRedirect(authStatus, state.uri.path);
-    },
+    redirect: (_, state) => lumenRouteRedirect(
+      state,
+      status: ref.read(authStatusProvider),
+      onboarding: ref.read(onboardingStatusProvider),
+    ),
     routes: [
       GoRoute(path: Routes.splash, builder: (_, _) => const _SplashScreen()),
       GoRoute(path: Routes.welcome, builder: (_, _) => const WelcomeScreen()),
       GoRoute(path: Routes.account, builder: (_, _) => const AccountScreen()),
       GoRoute(path: Routes.profile, builder: (_, _) => const ProfileScreen()),
+      GoRoute(
+        path: Routes.onboarding,
+        builder: (_, _) => const _OnboardingPlaceholderScreen(),
+      ),
     ],
   );
 });
@@ -136,7 +189,8 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 // Splash — shown while auth state resolves on cold start
 // ---------------------------------------------------------------------------
 
-/// Neutral loading screen shown while [AuthStatus] is [AuthStatus.unknown].
+/// Neutral loading screen shown while [AuthStatus] is [AuthStatus.unknown], or
+/// while an authenticated session's [OnboardingStatus] is still loading.
 ///
 /// Prevents a flash of the welcome screen when a stored session resolves to
 /// [AuthStatus.authenticated] a frame later.
@@ -151,6 +205,61 @@ class _SplashScreen extends StatelessWidget {
         child: CircularProgressIndicator(
           color: scheme.primary,
           semanticsLabel: 'Loading',
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Onboarding — placeholder until P4b-T8 builds the real flow
+// ---------------------------------------------------------------------------
+
+/// Stand-in for the onboarding flow (screens 3–7).
+///
+/// [Routes.onboarding] has to be a real registered route for the gate above to
+/// have anywhere to send an authenticated-but-not-onboarded user, and a
+/// redirect target that does not exist is worse than no gate at all. P4b-T8
+/// replaces this builder with the real onboarding shell; it is private here for
+/// the same reason [_SplashScreen] is — it is router chrome, not a feature
+/// screen, and nothing else may reference it.
+class _OnboardingPlaceholderScreen extends StatelessWidget {
+  const _OnboardingPlaceholderScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).extension<LumenColors>()!;
+
+    return Scaffold(
+      backgroundColor: c.surface,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 48, 28, 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const LumenSectionLabel(
+                'Onboarding',
+                fontSize: 11,
+                letterSpacing: 1.5,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Set up Lumen',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w500,
+                  color: c.ink,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'A few questions about your cycle come next, so Lumen can '
+                'make sense of what you log.',
+                style: TextStyle(fontSize: 14, height: 1.5, color: c.muted),
+              ),
+            ],
+          ),
         ),
       ),
     );

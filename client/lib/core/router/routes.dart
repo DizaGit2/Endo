@@ -21,7 +21,9 @@ abstract final class Routes {
 
   /// Onboarding flow (post-auth first-run wizard).
   ///
-  /// Not yet backed by a real screen; routing authed-but-not-onboarded users
-  /// here is a P4 refinement (see TODO(P4) in [lumenRedirect]).
+  /// A registered route since P4b-T1: authenticated users whose
+  /// `MeResponse.onboardingCompleted` is not true are gated here by
+  /// [lumenRedirect]. P4b-T8 replaces its placeholder screen with the real
+  /// step-by-step flow (screens 3–7).
   static const onboarding = '/onboarding';
 }
