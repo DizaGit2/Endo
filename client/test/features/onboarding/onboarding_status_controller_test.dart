@@ -67,11 +67,16 @@ void main() {
 
   /// Builds a container with [status] as the session state, keeps the
   /// onboarding provider alive, and returns it.
-  ProviderContainer makeContainer(AuthStatus status) {
+  ///
+  /// [gateTimeout] shortens the bounded wait so the timeout path is testable
+  /// without an 8-second test.
+  ProviderContainer makeContainer(AuthStatus status, {Duration? gateTimeout}) {
     final container = ProviderContainer(
       overrides: [
         authStatusProvider.overrideWith(() => _FakeAuthController(status)),
         meRepositoryProvider.overrideWithValue(repo),
+        if (gateTimeout != null)
+          onboardingGateTimeoutProvider.overrideWithValue(gateTimeout),
       ],
     );
     addTearDown(container.dispose);
@@ -209,6 +214,74 @@ void main() {
       expect(
         container.read(onboardingStatusProvider),
         OnboardingStatus.incomplete,
+      );
+    });
+
+    test(
+      'a non-Failure throwable still resolves to incomplete (e.g. a provider '
+      'that cannot be constructed)',
+      () async {
+        when(repo.getMe).thenThrow(StateError('boom'));
+
+        final container = makeContainer(AuthStatus.authenticated);
+        await pumpEventQueue();
+
+        expect(
+          container.read(onboardingStatusProvider),
+          OnboardingStatus.incomplete,
+        );
+      },
+    );
+
+    test(
+      'an AuthFailure leaves the gate unanswered — the session is being torn '
+      'down, so /onboarding must not flash before AuthStatus flips',
+      () async {
+        when(repo.getMe).thenThrow(const AuthFailure());
+
+        final container = makeContainer(AuthStatus.authenticated);
+        await pumpEventQueue();
+
+        expect(
+          container.read(onboardingStatusProvider),
+          OnboardingStatus.unknown,
+        );
+      },
+    );
+
+    test(
+      'a /me read that outruns the bounded wait resolves to unavailable',
+      () async {
+        // Never completes: the bound is the only thing that can end this.
+        when(repo.getMe).thenAnswer((_) => Completer<CacheResult<MeResponse>>().future);
+
+        final container = makeContainer(
+          AuthStatus.authenticated,
+          gateTimeout: const Duration(milliseconds: 20),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+
+        expect(
+          container.read(onboardingStatusProvider),
+          OnboardingStatus.unavailable,
+        );
+      },
+    );
+
+    test('a read that beats the bound is unaffected by it', () async {
+      when(repo.getMe).thenAnswer(
+        (_) async => Fresh(_me(onboardingCompleted: true)),
+      );
+
+      final container = makeContainer(
+        AuthStatus.authenticated,
+        gateTimeout: const Duration(milliseconds: 20),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(
+        container.read(onboardingStatusProvider),
+        OnboardingStatus.completed,
       );
     });
   });

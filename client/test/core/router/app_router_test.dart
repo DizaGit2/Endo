@@ -345,6 +345,52 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // The gate's read failed or outran its bounded wait. Still "no answer", so
+  // the routing decision is identical to `unknown` — the splash is the surface
+  // that changes (it renders a retry instead of an endless spinner), not the
+  // destination.
+  // -------------------------------------------------------------------------
+
+  group('lumenRedirect — authenticated, onboarding state unavailable', () {
+    const unavailable = OnboardingStatus.unavailable;
+
+    test('authenticated + unavailable on "/splash" returns null', () {
+      expect(
+        _known(AuthStatus.authenticated, '/splash', onboarding: unavailable),
+        isNull,
+      );
+    });
+
+    test('authenticated + unavailable on "/profile" holds on "/splash"', () {
+      expect(
+        _known(AuthStatus.authenticated, '/profile', onboarding: unavailable),
+        equals('/splash'),
+      );
+    });
+
+    test('authenticated + unavailable on "/onboarding" holds on "/splash"', () {
+      expect(
+        _known(AuthStatus.authenticated, '/onboarding', onboarding: unavailable),
+        equals('/splash'),
+      );
+    });
+
+    test(
+      'authenticated + unavailable on an unmatched location holds on "/splash"',
+      () {
+        expect(
+          _unknownLocation(
+            AuthStatus.authenticated,
+            '/nope',
+            onboarding: unavailable,
+          ),
+          equals('/splash'),
+        );
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
   // onboardingCompleted is nullable (ARCHITECTURE §C.0.2: every generated Dart
   // property is T?). null must mean NOT onboarded — the direction that routes a
   // user into a flow they can leave rather than past a gate they needed.

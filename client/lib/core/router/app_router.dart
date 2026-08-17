@@ -39,19 +39,22 @@ import 'package:lumen/shared/widgets/lumen_section_label.dart';
 /// | unknown         | any        | anything else           | "/splash"     |
 /// | unauthenticated | any        | "/" or "/account"       | null          |
 /// | unauthenticated | any        | anything else           | "/"           |
-/// | authenticated   | unknown    | "/splash"               | null          |
-/// | authenticated   | unknown    | anything else           | "/splash"     |
+/// | authenticated   | unknown or unavailable | "/splash"   | null          |
+/// | authenticated   | unknown or unavailable | anything else | "/splash"   |
 /// | authenticated   | incomplete | "/onboarding"           | null          |
 /// | authenticated   | incomplete | anything else           | "/onboarding" |
 /// | authenticated   | completed  | "/", "/account", "/splash", "/onboarding" | "/profile" |
 /// | authenticated   | completed  | unmatched location      | "/profile"    |
 /// | authenticated   | completed  | any other known route   | null          |
 ///
-/// The `authenticated + unknown` rows are the "profile not loaded yet" case:
-/// this function must not fetch `/me` (it runs synchronously and often), so it
-/// holds the user on the loading path the splash already provides rather than
-/// guessing a side of the gate. [OnboardingStatusController] resolves the value
-/// and the router's `refreshListenable` re-runs this function when it does.
+/// The `authenticated + unknown/unavailable` rows are the "profile not loaded
+/// yet" case: this function must not fetch `/me` (it runs synchronously and
+/// often), so it holds the user on the loading path the splash already provides
+/// rather than guessing a side of the gate. [OnboardingStatusController]
+/// resolves the value and the router's `refreshListenable` re-runs this
+/// function when it does; [OnboardingStatus.unavailable] is the same routing
+/// decision with a different splash surface (retry instead of spinner), so the
+/// hold is always bounded.
 String? lumenRedirect({
   required AuthStatus status,
   required OnboardingStatus onboarding,
@@ -77,8 +80,11 @@ String? lumenRedirect({
     // ── Signed in — the onboarding gate ──────────────────────────────────────
     case AuthStatus.authenticated:
       switch (onboarding) {
-        // The gate's answer has not loaded yet: wait on the splash.
+        // The gate's answer has not arrived (still loading, or the read
+        // outran its bounded wait): hold on the splash, which renders a
+        // spinner or a retry accordingly. Never guess a side of the gate.
         case OnboardingStatus.unknown:
+        case OnboardingStatus.unavailable:
           return location == Routes.splash ? null : Routes.splash;
 
         // Gate closed: everything funnels into the onboarding flow, including
@@ -194,17 +200,88 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 ///
 /// Prevents a flash of the welcome screen when a stored session resolves to
 /// [AuthStatus.authenticated] a frame later.
-class _SplashScreen extends StatelessWidget {
+///
+/// It is also the failure surface for the onboarding gate's `/me` read. That
+/// read used to live on the profile screen, which has a designed retry state;
+/// moving it here would otherwise have left an authenticated user on a flaky
+/// network watching an indeterminate spinner until Dio gave up (up to ~20 s),
+/// with nothing to tap. When the read exceeds its bounded wait the spinner is
+/// replaced by the same error + retry affordance screen 31 uses.
+class _SplashScreen extends ConsumerWidget {
   const _SplashScreen();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+
+    if (ref.watch(onboardingStatusProvider) == OnboardingStatus.unavailable) {
+      return const Scaffold(body: SafeArea(child: _GateUnavailableBody()));
+    }
+
     return Scaffold(
       body: Center(
         child: CircularProgressIndicator(
           color: scheme.primary,
           semanticsLabel: 'Loading',
+        ),
+      ),
+    );
+  }
+}
+
+/// Error + retry shown on the splash when the gate's `/me` read outran its
+/// bounded wait.
+///
+/// Copy and shape are lifted verbatim from `profile_screen.dart`'s `_ErrorBody`
+/// / `_RetryButton` so the app has one retry pattern, not two. They are private
+/// copies on purpose: P4b-T5 promotes those affordances to `shared/widgets/`,
+/// and this call site collapses onto the shared one then.
+class _GateUnavailableBody extends ConsumerWidget {
+  const _GateUnavailableBody();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = Theme.of(context).extension<LumenColors>()!;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // liveRegion: true — announces the failure as soon as it renders,
+            // rather than relying on the user to swipe onto it.
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                'Something went wrong. Please try again.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: c.muted),
+              ),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton(
+              // Rebuilds the controller: a fresh generation, back to `unknown`
+              // (spinner), and a new `/me` read.
+              onPressed: () => ref.invalidate(onboardingStatusProvider),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: c.accent,
+                side: BorderSide(color: c.border),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 10,
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              child: const Text('Try again'),
+            ),
+          ],
         ),
       ),
     );

@@ -30,6 +30,7 @@ import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
+import 'package:lumen/features/settings/presentation/profile_screen.dart';
 import 'package:mocktail/mocktail.dart';
 
 // ---------------------------------------------------------------------------
@@ -262,10 +263,16 @@ void main() {
     );
 
     testWidgets(
-      'an authenticated, onboarded user is not sent to onboarding',
+      'an authenticated, onboarded user ARRIVES at the profile screen',
       (tester) async {
         await _pumpRealApp(tester, onboardingCompleted: true);
 
+        // The positive half is the load-bearing one: `findsNothing` alone is
+        // also satisfied by a user stranded on the splash, so on its own it
+        // could not fail for the reason this test exists (e.g. deleting the
+        // onboardingStatusProvider listen in _RouterRefreshNotifier would
+        // leave it green). Assert the destination, not just the non-destination.
+        expect(find.byType(ProfileScreen), findsOneWidget);
         expect(find.text('Set up Lumen'), findsNothing);
       },
     );
