@@ -921,6 +921,18 @@ docker compose -f deploy/docker-compose.yml ps                          # stack 
 - [ ] **T6 — Locale awareness.** `localeProvider` from `MeResponse.locale` with device fallback; route every date/number through `LumenFormats` (which today has zero production callers); first-day-of-week derived, never stored. Commit `feat(client): locale-aware formatting`.
 - [ ] **T7 — Screen-2 client-side validation** (r13 deferral). While in that file, correct the stale `// D-01: social login deferred to phase 2` comment — D-01 was **reopened**: social login is in v1, as phase **P4c**. Commit `fix(client): screen 2 client-side validation`.
 
+**The client test contract, from T3 — every screen task below obeys it.** A screen at
+`client/lib/features/<area>/presentation/<name>_screen.dart` is discovered by a real filesystem glob in
+`client/test/support/screen_registry.dart` and **fails the suite** unless it has both a golden test and a
+`<name>_screen_semantics_test.dart`. Mount screens with `pumpApp` from `client/test/support/harness.dart`
+(never a hand-rolled `_wrap`), assert accessibility with the `a11y_guard.dart` matchers
+(`expectNoDingbats`, `expectLabeledButton`, `expectLiveRegion`, `expectLabeledSpinner`), and drive error
+states with the four fake-API archetypes (success / network failure / 400 validation-problem / pending).
+Goldens are **390×844** at `<test-dir>/goldens/ci/<name>.png`, light and dark, regenerated with
+`flutter test --update-goldens --tags golden`. There is **no exemption list** — it is `const {}` and a
+rotted entry fails the suite, so a screen without tests cannot ship quietly. Riverpod trap: `Override` is
+not exported by `flutter_riverpod.dart` in 3.3.2; it lives in `flutter_riverpod/misc.dart`.
+
 *Onboarding (screens 3–7).*
 - [ ] **T8 — Onboarding shell + repository.** Step chrome ("Step N of 7"), `GET /onboarding/state` resume, `POST /onboarding/complete`, and the 409 `onboarding_incomplete` / `missingSteps` path. Screen 3 also reads `GET /settings/cycle` — `OnboardingStateResponse` returns `lastPeriodStart` but not the other three answers.
 - [ ] **T9 — Screen 3 cycle_setup.** `POST /onboarding/cycle` (MERGE; `lastPeriodStart` required every time; backdate floor; sanity warnings render as a non-blocking note after a successful save).
