@@ -3,12 +3,14 @@
 // CacheStore is used via a real temp-dir backed Hive instance (same as
 // hive_boot_test). DioException / Failure are used directly.
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
+import 'package:lumen/core/cache/cache_keys.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
 import 'package:lumen/core/error/failure.dart';
@@ -221,6 +223,253 @@ void main() {
       // even though the best-effort cache write failed.
       expect(result, isA<Fresh<Map<String, dynamic>>>());
       expect((result as Fresh<Map<String, dynamic>>).value['id'], '1');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // cachedRead — in-flight de-duplication (r13 deferral)
+  // -------------------------------------------------------------------------
+  //
+  // Two providers reading the same key concurrently (today: ProfileController
+  // and the router's onboarding gate, both on 'GET:/me') must share ONE network
+  // request. The regression a naive Completer cache gets wrong is the failure
+  // path: if the guard is only cleared on success, a single failed read strands
+  // the key forever.
+
+  group('cachedRead — in-flight de-duplication', () {
+    test('two concurrent reads of the same key issue ONE fetch, both get the value',
+        () async {
+      final store = await _buildStore(tempDir, () => baseTime);
+      const key = 'GET:/me';
+      var fetchCount = 0;
+      final gate = Completer<Map<String, dynamic>>();
+
+      Future<CacheResult<Map<String, dynamic>>> read() =>
+          cachedRead<Map<String, dynamic>>(
+            key: key,
+            store: store,
+            fetch: () {
+              fetchCount++;
+              return gate.future;
+            },
+            toJson: (v) => v,
+            fromJson: (m) => m,
+          );
+
+      // Both calls are made before either can settle.
+      final first = read();
+      final second = read();
+      gate.complete({'id': '1', 'name': 'Alice'});
+      final results = await Future.wait([first, second]);
+
+      expect(fetchCount, 1, reason: 'the second caller must join the in-flight request');
+      for (final result in results) {
+        expect(result, isA<Fresh<Map<String, dynamic>>>());
+        expect((result as Fresh<Map<String, dynamic>>).value['id'], '1');
+      }
+    });
+
+    test('concurrent reads of DIFFERENT keys are not merged', () async {
+      final store = await _buildStore(tempDir, () => baseTime);
+      var fetchCount = 0;
+      final gateA = Completer<Map<String, dynamic>>();
+      final gateB = Completer<Map<String, dynamic>>();
+
+      Future<CacheResult<Map<String, dynamic>>> read(
+        String key,
+        Completer<Map<String, dynamic>> gate,
+      ) =>
+          cachedRead<Map<String, dynamic>>(
+            key: key,
+            store: store,
+            fetch: () {
+              fetchCount++;
+              return gate.future;
+            },
+            toJson: (v) => v,
+            fromJson: (m) => m,
+          );
+
+      final day = read('GET:/cycle/day/2026-06-14', gateA);
+      final symptoms = read('GET:/symptoms?day=2026-06-14', gateB);
+      gateA.complete({'id': 'day'});
+      gateB.complete({'id': 'symptoms'});
+
+      final dayResult = await day as Fresh<Map<String, dynamic>>;
+      final symptomsResult = await symptoms as Fresh<Map<String, dynamic>>;
+
+      expect(fetchCount, 2, reason: 'distinct keys are distinct requests');
+      expect(dayResult.value['id'], 'day');
+      expect(
+        symptomsResult.value['id'],
+        'symptoms',
+        reason: 'a key-blind guard would hand this caller the day\'s value',
+      );
+    });
+
+    test(
+        'a failed in-flight read clears the guard: the NEXT read issues a new fetch',
+        () async {
+      final store = await _buildStore(tempDir, () => baseTime);
+      const key = 'GET:/cycle/calendar?month=2026-06';
+      var fetchCount = 0;
+
+      Future<CacheResult<Map<String, dynamic>>> read(
+        Future<Map<String, dynamic>> Function() answer,
+      ) =>
+          cachedRead<Map<String, dynamic>>(
+            key: key,
+            store: store,
+            fetch: () {
+              fetchCount++;
+              return answer();
+            },
+            toJson: (v) => v,
+            fromJson: (m) => m,
+          );
+
+      // Two concurrent readers share one FAILING request (no cache → the read
+      // resolves to NetworkRequired rather than throwing).
+      final failGate = Completer<Map<String, dynamic>>();
+      final a = read(() => failGate.future);
+      final b = read(() => failGate.future);
+      failGate.completeError(_networkError());
+      final failed = await Future.wait([a, b]);
+
+      expect(fetchCount, 1);
+      expect(failed[0], isA<NetworkRequired<Map<String, dynamic>>>());
+      expect(failed[1], isA<NetworkRequired<Map<String, dynamic>>>());
+
+      // The key must NOT be stranded: a later read tries the network again.
+      final recovered = await read(() async => {'id': 'recovered'});
+
+      expect(fetchCount, 2, reason: 'a settled failure must not poison the key');
+      expect(recovered, isA<Fresh<Map<String, dynamic>>>());
+      expect((recovered as Fresh<Map<String, dynamic>>).value['id'], 'recovered');
+    });
+
+    test(
+        'an in-flight read that THROWS clears the guard and rejects every joiner',
+        () async {
+      final store = await _buildStore(tempDir, () => baseTime);
+      const key = 'GET:/settings/cycle';
+      var fetchCount = 0;
+
+      Future<CacheResult<Map<String, dynamic>>> read(
+        Future<Map<String, dynamic>> Function() answer,
+      ) =>
+          cachedRead<Map<String, dynamic>>(
+            key: key,
+            store: store,
+            fetch: () {
+              fetchCount++;
+              return answer();
+            },
+            toJson: (v) => v,
+            fromJson: (m) => m,
+          );
+
+      // A ValidationFailure is real: cachedRead rethrows it instead of masking
+      // it as offline, so the shared future completes with an ERROR.
+      final failGate = Completer<Map<String, dynamic>>();
+      final a = read(() => failGate.future);
+      final b = read(() => failGate.future);
+      failGate.completeError(const ValidationFailure(message: 'bad input'));
+
+      await expectLater(a, throwsA(isA<ValidationFailure>()));
+      await expectLater(
+        b,
+        throwsA(isA<ValidationFailure>()),
+        reason: 'the joiner must see the error, not hang or get a value',
+      );
+      expect(fetchCount, 1);
+
+      // …and the guard is gone, so the key still works afterwards.
+      final recovered = await read(() async => {'id': 'recovered'});
+      expect(fetchCount, 2);
+      expect((recovered as Fresh<Map<String, dynamic>>).value['id'], 'recovered');
+    });
+
+    test('the guard is per-store: two stores never join each other\'s request',
+        () async {
+      // Every other test in this group builds ONE store, so a module-global
+      // `Map<String, Future>` keyed by cache key alone would pass them all.
+      // The failure it hides: two ProviderScopes with different CacheStores
+      // both read GET:/me, the second joins the first's future and gets the
+      // value — but its OWN store is never written through, so it misses on
+      // every subsequent read, forever.
+      final storeA = MockCacheStore();
+      final storeB = MockCacheStore();
+      for (final store in [storeA, storeB]) {
+        when(() => store.isFresh(any())).thenReturn(false);
+        when(() => store.getJson(any())).thenReturn(null);
+        when(() => store.putJson(any(), any(), ttl: any(named: 'ttl')))
+            .thenAnswer((_) async {});
+      }
+
+      var fetchCount = 0;
+      final gate = Completer<Map<String, dynamic>>();
+
+      Future<CacheResult<Map<String, dynamic>>> read(CacheStore store) =>
+          cachedRead<Map<String, dynamic>>(
+            key: CacheKeys.profile,
+            store: store,
+            fetch: () {
+              fetchCount++;
+              return gate.future;
+            },
+            toJson: (v) => v,
+            fromJson: (m) => m,
+          );
+
+      final a = read(storeA);
+      final b = read(storeB);
+      gate.complete({'id': '1'});
+      await Future.wait([a, b]);
+
+      expect(fetchCount, 2, reason: 'different stores are different caches');
+      // The decisive assertion: EACH store was populated. A key-only guard
+      // leaves storeB empty even though its caller got a value.
+      verify(() => storeA.putJson(
+            CacheKeys.profile,
+            any(),
+            ttl: any(named: 'ttl'),
+          )).called(1);
+      verify(() => storeB.putJson(
+            CacheKeys.profile,
+            any(),
+            ttl: any(named: 'ttl'),
+          )).called(1);
+    });
+
+    test('a completed read does not de-duplicate a later, separate read',
+        () async {
+      // Sanity: de-dup is per burst, not a second cache layer. Without this,
+      // "one fetch" could be satisfied by never fetching again at all.
+      var now = baseTime;
+      final store = await _buildStore(tempDir, () => now);
+      const key = 'GET:/me';
+      var fetchCount = 0;
+
+      Future<CacheResult<Map<String, dynamic>>> read() =>
+          cachedRead<Map<String, dynamic>>(
+            key: key,
+            store: store,
+            fetch: () async {
+              fetchCount++;
+              return {'id': '$fetchCount'};
+            },
+            toJson: (v) => v,
+            fromJson: (m) => m,
+            ttl: const Duration(minutes: 5),
+          );
+
+      await read();
+      // Past the TTL, so the cache short-circuit does not hide the second call.
+      now = baseTime.add(const Duration(minutes: 6));
+      await read();
+
+      expect(fetchCount, 2);
     });
   });
 

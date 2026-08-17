@@ -11,6 +11,8 @@
 //     the given keys.  On failure, rethrows the typed Failure WITHOUT
 //     persisting any pending-write entry (online-only contract: writes never
 //     queue).
+//   • In-flight de-duplication: concurrent cachedReads of the SAME key on the
+//     same store share one request (see _inflightFor).
 
 import 'package:dio/dio.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
@@ -46,6 +48,34 @@ final class NetworkRequired<T> extends CacheResult<T> {
 }
 
 // ---------------------------------------------------------------------------
+// In-flight de-duplication
+// ---------------------------------------------------------------------------
+
+/// The reads currently awaiting the network, per [CacheStore], keyed by cache
+/// key.
+///
+/// Two providers can want the same key at the same instant — today
+/// `ProfileController` and the router's onboarding gate both read `GET:/me` on
+/// a cold start, and neither can see a cache entry the other has not written
+/// yet. Without a guard that is N round-trips for one logical read.
+///
+/// This is the same single-flight idiom as `AuthInterceptor._doRefresh`
+/// (`core/auth/auth_interceptor.dart`): the first caller stores its future, the
+/// rest join it, and `whenComplete` clears the slot. `whenComplete` — not
+/// `then` — is what keeps a FAILED read from stranding the key forever.
+///
+/// An [Expando] rather than a module-global map because the guard is per-store
+/// state: `cachedRead` is a free function, so it has no instance field to hang
+/// it on, and keying by cache key alone would let two stores (a test's temp box
+/// and another test's) collide on `GET:/me`. Entries are dropped with the store
+/// they belong to.
+final Expando<Map<String, Future<Object?>>> _inflightReads =
+    Expando<Map<String, Future<Object?>>>('cachedRead in-flight');
+
+Map<String, Future<Object?>> _inflightFor(CacheStore store) =>
+    _inflightReads[store] ??= <String, Future<Object?>>{};
+
+// ---------------------------------------------------------------------------
 // cachedRead
 // ---------------------------------------------------------------------------
 
@@ -54,13 +84,18 @@ final class NetworkRequired<T> extends CacheResult<T> {
 /// Semantics:
 /// 1. If [store.isFresh(key)] is true → return [Fresh] from cache immediately
 ///    (no network call).
-/// 2. Otherwise attempt the network [fetch].
-/// 3. On success → write-through via [store.putJson] and return [Fresh].
-/// 4. On a connectivity/transient-server failure ([NetworkFailure] /
+/// 2. If an identical read is already in flight → join it; no second request
+///    is issued and both callers get the same outcome (value OR error).
+/// 3. Otherwise attempt the network [fetch].
+/// 4. On success → write-through via [store.putJson] and return [Fresh].
+/// 5. On a connectivity/transient-server failure ([NetworkFailure] /
 ///    [ServerFailure]) WITH a cached value → [Stale]; WITHOUT one →
 ///    [NetworkRequired].
-/// 5. Any other failure (validation / auth / not-found / unknown) is REAL and
+/// 6. Any other failure (validation / auth / not-found / unknown) is REAL and
 ///    propagates to the caller — it is never masked as stale/offline.
+///
+/// Build [key] with `CacheKeys` (`core/cache/cache_keys.dart`) — never with an
+/// ad-hoc string — so that a write can name the keys it invalidates.
 Future<CacheResult<T>> cachedRead<T>({
   required String key,
   required CacheStore store,
@@ -77,6 +112,47 @@ Future<CacheResult<T>> cachedRead<T>({
     }
   }
 
+  // ── Join an identical read already in flight ────────────────────────────
+  final inflight = _inflightFor(store);
+  final joined = inflight[key];
+  if (joined != null) {
+    return await joined as CacheResult<T>;
+  }
+
+  // Registration must happen before the first `await` below, so that a caller
+  // running in the same microtask sees it. An async function body runs
+  // synchronously up to its first await, so _read starts fetching and returns
+  // its future without yielding first.
+  final read = _read<T>(
+    key: key,
+    store: store,
+    fetch: fetch,
+    toJson: toJson,
+    fromJson: fromJson,
+    ttl: ttl,
+  );
+
+  // `whenComplete`, so a failure clears the slot too — and a BLOCK body, not an
+  // arrow: `Map.remove` returns the removed value, and `whenComplete` waits on
+  // any Future its callback returns, so an arrow would hand it this very future
+  // and deadlock every read.
+  final future = read.whenComplete(() {
+    inflight.remove(key);
+  });
+  inflight[key] = future;
+
+  return await future;
+}
+
+/// The un-guarded read: everything [cachedRead] does once it owns the request.
+Future<CacheResult<T>> _read<T>({
+  required String key,
+  required CacheStore store,
+  required Future<T> Function() fetch,
+  required Map<String, dynamic> Function(T) toJson,
+  required T Function(Map<String, dynamic>) fromJson,
+  required Duration ttl,
+}) async {
   // ── Attempt network ─────────────────────────────────────────────────────
   try {
     final value = await fetch();

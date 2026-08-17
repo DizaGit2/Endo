@@ -5,6 +5,7 @@ import 'package:lumen/api/api/lumen_api_api.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/api/model/update_me_request.dart';
 import 'package:lumen/api/serializers.dart';
+import 'package:lumen/core/cache/cache_keys.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
 import 'package:lumen/core/error/failure.dart';
@@ -32,7 +33,10 @@ class MeRepository {
   final LumenApiApi _api;
   final CacheStore _store;
 
-  static const _key = 'GET:/me';
+  /// The profile key comes from the shared policy (`CacheKeys`) rather than
+  /// a literal here, so a write elsewhere that must invalidate the profile
+  /// cannot spell the key differently from this read.
+  static const _key = CacheKeys.profile;
 
   // ── getMe ──────────────────────────────────────────────────────────────────
 
@@ -58,7 +62,7 @@ class MeRepository {
       },
       toJson: _toJson,
       fromJson: _fromJson,
-      ttl: const Duration(minutes: 5),
+      ttl: CacheKeys.ttl,
     );
   }
 
