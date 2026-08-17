@@ -5,6 +5,8 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
+import 'package:lumen/shared/widgets/lumen_error_retry.dart';
+import 'package:lumen/shared/widgets/lumen_retry_button.dart';
 import 'package:lumen/shared/widgets/lumen_section_label.dart';
 
 // ---------------------------------------------------------------------------
@@ -40,7 +42,7 @@ class ProfileScreen extends ConsumerWidget {
           loading: () => const Center(
             child: CircularProgressIndicator(semanticsLabel: 'Loading profile'),
           ),
-          error: (e, _) => _ErrorBody(error: e),
+          error: (e, _) => const _ErrorBody(),
           data: (result) => _ProfileBody(result: result),
         ),
       ),
@@ -52,38 +54,19 @@ class ProfileScreen extends ConsumerWidget {
 // Error body
 // ---------------------------------------------------------------------------
 
+/// The generic failure surface.
+///
+/// The error object itself is deliberately not rendered: it can carry a server
+/// `detail` string, and this screen holds PII. The message is the same one the
+/// splash's gate-unavailable surface shows, from the same widget.
 class _ErrorBody extends ConsumerWidget {
-  const _ErrorBody({required this.error});
-  final Object error;
+  const _ErrorBody();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final c = Theme.of(context).extension<LumenColors>()!;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // liveRegion: true — announces the failure as soon as it renders,
-            // rather than relying on the user to swipe onto it.
-            Semantics(
-              liveRegion: true,
-              child: Text(
-                'Something went wrong. Please try again.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, color: c.muted),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _RetryButton(
-              label: 'Try again',
-              c: c,
-              onPressed: () => ref.invalidate(profileControllerProvider),
-            ),
-          ],
-        ),
-      ),
+    return LumenErrorRetry(
+      message: 'Something went wrong. Please try again.',
+      onRetry: () => ref.invalidate(profileControllerProvider),
     );
   }
 }
@@ -230,49 +213,13 @@ class _NetworkRequiredBody extends ConsumerWidget {
               style: TextStyle(fontSize: 13, color: c.muted),
             ),
             const SizedBox(height: 16),
-            _RetryButton(
+            LumenRetryButton(
               label: 'Retry',
-              c: c,
               onPressed: () => ref.invalidate(profileControllerProvider),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Retry button — shared outlined affordance for _ErrorBody/_NetworkRequiredBody
-// ---------------------------------------------------------------------------
-
-/// A secondary (outlined) retry affordance that calls back into
-/// [profileControllerProvider] via [onPressed] (`ref.invalidate` at the call
-/// site — this widget stays a dumb [StatelessWidget] so it has no Riverpod
-/// dependency of its own). Token colors only: [LumenColors.accent] for the
-/// label, [LumenColors.border] for the outline.
-class _RetryButton extends StatelessWidget {
-  const _RetryButton({
-    required this.label,
-    required this.c,
-    required this.onPressed,
-  });
-  final String label;
-  final LumenColors c;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: c.accent,
-        side: BorderSide(color: c.border),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-      ),
-      child: Text(label),
     );
   }
 }
@@ -471,60 +418,105 @@ class _EditButton extends ConsumerWidget {
   }
 
   Future<void> _showEditDialog(BuildContext context, WidgetRef ref) async {
-    final controller = TextEditingController(text: me.displayName ?? '');
+    // The dialog OWNS its controller (see [_EditDisplayNameDialog]); this
+    // function only receives the resulting text, or null if it was dismissed.
+    final entered = await showDialog<String>(
+      context: context,
+      builder: (_) => _EditDisplayNameDialog(initialValue: me.displayName ?? ''),
+    );
+
+    final name = entered?.trim() ?? '';
+    if (name.isEmpty) return;
+
     try {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Edit display name'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Display name'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed == true && controller.text.trim().isNotEmpty) {
-        try {
-          await ref
-              .read(profileControllerProvider.notifier)
-              .saveDisplayName(controller.text.trim());
-        } catch (_) {
-          // Online-only: the save failed and is NOT queued. Keep the profile on
-          // screen and tell the user to retry (no pending-write is persisted).
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                // liveRegion: true — same reasoning as _ErrorBanner/_ErrorBody:
-                // announce the failure as it appears.
-                // TODO(P4b): cover this liveRegion with a widget test —
-                // driving the edit dialog crashes the harness on a
-                // pre-existing AlertDialog/TextField teardown bug
-                // (reproduces on unmodified code, plain Cancel tap).
-                content: Semantics(
-                  liveRegion: true,
-                  child: const Text(
-                    'Could not save your changes. Please try again.',
-                  ),
-                ),
+      await ref
+          .read(profileControllerProvider.notifier)
+          .saveDisplayName(name);
+    } catch (_) {
+      // Online-only: the save failed and is NOT queued. Keep the profile on
+      // screen and tell the user to retry (no pending-write is persisted).
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            // liveRegion: true — same reasoning as LumenErrorBanner /
+            // LumenErrorRetry: announce the failure as it appears.
+            content: Semantics(
+              liveRegion: true,
+              child: const Text(
+                'Could not save your changes. Please try again.',
               ),
-            );
-          }
-        }
+            ),
+          ),
+        );
       }
-    } finally {
-      controller.dispose();
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Edit-display-name dialog
+// ---------------------------------------------------------------------------
+
+/// The edit dialog, as a [StatefulWidget] so that the [TextEditingController]
+/// belongs to the dialog's own subtree.
+///
+/// **This shape is the fix, not a style preference.** The controller used to be
+/// a local of `_showEditDialog`, disposed in a `finally`. `showDialog`'s future
+/// completes synchronously on `Navigator.pop`, so that `finally` ran one
+/// microtask later — while the route's ~150 ms exit transition was still
+/// playing. The pop moves focus off the dialog's `FocusScope`, `_TextFieldState`
+/// calls `setState`, `TextField.build` allocates a fresh `Listenable.merge`
+/// (which has no `==`), and `_AnimatedState.didUpdateWidget` calls
+/// `addListener` on the by-then-disposed controller.
+///
+/// In release that assert is compiled out and nothing user-visible happens, so
+/// this was never a device bug. What it cost was coverage: it made the
+/// save-failure SnackBar — a `liveRegion` accessibility affordance — impossible
+/// to reach from a widget test. Holding the controller in [State] ties its
+/// lifetime to the subtree, so it is disposed after the transition, not during.
+///
+/// Pops with the entered text on Save, and with `null` on Cancel — so the
+/// caller never needs to reach into a controller it does not own.
+class _EditDisplayNameDialog extends StatefulWidget {
+  const _EditDisplayNameDialog({required this.initialValue});
+
+  final String initialValue;
+
+  @override
+  State<_EditDisplayNameDialog> createState() => _EditDisplayNameDialogState();
+}
+
+class _EditDisplayNameDialogState extends State<_EditDisplayNameDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialValue,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit display name'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(labelText: 'Display name'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Save'),
+        ),
+      ],
+    );
   }
 }
 

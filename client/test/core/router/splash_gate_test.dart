@@ -21,6 +21,7 @@ import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
+import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../../support/harness.dart';
@@ -107,6 +108,12 @@ void main() {
     await tester.pump(const Duration(seconds: 9));
 
     expectLiveRegion(tester, 'Something went wrong. Please try again.');
+    // …and it is the ONE whole-surface failure widget, not this layer's own
+    // copy of it. T1 wrote `_GateUnavailableBody` as a verbatim copy of screen
+    // 31's `_ErrorBody` precisely so that P4b-T5 would collapse both onto
+    // `LumenErrorRetry`; without this line the copy could come back and every
+    // other assertion in this file would still pass.
+    expect(find.byType(LumenErrorRetry), findsOneWidget);
   });
 
   // -------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import 'package:lumen/features/onboarding/presentation/account_screen.dart';
 import 'package:lumen/features/onboarding/presentation/welcome_screen.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
 import 'package:lumen/features/shell/presentation/tab_placeholder_screen.dart';
+import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:lumen/shared/widgets/lumen_scaffold.dart';
 import 'package:lumen/shared/widgets/lumen_section_label.dart';
 
@@ -382,58 +383,19 @@ class _SplashScreen extends ConsumerWidget {
 /// Error + retry shown on the splash when the gate's `/me` read outran its
 /// bounded wait.
 ///
-/// Copy and shape are lifted verbatim from `profile_screen.dart`'s `_ErrorBody`
-/// / `_RetryButton` so the app has one retry pattern, not two. They are private
-/// copies on purpose: P4b-T5 promotes those affordances to `shared/widgets/`,
-/// and this call site collapses onto the shared one then.
+/// Copy and shape are screen 31's, because P4b-T5 collapsed both onto the same
+/// [LumenErrorRetry] — the app has one whole-surface failure pattern, not two.
+/// The only thing this call site owns is what "try again" means here: rebuild
+/// the controller, which is a fresh generation, back to `unknown` (spinner),
+/// and a new `/me` read.
 class _GateUnavailableBody extends ConsumerWidget {
   const _GateUnavailableBody();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final c = Theme.of(context).extension<LumenColors>()!;
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // liveRegion: true — announces the failure as soon as it renders,
-            // rather than relying on the user to swipe onto it.
-            Semantics(
-              liveRegion: true,
-              child: Text(
-                'Something went wrong. Please try again.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, color: c.muted),
-              ),
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton(
-              // Rebuilds the controller: a fresh generation, back to `unknown`
-              // (spinner), and a new `/me` read.
-              onPressed: () => ref.invalidate(onboardingStatusProvider),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: c.accent,
-                side: BorderSide(color: c.border),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 10,
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              child: const Text('Try again'),
-            ),
-          ],
-        ),
-      ),
+    return LumenErrorRetry(
+      message: 'Something went wrong. Please try again.',
+      onRetry: () => ref.invalidate(onboardingStatusProvider),
     );
   }
 }

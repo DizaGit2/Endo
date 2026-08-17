@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/onboarding/application/account_controller.dart';
+import 'package:lumen/shared/widgets/lumen_error_banner.dart';
+import 'package:lumen/shared/widgets/lumen_input_field.dart';
 import 'package:lumen/shared/widgets/lumen_section_label.dart';
+import 'package:lumen/shared/widgets/lumen_step_dots.dart';
 
 // D-01: social login deferred to phase 2.
 // The mockup shows "Apple · Google" buttons — omitted in v1 (Keycloak email/
@@ -125,10 +128,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         // Name field
                         _FieldLabel('Name', color: c.muted),
                         const SizedBox(height: 6),
-                        _InputField(
+                        LumenInputField(
                           controller: _nameCtrl,
                           hint: 'Maya',
-                          colors: c,
                           enabled: !isLoading,
                         ),
 
@@ -137,10 +139,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         // Email field
                         _FieldLabel('Email', color: c.muted),
                         const SizedBox(height: 6),
-                        _InputField(
+                        LumenInputField(
                           controller: _emailCtrl,
                           hint: 'you@example.com',
-                          colors: c,
                           keyboardType: TextInputType.emailAddress,
                           enabled: !isLoading,
                         ),
@@ -150,10 +151,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         // Password field
                         _FieldLabel('Password', color: c.muted),
                         const SizedBox(height: 6),
-                        _InputField(
+                        LumenInputField(
                           controller: _passwordCtrl,
                           hint: '••••••••',
-                          colors: c,
                           obscure: true,
                           enabled: !isLoading,
                         ),
@@ -163,7 +163,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         // Inline error message
                         if (errorMessage != null) ...[
                           const SizedBox(height: 16),
-                          _ErrorBanner(message: errorMessage, colors: c),
+                          LumenErrorBanner(message: errorMessage),
                         ],
 
                         const SizedBox(height: 16),
@@ -219,19 +219,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         const SizedBox(height: 18),
 
                         // Step-indicator dots (7 total, second is active)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            for (var i = 0; i < 7; i++) ...[
-                              if (i > 0) const SizedBox(width: 6),
-                              _StepDot(
-                                active: i == 1,
-                                color: c.accent,
-                                border: c.border,
-                              ),
-                            ],
-                          ],
-                        ),
+                        const LumenStepDots(count: 7, activeIndex: 1),
                       ],
                     ),
                   ),
@@ -273,123 +261,3 @@ class _FieldLabel extends StatelessWidget {
   }
 }
 
-class _InputField extends StatelessWidget {
-  const _InputField({
-    required this.controller,
-    required this.hint,
-    required this.colors,
-    this.obscure = false,
-    this.keyboardType,
-    this.enabled = true,
-  });
-
-  final TextEditingController controller;
-  final String hint;
-  final LumenColors colors;
-  final bool obscure;
-  final TextInputType? keyboardType;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      keyboardType: keyboardType,
-      enabled: enabled,
-      style: TextStyle(fontSize: 14, color: colors.ink),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(
-          color: colors.muted.withValues(alpha: 0.6),
-          fontSize: 14,
-          fontWeight: FontWeight.w400,
-        ),
-        filled: true,
-        fillColor: colors.input,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 13,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colors.border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colors.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colors.accent),
-        ),
-        disabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colors.border),
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message, required this.colors});
-  final String message;
-  final LumenColors colors;
-
-  @override
-  Widget build(BuildContext context) {
-    // liveRegion: true — a screen reader announces this banner as soon as it
-    // appears, rather than staying silent about a failed registration/sign-in
-    // attempt until the user happens to swipe onto it.
-    return Semantics(
-      liveRegion: true,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: colors.accentSoft,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: colors.accent.withValues(alpha: 0.3)),
-        ),
-        child: Text(
-          message,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w400,
-            color: colors.accent,
-            height: 1.4,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A single step-indicator dot.
-///
-/// Active: accent colour, wider (18×6) pill. Inactive: border colour, circle.
-class _StepDot extends StatelessWidget {
-  const _StepDot({
-    required this.active,
-    required this.color,
-    required this.border,
-  });
-
-  final bool active;
-  final Color color;
-  final Color border;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      width: active ? 18 : 6,
-      height: 6,
-      decoration: BoxDecoration(
-        color: active ? color : border,
-        borderRadius: BorderRadius.circular(active ? 3 : 50),
-      ),
-    );
-  }
-}

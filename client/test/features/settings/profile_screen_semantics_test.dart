@@ -63,6 +63,29 @@ class _NetworkRequiredProfileController extends ProfileController {
       const NetworkRequired<MeResponse>(NetworkFailure());
 }
 
+/// Loads fine; the write fails. The screen must keep the profile on screen and
+/// tell the user to retry (online-only: nothing is queued).
+class _SaveFailsProfileController extends ProfileController {
+  @override
+  Future<CacheResult<MeResponse>> build() async => Fresh(meResponseFixture());
+
+  @override
+  Future<void> saveDisplayName(String name) async {
+    throw const ServerFailure();
+  }
+}
+
+/// Records what the screen actually asked to be saved.
+class _RecordingProfileController extends ProfileController {
+  final saved = <String>[];
+
+  @override
+  Future<CacheResult<MeResponse>> build() async => Fresh(meResponseFixture());
+
+  @override
+  Future<void> saveDisplayName(String name) async => saved.add(name);
+}
+
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
@@ -228,35 +251,98 @@ void main() {
     },
   );
 
-  // NOTE: no automated test drives the edit dialog's save-failure SnackBar
-  // (the third liveRegion target: "profile inline edit error"). Opening
-  // _showEditDialog's AlertDialog and closing it — via Cancel, via Save with
-  // unchanged text, or via Save with a real save-failure — crashes the test.
+  // -------------------------------------------------------------------------
+  // The edit dialog (P4b-T5 — previously untestable, see below)
+  // -------------------------------------------------------------------------
   //
-  // P4b-T3 ran the two harnesses side by side (identical steps, one via
-  // pumpApp, one via the old hand-rolled ProviderScope+MaterialApp `_wrap`)
-  // and got the SAME failure from both, so the shared harness is not the
-  // cause. It also surfaced the FIRST error, which the P3c note did not have:
+  // These four tests were impossible before T5. Opening `_showEditDialog`'s
+  // AlertDialog and closing it — via Cancel, or via Save — crashed the harness:
   //
   //     A TextEditingController was used after being disposed.
   //     #2  ChangeNotifier.addListener
   //     #3  _MergingListenable.addListener
   //     #4  _AnimatedState.didUpdateWidget   (widgets/transitions.dart)
   //
-  // "Tried to build dirty widget in the wrong build scope" is the cascade, not
-  // the bug. The bug is lifetime: `_showEditDialog` disposes its local
-  // TextEditingController in a `finally` that runs the moment
+  // The cause was lifetime, not the harness (P4b-T3 reproduced it identically
+  // under the old hand-rolled `_wrap`): the controller was a local of
+  // `_showEditDialog`, disposed in a `finally` that runs the moment
   // `showDialog`'s future completes — i.e. on `Navigator.pop`, while the
-  // dialog's EXIT transition is still running. The TextField's
-  // InputDecorator re-subscribes its floating-label AnimatedBuilder to a
-  // merged listenable that includes that controller during the exit frames,
-  // by which time it is disposed.
+  // route's ~150 ms exit transition is still running and the TextField is
+  // still rebuilding against it. T5 moved the controller into the State of the
+  // dialog's own StatefulWidget, so it now outlives the transition.
   //
-  // Left alone deliberately (out of scope for T3, and T5 is expected to move
-  // this flow onto LumenBottomSheet anyway). The fix, when someone takes it:
-  // outlive the route with the controller — dispose it after the transition
-  // completes, or hold it in the State of a StatefulWidget that IS the dialog
-  // content. See profile_screen.dart's `_showEditDialog` and its TODO(P4b).
+  // The save-failure SnackBar is the point of the exercise: it is a liveRegion
+  // accessibility affordance that had ZERO coverage, because the only route to
+  // it was through this dialog.
+
+  testWidgetsWithSemantics(
+    'A failed save announces itself via a live region',
+    (tester) async {
+      await _pump(tester, _SaveFailsProfileController.new);
+
+      await tester.tap(find.bySemanticsLabel('Edit'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit display name'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'Maya Nueva');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expectLiveRegion(
+        tester,
+        'Could not save your changes. Please try again.',
+      );
+    },
+  );
+
+  testWidgets('Saving a new name calls the controller with the trimmed text', (
+    tester,
+  ) async {
+    final controller = _RecordingProfileController();
+    await _pump(tester, () => controller);
+
+    await tester.tap(find.bySemanticsLabel('Edit'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '  Maya Nueva  ');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(controller.saved, <String>['Maya Nueva']);
+    // A successful save says nothing — the SnackBar is a failure affordance.
+    expect(
+      find.text('Could not save your changes. Please try again.'),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Cancel closes the dialog without saving', (tester) async {
+    // The plain-Cancel case is the one that reproduced the teardown crash on
+    // otherwise unmodified code.
+    final controller = _RecordingProfileController();
+    await _pump(tester, () => controller);
+
+    await tester.tap(find.bySemanticsLabel('Edit'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Discarded');
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit display name'), findsNothing);
+    expect(controller.saved, isEmpty);
+  });
+
+  testWidgets('Saving a blank name does not write it', (tester) async {
+    final controller = _RecordingProfileController();
+    await _pump(tester, () => controller);
+
+    await tester.tap(find.bySemanticsLabel('Edit'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '   ');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(controller.saved, isEmpty);
+  });
 
   testWidgets('Forward-chevron dingbats are replaced by real Icons', (
     tester,
