@@ -13,6 +13,11 @@ import 'package:lumen/shared/widgets/lumen_error_banner.dart';
 
 import '../support/harness.dart';
 
+// The live-region assertion that used to live here now lives in
+// `lumen_error_banner_semantics_test.dart`, which the widget registry requires
+// and which owns everything this banner announces. It moved rather than being
+// duplicated: two copies of the assertion is two places to weaken it.
+
 Future<void> _pumpBanner(
   WidgetTester tester, {
   String message = 'A server error occurred. Please try again later.',
@@ -41,15 +46,6 @@ void main() {
     await _pumpBanner(tester, message: 'That email is already registered.');
 
     expect(find.text('That email is already registered.'), findsOneWidget);
-  });
-
-  testWidgetsWithSemantics('announces itself as a live region', (tester) async {
-    // The single most load-bearing assertion here: a banner that appears after
-    // a failed write and is NOT a live region is silent for a screen-reader
-    // user until they happen to swipe onto it.
-    await _pumpBanner(tester, message: 'Could not save your changes.');
-
-    expectLiveRegion(tester, 'Could not save your changes.');
   });
 
   testWidgets('sits on accent-soft with a 30%-accent hairline, radius 12', (

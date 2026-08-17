@@ -51,6 +51,103 @@
 // filenames come out right by construction. Regenerate the PNGs with
 // `flutter test --update-goldens --tags golden`.
 //
+// ---------------------------------------------------------------------------
+// THE WIDGET RULE — every shared widget ships with the same coverage
+// (P4b-T5b, ruling R-07)
+// ---------------------------------------------------------------------------
+//
+// The screen rule above cannot see `lib/shared/widgets/`: it requires
+// `lib/features/**`, a `presentation/` segment AND a `_screen.dart` suffix, and
+// derives its test directory from that layout. So there is a SECOND discovery
+// rule, stated here beside the first because the same thirteen tasks read both.
+//
+// ## The unit is the WIDGET, not the file
+//
+// `lumen_scaffold.dart` declares two: `LumenScaffold` and `LumenBottomNav`. A
+// per-file rule would have called that file covered off the first widget's
+// artifacts while the second shipped with no golden and no semantics test —
+// which is exactly what had happened. So every PUBLIC widget class discovered
+// under `lib/shared/widgets/**.dart` is its own subject, artifacts are named
+// after the WIDGET in snake_case, and every failure names the widget and the
+// file it was declared in:
+//
+//     LumenBottomNav  (declared in lib/shared/widgets/lumen_scaffold.dart)
+//         MISSING: test/widgets/lumen_bottom_nav_golden_test.dart …
+//
+// A file whose single widget is named after it (the norm, and the convention
+// for new files) is unaffected: `LumenErrorBanner` in `lumen_error_banner.dart`
+// owes `lumen_error_banner_*` either way.
+//
+// ## The naming convention
+//
+// For a public widget `LumenFooBar` declared in
+// `lib/shared/widgets/<subdir?>/<file>.dart`, all four of these must exist in
+// the MIRRORED test directory `test/widgets/<subdir?>/`:
+//
+//   1. `lumen_foo_bar_golden_test.dart`            — declares the goldens
+//   2. `goldens/ci/lumen_foo_bar_light.png`        — committed
+//   3. `goldens/ci/lumen_foo_bar_dark.png`         — committed
+//   4. `lumen_foo_bar_semantics_test.dart`         — declares a widget test,
+//                                                    NAMES the widget, and
+//                                                    calls at least one
+//                                                    `a11y_guard.dart` matcher
+//
+// The directory is `lib` -> `test` with the `shared` segment dropped, exactly
+// as the screen rule maps `lib` -> `test` and drops `presentation`. Every
+// widget lives directly in `lib/shared/widgets/` today, so every test lives
+// directly in `test/widgets/` — but subdirectories are MIRRORED, not
+// flattened: a widget at `lib/shared/widgets/forms/lumen_date_field.dart` owes
+// its four artifacts under `test/widgets/forms/`. (Pinned by
+// `a widget in a subdirectory owes its artifacts in the MIRRORED test dir`.)
+//
+// Item 4's "names the widget" is a real gate, not a description: the file must
+// mention `LumenFooBar` as an identifier in live code. See the section below.
+//
+// ## Why the widget's semantics gate is not `expectNoDingbats`
+//
+// Because `expectNoDingbats` fails a tree with no `Text` in it. For a screen
+// that is correct — it means the harness never mounted anything — but a widget
+// is allowed to render no text at all, and `LumenStepDots` is seven coloured
+// boxes. So the widget gate asks for ANY of the matchers `a11y_guard.dart`
+// declares (`expectNoDingbats`, `expectLabeledButton`, `expectNoButtons`,
+// `expectLiveRegion`, `expectLabeledField`, …). The vocabulary is discovered by
+// parsing that file, not hand-listed here, so a matcher a later task adds
+// counts on the day it is written.
+//
+// ## … and why the file must also NAME its widget
+//
+// Dropping `expectNoDingbats` dropped something else with it. That matcher
+// asserts `texts, isNotEmpty`, so it fails a tree the screen was never mounted
+// into — it was the screens' anti-vacuity guard as much as the dingbat rule.
+// Nothing in this vocabulary can play that part: `expectNoButtons(tester)` and
+// `expectNoDingbats(tester)` take no finder, so
+//
+//     testWidgetsWithSemantics('a11y', (t) async {
+//       await pumpApp(t, home: const Text('x'));   // NOT the widget
+//       expectNoButtons(t);
+//     });
+//
+// passes at runtime and would have satisfied a matcher-only gate while the
+// widget shipped untested and the registry stayed green.
+//
+// So the semantics file must also NAME its subject: `LumenFooBar` has to appear
+// as an identifier in the parsed file. A name in a comment or in the text of a
+// string is not an identifier node, so it does not count — the same structural
+// property the other gates have.
+//
+// The gate still has teeth: `expect(find.byType(Foo), findsOneWidget)` does not
+// satisfy it, and neither does mounting the widget and asserting nothing. What
+// it does not prove is that the mount is what the matcher inspected; that needs
+// execution, and `describeGateSemantics` states the limit.
+//
+// ## What is NOT gated
+//
+// Private widgets (`_StepDot`), classes with no `extends` clause (a Dart class
+// can only be a widget by extending one), and the bases in
+// `kNonWidgetSuperclasses`. Anything else public that this rule cannot classify
+// is REPORTED rather than skipped — see `a public class the rule cannot
+// classify is reported, not skipped`.
+//
 // ## Why the PNGs and the `expectNoDingbats` call are part of the rule
 //
 // Because otherwise an empty file named `foo_screen_golden_test.dart` passes.
@@ -93,6 +190,13 @@ import '../support/screen_registry.dart';
 /// missing test instead — it is three lines with `test/support/a11y_guard.dart`
 /// and `goldenTestLightAndDark`.
 const kScreenCoverageExemptions = <String, String>{};
+
+/// `<file>#<WidgetName>` -> the reason it is exempt, and what is owed.
+///
+/// Also EMPTY. P4b-T5b backfilled all eight uncovered widgets rather than
+/// parking any of them, and the stale-exemption guard below means an entry
+/// cannot outlive its gap.
+const kWidgetCoverageExemptions = <String, String>{};
 
 void main() {
   // -------------------------------------------------------------------------
@@ -162,6 +266,111 @@ void main() {
             'These screens are now fully covered but are still listed in '
             'kScreenCoverageExemptions. Delete the entries — a permanent '
             'exemption list is how the rule stops meaning anything.',
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // The widget rule, against the real tree
+  // -------------------------------------------------------------------------
+
+  group('widget registry', () {
+    late Directory packageRoot;
+    late List<WidgetCoverage> reports;
+
+    setUpAll(() {
+      packageRoot = resolvePackageRoot();
+      reports = auditWidgetCoverage(
+        packageRoot,
+        exemptions: kWidgetCoverageExemptions,
+      );
+    });
+
+    test('discovers the shared widgets that exist on disk', () {
+      // Same canary as the screens': a rule that finds nothing enforces
+      // nothing. Both halves matter — the files, and the widget classes parsed
+      // out of them.
+      expect(
+        discoverSharedWidgetFiles(packageRoot),
+        isNotEmpty,
+        reason:
+            'No .dart files found under ${packageRoot.path}/lib/shared/widgets '
+            '— the widget discovery glob is broken.',
+      );
+      expect(
+        reports,
+        isNotEmpty,
+        reason:
+            'Files were found but no public widget was parsed out of any of '
+            'them, so the rule requires nothing of anybody.',
+      );
+    });
+
+    test('the a11y matcher vocabulary is read off a11y_guard.dart', () {
+      // The widget semantics gate is satisfiable only by these names, so a
+      // vocabulary that silently came back empty would make every widget look
+      // uncovered — and the cheap "fix" for that is to delete the gate.
+      final matchers = discoverA11yMatchers(packageRoot);
+
+      expect(matchers, contains('expectNoDingbats'));
+      expect(matchers, contains('expectLabeledButton'));
+      expect(
+        matchers,
+        isNot(contains('testWidgetsWithSemantics')),
+        reason:
+            'Only the expect… assertions are matchers; the declarer wrapper is '
+            'not one, or "declares a test" would satisfy "asserts something".',
+      );
+    });
+
+    test('every shared widget has a golden test, its PNGs, and a semantics '
+        'test', () {
+      final failure = describeUncoveredWidgets(reports);
+      expect(failure, isNull, reason: failure ?? '');
+    });
+
+    test('LumenBottomNav is a subject in its own right', () {
+      // The multi-widget file, pinned by name. `lumen_scaffold.dart` declares
+      // two widgets; a per-FILE rule would report it covered off
+      // `LumenScaffold`'s artifacts alone, which is how the second widget
+      // shipped with no golden and no semantics test in the first place.
+      expect(
+        reports.map((r) => r.id),
+        containsAll(<String>[
+          'lib/shared/widgets/lumen_scaffold.dart#LumenScaffold',
+          'lib/shared/widgets/lumen_scaffold.dart#LumenBottomNav',
+        ]),
+      );
+
+      // And its artifacts are named after IT. Without this the rule could
+      // enumerate both widgets and still look them both up under
+      // `lumen_scaffold_*`, which exists — so the tree would be green while
+      // LumenBottomNav had no golden of its own.
+      final nav = reports.singleWhere((r) => r.subject == 'LumenBottomNav');
+      expect(nav.artifactStem, 'lumen_bottom_nav');
+      expect(nav.testDir, 'test/widgets');
+    });
+
+    test('no public widget under lib/shared escapes the widgets/ glob', () {
+      final escaped = widgetsEscapingTheSharedGlob(packageRoot);
+
+      // The message comes from the mechanism, not from this reason: the canary
+      // carries two kinds of escapee (a widget, and a class the rule cannot
+      // classify) and they do NOT have the same remedy.
+      expect(
+        escaped.map((w) => w.id).toList()..sort(),
+        isEmpty,
+        reason: describeEscapedWidgets(escaped),
+      );
+    });
+
+    test('no widget exemption outlives the gap it was granted for', () {
+      expect(
+        staleWidgetExemptions(reports).map((r) => r.id),
+        isEmpty,
+        reason:
+            'These widgets are now fully covered but are still listed in '
+            'kWidgetCoverageExemptions. Delete the entries.',
       );
     });
   });
@@ -769,6 +978,581 @@ void main() {
       expect(calls.callsNoDingbatGuard(), isFalse);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // The widget rule is falsifiable
+  // -------------------------------------------------------------------------
+  //
+  // Same discipline as the screen rule's fixtures: hermetic package trees under
+  // `Directory.systemTemp`, so the real tree can stay green while every branch
+  // of the rule is watched to fail.
+
+  group('widget registry is falsifiable', () {
+    late Directory fixture;
+
+    setUp(() {
+      fixture = Directory.systemTemp.createTempSync('widget_registry_');
+      File('${fixture.path}/pubspec.yaml').writeAsStringSync('name: fixture\n');
+      // Every fixture gets a guard file, because the vocabulary is DISCOVERED
+      // from one — see `the matcher vocabulary is read from the guard file`.
+      _writeA11yGuard(fixture);
+    });
+
+    tearDown(() => fixture.deleteSync(recursive: true));
+
+    test('a widget with NO tests is reported, naming all four artifacts', () {
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+
+      final reports = auditWidgetCoverage(fixture);
+      expect(reports, hasLength(1));
+      expect(reports.single.isCovered, isFalse);
+
+      final message = describeUncoveredWidgets(reports)!;
+      expect(message, contains('LumenGhost'));
+      expect(message, contains('lib/shared/widgets/lumen_ghost.dart'));
+      expect(message, contains('test/widgets/lumen_ghost_golden_test.dart'));
+      expect(message, contains('test/widgets/goldens/ci/lumen_ghost_light.png'));
+      expect(message, contains('test/widgets/goldens/ci/lumen_ghost_dark.png'));
+      expect(message, contains('test/widgets/lumen_ghost_semantics_test.dart'));
+    });
+
+    test('a fully covered widget is reported clean', () {
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(fixture, stem: 'lumen_ghost');
+
+      expect(describeUncoveredWidgets(auditWidgetCoverage(fixture)), isNull);
+    });
+
+    test('a file declaring TWO widgets owes TWO artifact sets', () {
+      // The `lumen_scaffold.dart` case, hermetically. Covering the first widget
+      // is what a per-FILE rule would have accepted; here the second is still
+      // reported, by NAME, with the file it was declared in.
+      _writeWidgetFile(
+        fixture,
+        file: 'lumen_ghost.dart',
+        widgets: ['LumenGhost', 'LumenGhostBar'],
+      );
+      _writeWidgetCoverage(fixture, stem: 'lumen_ghost');
+
+      final reports = auditWidgetCoverage(fixture);
+      expect(reports.map((r) => r.subject), ['LumenGhost', 'LumenGhostBar']);
+      expect(reports.first.isCovered, isTrue);
+
+      final message = describeUncoveredWidgets(reports)!;
+      expect(message, contains('1 shared widget(s)'));
+      expect(
+        message,
+        contains('LumenGhostBar  (declared in lib/shared/widgets/lumen_ghost.dart)'),
+        reason:
+            'The failure has to name the widget AND its file: "lumen_ghost.dart '
+            'is uncovered" is unactionable when the file is covered for one of '
+            'the two widgets in it.',
+      );
+      // Named after the WIDGET, not the file it shares.
+      expect(message, contains('test/widgets/lumen_ghost_bar_golden_test.dart'));
+    });
+
+    test('artifacts are named after the widget, in snake_case', () {
+      expect(snakeCase('LumenBottomNav'), 'lumen_bottom_nav');
+      expect(snakeCase('LumenScaffold'), 'lumen_scaffold');
+      // An acronym run keeps its boundary at the LAST capital, so a future
+      // `LumenOCRField` does not become `lumen_ocrfield`.
+      expect(snakeCase('LumenOCRField'), 'lumen_ocr_field');
+    });
+
+    test('a private widget class is not a subject', () {
+      _writeWidgetFile(
+        fixture,
+        file: 'lumen_ghost.dart',
+        widgets: ['LumenGhost'],
+        extra: 'class _GhostDot extends StatelessWidget {}\n',
+      );
+      _writeWidgetCoverage(fixture, stem: 'lumen_ghost');
+
+      expect(auditWidgetCoverage(fixture).map((r) => r.subject), ['LumenGhost']);
+      expect(describeUncoveredWidgets(auditWidgetCoverage(fixture)), isNull);
+    });
+
+    test('a known non-widget base is not a subject', () {
+      _writeWidgetFile(
+        fixture,
+        file: 'lumen_ghost.dart',
+        widgets: ['LumenGhost'],
+        extra: 'class LumenGhostState extends State<LumenGhost> {}\n',
+      );
+      _writeWidgetCoverage(fixture, stem: 'lumen_ghost');
+
+      expect(describeUncoveredWidgets(auditWidgetCoverage(fixture)), isNull);
+    });
+
+    test('a public class the rule cannot classify is reported, not skipped', () {
+      // Fail closed. An unrecognised base COULD be a widget (a project-local
+      // base class, a package's), and quietly ignoring what it does not
+      // understand is how a rule acquires a hole.
+      _writeWidgetFile(
+        fixture,
+        file: 'lumen_ghost.dart',
+        widgets: ['LumenGhost'],
+        extra: 'class LumenSpectre extends SomeLocalBase {}\n',
+      );
+      _writeWidgetCoverage(fixture, stem: 'lumen_ghost');
+
+      final message = describeUncoveredWidgets(auditWidgetCoverage(fixture))!;
+      expect(message, contains('LumenSpectre extends SomeLocalBase'));
+      expect(message, contains('kWidgetSuperclasses'));
+      expect(message, contains('kNonWidgetSuperclasses'));
+    });
+
+    test('a widget file that declares no public widget is reported', () {
+      // Not a coverage gap so much as a hole in the gate: a file sitting in
+      // lib/shared/widgets/ that the rule requires nothing of.
+      File('${fixture.path}/lib/shared/widgets/helpers.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('int twice(int x) => x * 2;\n');
+
+      final message = describeUncoveredWidgets(auditWidgetCoverage(fixture))!;
+      expect(message, contains('declares no public widget'));
+      expect(message, contains('lib/shared/widgets/helpers.dart'));
+    });
+
+    test('a widget file that does not parse is reported as a gap', () {
+      File('${fixture.path}/lib/shared/widgets/lumen_ghost.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('class LumenGhost extends StatelessWidget {\n');
+
+      final message = describeUncoveredWidgets(auditWidgetCoverage(fixture))!;
+      expect(message, contains('does not parse'));
+    });
+
+    test('a semantics test that asserts nothing does not satisfy the gate', () {
+      // The whole point of the second gate. This file declares a widget test,
+      // mounts something and checks it rendered — which is what "we have a
+      // test" usually means and is not accessibility coverage.
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_ghost',
+        semanticsSource:
+            "void main() { testWidgets('renders', (t) async { "
+            'expect(find.byType(LumenGhost), findsOneWidget); }); }\n',
+      );
+
+      final message = describeUncoveredWidgets(auditWidgetCoverage(fixture))!;
+      expect(message, contains('makes no accessibility assertion'));
+      // The message lists what WOULD satisfy it, so nobody has to go looking.
+      expect(message, contains('expectNoDingbats'));
+    });
+
+    test('ANY a11y_guard matcher satisfies the gate, not just dingbats', () {
+      // The widget rule's deliberate difference from the screen rule: a widget
+      // that renders no Text (LumenStepDots) cannot call expectNoDingbats,
+      // which fails an empty-Text tree by design. It still has to MOUNT its
+      // subject — see the next test, which is the half this fixture used to
+      // codify as acceptable.
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_ghost',
+        semanticsSource: _widgetSemanticsSource(matcher: 'expectNoButtons'),
+      );
+
+      expect(describeUncoveredWidgets(auditWidgetCoverage(fixture)), isNull);
+    });
+
+    test('a semantics test that never mounts its subject FAILS', () {
+      // The vacuity a matcher-only gate allowed. Every matcher a text-free
+      // widget can use (expectNoButtons, expectNoDingbats) takes no finder, so
+      // this file passes at runtime while asserting nothing whatsoever about
+      // LumenGhost.
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_ghost',
+        semanticsSource: _neverMountsSource(),
+      );
+
+      final message = describeUncoveredWidgets(auditWidgetCoverage(fixture))!;
+      expect(message, contains('never names LumenGhost in live code'));
+      // And it is not the OTHER half complaining: this file does call a
+      // matcher.
+      expect(message, isNot(contains('makes no accessibility assertion')));
+    });
+
+    test('a MENTION of the subject is not a mount', () {
+      // The subject binding is structural, like every other gate here: a
+      // comment or a string naming the widget contains no identifier node.
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_ghost',
+        semanticsSource:
+            '// TODO: mount LumenGhost here once the fixture exists\n'
+            "const owed = 'LumenGhost';\n"
+            '${_neverMountsSource()}',
+      );
+
+      expect(
+        describeUncoveredWidgets(auditWidgetCoverage(fixture)),
+        contains('never names LumenGhost in live code'),
+      );
+    });
+
+    test('a DOC comment naming the subject is not a mount', () {
+      // The form that survived round 1, and the one this repo actually writes:
+      // `/// Pumps [LumenGhost] under the harness` on a helper. A doc comment is
+      // part of the AST — `[LumenGhost]` is a CommentReference holding a real
+      // SimpleIdentifier — so the visitor has to refuse it on purpose. Left
+      // alone, a helper's dartdoc keeps the gate green forever after the helper
+      // stops pumping the widget.
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_ghost',
+        semanticsSource:
+            '/// Pumps [LumenGhost] under the harness.\n'
+            '${_neverMountsSource()}',
+      );
+
+      expect(
+        describeUncoveredWidgets(auditWidgetCoverage(fixture)),
+        contains('never names LumenGhost in live code'),
+      );
+    });
+
+    test('an import combinator naming the subject is not a mount', () {
+      // `show LumenGhost` names it without using it, and is what a file left
+      // behind after its last real reference was deleted looks like.
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_ghost',
+        semanticsSource:
+            "import 'package:fixture/lumen_ghost.dart' show LumenGhost;\n"
+            '${_neverMountsSource()}',
+      );
+
+      expect(
+        describeUncoveredWidgets(auditWidgetCoverage(fixture)),
+        contains('never names LumenGhost in live code'),
+      );
+    });
+
+    test('a hide combinator naming the subject is not a mount', () {
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_ghost',
+        semanticsSource:
+            "import 'package:fixture/everything.dart' hide LumenGhost;\n"
+            '${_neverMountsSource()}',
+      );
+
+      expect(
+        describeUncoveredWidgets(auditWidgetCoverage(fixture)),
+        contains('never names LumenGhost in live code'),
+      );
+    });
+
+    test('refusing doc comments does not change what a file DECLARES', () {
+      // The other direction: the three overrides must not cost the file its
+      // invocations. A comment cannot contain one, so this is an equality, not
+      // a hope.
+      const documented = """
+/// Pumps [LumenGhost]. See [expectNoDingbats] and [goldenTestLightAndDark].
+void main() {
+  testWidgetsWithSemantics('a11y', (t) async {
+    await pumpApp(t, home: const LumenGhost());
+    expectNoDingbats(t);
+  });
+}
+""";
+
+      final calls = parseTestCalls(documented);
+
+      expect(calls.declaresAWidgetTest(), isTrue);
+      expect(calls.callsNoDingbatGuard(), isTrue);
+      expect(calls.mentions('LumenGhost'), isTrue, reason: 'It IS mounted.');
+      // Named only in the doc comment, nowhere in live code.
+      expect(calls.mentions('goldenTestLightAndDark'), isFalse);
+      expect(calls.declaresAGolden(), isFalse);
+    });
+
+    test('naming the subject through a finder counts as much as building it', () {
+      // find.byType(LumenGhost) names the type through a SimpleIdentifier
+      // rather than a NamedType. Both are live code and both must count, or a
+      // legitimate test that pumps through a local helper would be rejected.
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_ghost',
+        semanticsSource:
+            "void main() { testWidgetsWithSemantics('a11y', (t) async { "
+            'await pumpGhost(t); '
+            "expectLabeledButton(t, find.byType(LumenGhost), 'x'); }); }\n",
+      );
+
+      expect(describeUncoveredWidgets(auditWidgetCoverage(fixture)), isNull);
+    });
+
+    test('a subject named only inside a skipped test does not count', () {
+      // Consistent with the skip: true rule the declaration gates already have
+      // — everything inside a skipped declaration is dead, the mount included.
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_ghost',
+        semanticsSource:
+            "void main() { testWidgetsWithSemantics('a11y', (t) async { "
+            'await pumpApp(t, home: const LumenGhost()); expectNoButtons(t); }, '
+            'skip: true); }\n',
+      );
+
+      final message = describeUncoveredWidgets(auditWidgetCoverage(fixture))!;
+      expect(message, contains('declares no testWidgets'));
+      expect(message, contains('never names LumenGhost in live code'));
+    });
+
+    test('the matcher vocabulary is read from the guard file, not hand-listed',
+        () {
+      // Both directions, against a guard file that declares ONE matcher nobody
+      // has ever written: a test calling it passes, and a test calling the real
+      // repo's `expectNoDingbats` — absent from THIS guard file — fails.
+      _writeA11yGuard(fixture, matchers: const ['expectTheSkyIsBlue']);
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_ghost',
+        semanticsSource: _widgetSemanticsSource(matcher: 'expectTheSkyIsBlue'),
+      );
+      expect(
+        describeUncoveredWidgets(auditWidgetCoverage(fixture)),
+        isNull,
+        reason: 'A matcher the guard file declares must count.',
+      );
+
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_ghost',
+        semanticsSource: _widgetSemanticsSource(),
+      );
+      expect(
+        describeUncoveredWidgets(auditWidgetCoverage(fixture)),
+        contains('makes no accessibility assertion'),
+        reason:
+            'A name that is NOT in this package\'s guard file must not count, '
+            'or the vocabulary is a constant with extra steps.',
+      );
+    });
+
+    test('a MENTION of a matcher does not satisfy the widget gate', () {
+      // Inherited from the screen gates, pinned on the widget path: the check
+      // is over the parsed AST, so a comment or a string cannot satisfy it.
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_ghost',
+        semanticsSource:
+            '// expectNoDingbats(tester) — commented out while debugging\n'
+            "const note = 'expectNoDingbats(t)';\n"
+            "void main() { testWidgetsWithSemantics('x', (t) async { "
+            'await pumpApp(t, home: const LumenGhost()); }); }\n',
+      );
+
+      final message = describeUncoveredWidgets(auditWidgetCoverage(fixture))!;
+      expect(message, contains('makes no accessibility assertion'));
+    });
+
+    test('a package with no a11y_guard.dart fails LOUDLY', () {
+      // Fail closed: an empty vocabulary would make the gate unsatisfiable,
+      // and the cheapest way out of an unsatisfiable gate is deleting it.
+      File('${fixture.path}/test/support/a11y_guard.dart').deleteSync();
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+
+      expect(
+        () => auditWidgetCoverage(fixture),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('test/support/a11y_guard.dart'),
+          ),
+        ),
+      );
+    });
+
+    test('a guard file that declares no matcher fails LOUDLY', () {
+      _writeA11yGuard(fixture, matchers: const []);
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+
+      expect(
+        () => auditWidgetCoverage(fixture),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('declares no top-level expect'),
+          ),
+        ),
+      );
+    });
+
+    test('a widget outside lib/shared/widgets escapes the glob but not the '
+        'escape check', () {
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      File('${fixture.path}/lib/shared/lumen_stray.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('class LumenStray extends StatelessWidget {}\n');
+      // A stray on a base the rule cannot classify escapes the glob just as
+      // completely. Inside lib/shared/widgets it would have been reported, so
+      // the canary has to carry it out here too.
+      File('${fixture.path}/lib/shared/lumen_mystery.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('class LumenMystery extends SomeLocalBase {}\n');
+
+      expect(auditWidgetCoverage(fixture).map((r) => r.subject), ['LumenGhost']);
+      expect(
+        widgetsEscapingTheSharedGlob(fixture).map((w) => w.id).toList()..sort(),
+        <String>[
+          'lib/shared/lumen_mystery.dart#LumenMystery',
+          'lib/shared/lumen_stray.dart#LumenStray',
+        ],
+      );
+    });
+
+    test('a golden test that never names its widget FAILS', () {
+      // The same hole as the semantics gate's, on the other side: a golden that
+      // photographs something else proves nothing about this widget, and the
+      // two committed PNGs make it look thoroughly covered.
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(fixture, stem: 'lumen_ghost');
+      File('${fixture.path}/test/widgets/lumen_ghost_golden_test.dart')
+          .writeAsStringSync(
+        "void main() { goldenTest('x', fileName: 'y', "
+        'builder: () => const SomethingElse()); }\n',
+      );
+
+      final message = describeUncoveredWidgets(auditWidgetCoverage(fixture))!;
+      expect(message, contains('never names LumenGhost in live code'));
+      expect(message, contains('lumen_ghost_golden_test.dart'));
+      // Not the declaration gate complaining: this file does declare a golden.
+      expect(message, isNot(contains('declares no golden test')));
+    });
+
+    test('a golden file failing BOTH gates reports both', () {
+      // The reason the subject check is its own `if` rather than an `else if`:
+      // one answer would send the reader round twice.
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      _writeWidgetCoverage(fixture, stem: 'lumen_ghost');
+      File('${fixture.path}/test/widgets/lumen_ghost_golden_test.dart')
+          .writeAsStringSync('void main() { final x = 1; }\n');
+
+      final message = describeUncoveredWidgets(auditWidgetCoverage(fixture))!;
+      expect(message, contains('declares no golden test'));
+      expect(message, contains('never names LumenGhost in live code'));
+    });
+
+    test('a widget source that exists but cannot be read is reported', () {
+      // Not the vanished-file race (which no fixture can produce), but its
+      // testable sibling: a file that is there and unreadable — a lock, a
+      // permission error, or bytes that are not valid UTF-8. Without the catch
+      // this throws a FileSystemException out of the audit.
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      File('${fixture.path}/lib/shared/widgets/lumen_ghost.dart')
+          .writeAsBytesSync(const <int>[0xFF, 0xFE, 0x00, 0x41]);
+
+      final message = describeUncoveredWidgets(auditWidgetCoverage(fixture))!;
+      expect(message, contains('could not be read back'));
+      expect(message, contains('lumen_ghost.dart'));
+    });
+
+    test('a widget in a subdirectory owes its artifacts in the MIRRORED test '
+        'dir', () {
+      // The convention block says subdirectories are mirrored rather than
+      // flattened. This is that sentence, executable.
+      _writeWidgetFile(
+        fixture,
+        file: 'forms/lumen_date_field.dart',
+        widgets: ['LumenDateField'],
+      );
+
+      final message = describeUncoveredWidgets(auditWidgetCoverage(fixture))!;
+      expect(
+        message,
+        contains('test/widgets/forms/lumen_date_field_golden_test.dart'),
+      );
+
+      _writeWidgetCoverage(
+        fixture,
+        stem: 'lumen_date_field',
+        subject: 'LumenDateField',
+        dir: 'test/widgets/forms',
+      );
+      expect(describeUncoveredWidgets(auditWidgetCoverage(fixture)), isNull);
+    });
+
+    test('a public class type alias is reported, not silently invisible', () {
+      // `class LumenAlias = StatelessWidget with M;` is a ClassTypeAlias, not a
+      // ClassDeclaration — so before this it was neither a subject nor an
+      // unclassified mystery. It was nothing at all, which is the one outcome
+      // this rule may not have.
+      _writeWidgetFile(
+        fixture,
+        file: 'lumen_ghost.dart',
+        widgets: ['LumenGhost'],
+        extra: 'mixin M on StatelessWidget {}\n'
+            'class LumenAlias = StatelessWidget with M;\n',
+      );
+      _writeWidgetCoverage(fixture, stem: 'lumen_ghost');
+
+      final message = describeUncoveredWidgets(auditWidgetCoverage(fixture))!;
+      expect(message, contains('LumenAlias = StatelessWidget'));
+      expect(message, contains('class type alias'));
+    });
+
+    test('the escape message gives the RIGHT remedy for each kind', () {
+      // A widget outside the directory should move into it. A class the rule
+      // cannot classify may not be a widget at all, and "move it into
+      // lib/shared/widgets/" is wrong advice for it — the fix is to say what
+      // its base is.
+      File('${fixture.path}/lib/shared/lumen_stray.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('class LumenStray extends StatelessWidget {}\n');
+      File('${fixture.path}/lib/shared/lumen_mystery.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('class LumenMystery extends SomeLocalBase {}\n');
+
+      final message = describeEscapedWidgets(
+        widgetsEscapingTheSharedGlob(fixture),
+      );
+
+      expect(message, contains('lumen_stray.dart#LumenStray  (a widget)'));
+      expect(
+        message,
+        contains('LumenMystery extends SomeLocalBase'),
+        reason:
+            'The canary must keep WHY the class was not classified, or it '
+            'cannot tell the two kinds apart and the advice is a coin flip.',
+      );
+      expect(message, contains('cannot tell'));
+      expect(message, contains('kNonWidgetSuperclasses'));
+      expect(message, contains('move it into lib/shared/widgets/'));
+    });
+
+    test('an exemption suppresses the failure but is reported when stale', () {
+      _writeWidgetFile(fixture, file: 'lumen_ghost.dart', widgets: ['LumenGhost']);
+      const id = 'lib/shared/widgets/lumen_ghost.dart#LumenGhost';
+      const exemptions = {id: 'TODO(P4b-T99): owes a golden'};
+
+      final exempt = auditWidgetCoverage(fixture, exemptions: exemptions);
+      expect(describeUncoveredWidgets(exempt), isNull);
+      expect(staleWidgetExemptions(exempt), isEmpty);
+
+      _writeWidgetCoverage(fixture, stem: 'lumen_ghost');
+      final afterFix = auditWidgetCoverage(fixture, exemptions: exemptions);
+      expect(staleWidgetExemptions(afterFix).single.id, id);
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -792,6 +1576,104 @@ void _writeScreen(
 /// screen task is told to use.
 String _semanticsSource({String declarer = 'testWidgetsWithSemantics'}) =>
     "void main() { $declarer('x', (t) async { expectNoDingbats(t); }); }";
+
+// --- widget-rule fixtures --------------------------------------------------
+
+/// A file under `lib/shared/widgets/` declaring [widgets] as public
+/// `StatelessWidget`s, plus whatever [extra] declarations the case needs.
+void _writeWidgetFile(
+  Directory root, {
+  required String file,
+  required List<String> widgets,
+  String extra = '',
+}) {
+  final source = StringBuffer("import 'package:flutter/material.dart';\n\n");
+  for (final widget in widgets) {
+    source.writeln('class $widget extends StatelessWidget {}');
+  }
+  source.write(extra);
+
+  File('${root.path}/lib/shared/widgets/$file')
+    ..createSync(recursive: true)
+    ..writeAsStringSync(source.toString());
+}
+
+/// A widget semantics test written the way the convention requires: it MOUNTS
+/// its subject and asserts something from the a11y vocabulary.
+///
+/// The mount is not decoration in this fixture either — it is what the gate's
+/// subject binding checks, so a fixture that skipped it would be testing a
+/// weaker rule than the one that ships.
+String _widgetSemanticsSource({
+  String subject = 'LumenGhost',
+  String matcher = 'expectNoDingbats',
+  String declarer = 'testWidgetsWithSemantics',
+}) =>
+    "void main() { $declarer('x', (t) async { "
+    'await pumpApp(t, home: const $subject()); $matcher(t); }); }';
+
+/// A semantics test that calls a matcher but never builds its subject — green
+/// at runtime, and worthless.
+String _neverMountsSource() =>
+    "void main() { testWidgetsWithSemantics('a11y', (t) async { "
+    "await pumpApp(t, home: const Text('x')); expectNoButtons(t); }); }\n";
+
+/// The four artifacts a widget owes, under `test/widgets/`.
+void _writeWidgetCoverage(
+  Directory root, {
+  required String stem,
+  String subject = 'LumenGhost',
+  bool pngs = true,
+  String? semanticsSource,
+  String dir = 'test/widgets',
+}) {
+  File('${root.path}/$dir/${stem}_golden_test.dart')
+    ..createSync(recursive: true)
+    ..writeAsStringSync(
+      // Names the subject: the golden gate binds to it too, for the same
+      // reason the semantics gate does.
+      'void main() { goldenTest("x", fileName: "y", '
+      'builder: () => const $subject()); }',
+    );
+  File('${root.path}/$dir/${stem}_semantics_test.dart')
+    ..createSync(recursive: true)
+    ..writeAsStringSync(
+      semanticsSource ?? _widgetSemanticsSource(subject: subject),
+    );
+  if (pngs) {
+    for (final variant in const ['light', 'dark']) {
+      File('${root.path}/$dir/goldens/ci/${stem}_$variant.png')
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(const <int>[0x89, 0x50, 0x4E, 0x47]);
+    }
+  }
+}
+
+/// A stand-in `test/support/a11y_guard.dart` declaring [matchers].
+///
+/// Written per fixture rather than pointed at the real one, so the tests can
+/// show that the vocabulary really is read out of this file — including the
+/// case where it declares a matcher that exists nowhere in the repo.
+void _writeA11yGuard(
+  Directory root, {
+  List<String> matchers = const [
+    'expectNoDingbats',
+    'expectNoButtons',
+    'expectLabeledButton',
+  ],
+}) {
+  final source = StringBuffer('// fixture guard\n');
+  for (final matcher in matchers) {
+    source.writeln('void $matcher(Object tester) {}');
+  }
+  // A non-matcher top-level function, so "every top-level function" would be a
+  // visibly wrong implementation.
+  source.writeln('void pumpApp(Object tester) {}');
+
+  File('${root.path}/test/support/a11y_guard.dart')
+    ..createSync(recursive: true)
+    ..writeAsStringSync(source.toString());
+}
 
 void _writeCoverage(
   Directory root, {

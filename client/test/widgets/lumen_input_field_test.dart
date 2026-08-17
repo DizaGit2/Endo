@@ -26,6 +26,7 @@ import '../support/harness.dart';
 
 Future<TextEditingController> _pumpField(
   WidgetTester tester, {
+  String label = 'Email',
   String hint = 'you@example.com',
   bool obscure = false,
   bool enabled = true,
@@ -41,6 +42,7 @@ Future<TextEditingController> _pumpField(
     home: Scaffold(
       body: LumenInputField(
         controller: controller,
+        label: label,
         hint: hint,
         obscure: obscure,
         enabled: enabled,

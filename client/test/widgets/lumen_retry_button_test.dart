@@ -17,6 +17,10 @@ import 'package:lumen/shared/widgets/lumen_retry_button.dart';
 
 import '../support/harness.dart';
 
+// What this button ANNOUNCES is asserted in
+// `lumen_retry_button_semantics_test.dart`, which the widget registry requires.
+// The labelled-button assertion moved there rather than being duplicated.
+
 Future<void> _pumpButton(
   WidgetTester tester, {
   String label = 'Try again',
@@ -62,19 +66,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(taps, 1);
-  });
-
-  testWidgetsWithSemantics('announces as a labelled, activatable button', (
-    tester,
-  ) async {
-    await _pumpButton(tester);
-
-    expectLabeledButton(
-      tester,
-      find.text('Try again'),
-      'Try again',
-      exactLabel: true,
-    );
   });
 
   testWidgets('is an outlined secondary affordance in accent on border', (

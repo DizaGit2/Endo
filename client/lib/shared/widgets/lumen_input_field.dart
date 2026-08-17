@@ -22,8 +22,24 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 /// render them beside the field rather than reaching for Flutter's validator
 /// machinery halfway.
 ///
+/// **Accessible name (P4b-T5b).** [label] is required and is what a screen
+/// reader announces for the field. It has to be: the design system draws the
+/// label as a separate `Text` ABOVE the field, and Flutter has no
+/// `aria-labelledby` to associate the two — so a field with only hint text
+/// announces its PLACEHOLDER ("Maya"), and the "Name" above it is a decorative
+/// string associated with nothing. Passing the same string twice is the price
+/// of that; a field nobody can name is not.
+///
+/// Implemented as a bare `Semantics(label:)`, which MERGES into the field's own
+/// node (name first, placeholder after: `"Name\nMaya"`). Do not "improve" it to
+/// `Semantics(label:, textField: true)` — that makes the annotation a semantics
+/// boundary and produces TWO nodes, an empty text-field container wrapping the
+/// real field, which still announces the hint.
+///
 /// Props:
 /// - [controller] — the caller owns it, and must dispose it.
+/// - [label] — the field's accessible name; pass the same string the screen
+///   renders above the field.
 /// - [hint] — placeholder text; there is no floating label by design (the
 ///   design system puts the label above the field, see `_FieldLabel`).
 /// - [obscure] — password entry.
@@ -32,6 +48,7 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 class LumenInputField extends StatelessWidget {
   const LumenInputField({
     required this.controller,
+    required this.label,
     required this.hint,
     super.key,
     this.obscure = false,
@@ -41,6 +58,9 @@ class LumenInputField extends StatelessWidget {
 
   /// The text being edited. Owned (and disposed) by the caller.
   final TextEditingController controller;
+
+  /// The field's accessible name — the same string the screen renders above it.
+  final String label;
 
   /// Placeholder shown while the field is empty.
   final String hint;
@@ -63,29 +83,32 @@ class LumenInputField extends StatelessWidget {
       borderSide: BorderSide(color: color),
     );
 
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      keyboardType: keyboardType,
-      enabled: enabled,
-      style: TextStyle(fontSize: 14, color: c.ink),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(
-          color: c.muted.withValues(alpha: 0.6),
-          fontSize: 14,
-          fontWeight: FontWeight.w400,
+    return Semantics(
+      label: label,
+      child: TextField(
+        controller: controller,
+        obscureText: obscure,
+        keyboardType: keyboardType,
+        enabled: enabled,
+        style: TextStyle(fontSize: 14, color: c.ink),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(
+            color: c.muted.withValues(alpha: 0.6),
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+          ),
+          filled: true,
+          fillColor: c.input,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 13,
+          ),
+          border: border(c.border),
+          enabledBorder: border(c.border),
+          focusedBorder: border(c.accent),
+          disabledBorder: border(c.border),
         ),
-        filled: true,
-        fillColor: c.input,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 13,
-        ),
-        border: border(c.border),
-        enabledBorder: border(c.border),
-        focusedBorder: border(c.accent),
-        disabledBorder: border(c.border),
       ),
     );
   }

@@ -130,6 +130,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         const SizedBox(height: 6),
                         LumenInputField(
                           controller: _nameCtrl,
+                          label: 'Name',
                           hint: 'Maya',
                           enabled: !isLoading,
                         ),
@@ -141,6 +142,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         const SizedBox(height: 6),
                         LumenInputField(
                           controller: _emailCtrl,
+                          label: 'Email',
                           hint: 'you@example.com',
                           keyboardType: TextInputType.emailAddress,
                           enabled: !isLoading,
@@ -153,6 +155,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         const SizedBox(height: 6),
                         LumenInputField(
                           controller: _passwordCtrl,
+                          label: 'Password',
                           hint: '••••••••',
                           obscure: true,
                           enabled: !isLoading,

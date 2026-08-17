@@ -23,6 +23,10 @@ import 'package:lumen/shared/widgets/lumen_retry_button.dart';
 
 import '../support/harness.dart';
 
+// What this surface ANNOUNCES is asserted in
+// `lumen_error_retry_semantics_test.dart`, which the widget registry requires.
+// The live-region assertion moved there rather than being duplicated.
+
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
@@ -78,14 +82,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(retries, 1);
-  });
-
-  testWidgetsWithSemantics('the message announces itself as a live region', (
-    tester,
-  ) async {
-    await _pumpBody(tester);
-
-    expectLiveRegion(tester, 'Something went wrong. Please try again.');
   });
 
   testWidgets('reuses the promoted retry button rather than a bare one', (

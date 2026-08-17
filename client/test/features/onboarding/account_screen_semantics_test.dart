@@ -17,6 +17,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/features/onboarding/application/account_controller.dart';
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
+import 'package:lumen/shared/widgets/lumen_input_field.dart';
 
 import '../../support/harness.dart';
 
@@ -109,6 +110,32 @@ void main() {
       'A server error occurred. Please try again later.',
     );
   });
+
+  testWidgetsWithSemantics(
+    'each field announces the label drawn above it, not its placeholder',
+    (tester) async {
+      // P4b-T5b. `LumenInputField` renders hint text only, so before it took a
+      // required `label` a screen reader landing on these three fields heard
+      // "Maya", "you@example.com" and the bullet run — the `_FieldLabel` above
+      // each one is a separate Text node associated with nothing.
+      //
+      // The three assertions are per-field on purpose: the widget-level test
+      // proves the mechanism works, and only this proves each screen field was
+      // given the RIGHT string. `label: ''` compiles.
+      await _pump(tester, _IdleAccountController.new);
+
+      final fields = find.byType(LumenInputField);
+      expect(fields, findsNWidgets(3));
+
+      for (final (index, label) in <String>[
+        'Name',
+        'Email',
+        'Password',
+      ].indexed) {
+        expectLabeledField(tester, fields.at(index), label);
+      }
+    },
+  );
 
   testWidgets('renders no dingbat glyphs', (tester) async {
     await _pump(tester, _IdleAccountController.new);

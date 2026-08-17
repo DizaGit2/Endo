@@ -23,6 +23,10 @@
 //                           no wired onTap must be `MergeSemantics`, never
 //                           `Semantics(button: true)`. Announcing "button" for
 //                           a dead tap is worse than announcing nothing.
+//   [expectLabeledField]    A text field's accessible name must start with its
+//                           label. A field with no label of its own announces
+//                           its PLACEHOLDER, and the label rendered above it is
+//                           associated with nothing.
 //   [expectLiveRegion]      An error/stale banner that appears after a failed
 //                           write must announce itself, rather than waiting for
 //                           the user to swipe onto it.
@@ -167,6 +171,59 @@ void expectLabeledButton(
           'child GestureDetector.',
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Text fields
+// ---------------------------------------------------------------------------
+
+/// Asserts the node at [finder] is a text field whose accessible name STARTS
+/// with [label].
+///
+/// "Starts with", not "equals": Flutter appends the placeholder to a field's
+/// accessible name while the field is empty, so an empty `LumenInputField`
+/// labelled `Name` with the hint `Maya` announces `"Name\nMaya"` and the same
+/// field with text in it announces `"Name"` with the text as its *value*.
+/// Both are correct; what must never happen is the placeholder arriving FIRST,
+/// which is what a field with no label of its own does — it announces the hint
+/// and the visible label beside it is never associated with anything.
+///
+/// (P4b-T5b. `LumenInputField` shipped that way, promoted verbatim from
+/// `account_screen.dart`'s private `_InputField`, and thirteen screens are
+/// about to take free text.)
+void expectLabeledField(WidgetTester tester, Finder finder, String label) {
+  final data = tester.getSemantics(_fieldNode(finder)).getSemanticsData();
+  expect(
+    data.flagsCollection.isTextField,
+    isTrue,
+    reason: 'Expected a node flagged as a text field for "$label".',
+  );
+  expect(
+    data.label.startsWith(label),
+    isTrue,
+    reason:
+        'Expected the field\'s accessible name to begin with "$label", and it '
+        'is "${data.label}". A screen reader announces this name when the user '
+        'lands on the field: if it begins with the placeholder, the label '
+        'rendered above the field was never associated with it.',
+  );
+}
+
+/// The element whose semantics node IS the field's.
+///
+/// `tester.getSemantics(find.byType(TextField))` does not answer that:
+/// `TextField`'s own render object carries no semantics, so the lookup walks UP
+/// and returns whatever encloses it — the page, typically, whose label is empty.
+/// The node belongs to the [EditableText] inside. Resolving it here is what
+/// makes the failure read "the name is «Maya»" instead of "this is not a text
+/// field", which is the message that sends someone debugging the harness rather
+/// than fixing the field.
+Finder _fieldNode(Finder finder) {
+  final editable = find.descendant(
+    of: finder,
+    matching: find.byType(EditableText),
+  );
+  return editable.evaluate().isEmpty ? finder : editable.first;
 }
 
 /// Asserts the node at [finder] is NOT announced as a button, and (when

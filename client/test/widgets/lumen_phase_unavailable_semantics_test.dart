@@ -11,8 +11,6 @@
 //     live region: it is on screen when the screen is, and interrupting a
 //     screen reader to say so every rebuild would be noise.
 
-import 'dart:ui' show Tristate;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/shared/widgets/lumen_phase_unavailable.dart';
@@ -51,12 +49,17 @@ void main() {
   ) async {
     await _pumpBand(tester);
 
+    // `isFalse`, not `isNot(Tristate.isTrue)`. `isLiveRegion` is a bool
+    // (`dart:ui` semantics.dart:1395) while `isSelected`/`isEnabled` are
+    // Tristates (:1339), so comparing this one against a Tristate held for
+    // `true` and `false` alike — the assertion could not fail, including in
+    // the one case it claims to prevent. (Found and fixed in P4b-T5b.)
     expect(
       tester
           .getSemantics(find.byType(LumenPhaseUnavailable))
           .flagsCollection
           .isLiveRegion,
-      isNot(Tristate.isTrue),
+      isFalse,
       reason:
           'The band is on screen for as long as the screen is; announcing it '
           'as a live region would interrupt the user on every rebuild.',
