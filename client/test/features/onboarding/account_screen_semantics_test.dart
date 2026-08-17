@@ -12,23 +12,17 @@
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/error/failure.dart';
-import 'package:lumen/core/theme/lumen_theme.dart';
 import 'package:lumen/features/onboarding/application/account_controller.dart';
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
 
-// ---------------------------------------------------------------------------
-// Fakes
-// ---------------------------------------------------------------------------
+import '../../support/harness.dart';
 
-class _FakeAuthController extends AuthController {
-  @override
-  AuthStatus build() => AuthStatus.unauthenticated;
-}
+// ---------------------------------------------------------------------------
+// Controller archetypes (the four states of a data-driven screen)
+// ---------------------------------------------------------------------------
 
 /// Idle controller (AsyncData(null)) — the default "Continue" label state.
 class _IdleAccountController extends AccountController {
@@ -56,58 +50,69 @@ class _ErrorAccountController extends AccountController {
 // Harness
 // ---------------------------------------------------------------------------
 
-Widget _wrap(AccountController Function() controller) => ProviderScope(
-  overrides: [
-    authStatusProvider.overrideWith(() => _FakeAuthController()),
-    accountControllerProvider.overrideWith(controller),
-  ],
-  child: MaterialApp(
-    theme: lumenTheme(Brightness.light),
+Future<void> _pump(
+  WidgetTester tester,
+  AccountController Function() controller, {
+  bool settle = true,
+}) {
+  return pumpApp(
+    tester,
     home: const AccountScreen(),
-  ),
-);
+    settle: settle,
+    overrides: [
+      ...lumenOverrides(auth: AuthStatus.unauthenticated),
+      accountControllerProvider.overrideWith(controller),
+    ],
+  );
+}
 
 void main() {
-  testWidgets('Continue CTA exposes button semantics with its visible label', (
-    tester,
-  ) async {
-    final handle = tester.ensureSemantics();
-
-    await tester.pumpWidget(_wrap(_IdleAccountController.new));
-    await tester.pumpAndSettle();
-
-    final data = tester.getSemantics(find.text('Continue'));
-    expect(data.flagsCollection.isButton, isTrue);
-    expect(data.label, 'Continue');
-    handle.dispose();
-  });
-
-  testWidgets(
-    'Loading state: the spinner has a semanticsLabel, which becomes the '
-    "Continue button's accessible name",
+  testWidgetsWithSemantics(
+    'Continue CTA exposes button semantics with its visible label',
     (tester) async {
-      final handle = tester.ensureSemantics();
+      await _pump(tester, _IdleAccountController.new);
 
-      await tester.pumpWidget(_wrap(_PendingAccountController.new));
-      await tester.pump();
-
-      expect(find.bySemanticsLabel('Signing in'), findsOneWidget);
-      final data = tester.getSemantics(find.bySemanticsLabel('Signing in'));
-      expect(data.flagsCollection.isButton, isTrue);
-      handle.dispose();
+      // exactLabel: this screen's very next test proves the reachable
+      // regression — the loading spinner's 'Signing in' label merges into
+      // this button's accessible name. "Continue Signing in" satisfies a
+      // containment check and is exactly what must never ship in the idle
+      // state, so the idle name is pinned by equality.
+      expectLabeledButton(
+        tester,
+        find.text('Continue'),
+        'Continue',
+        exactLabel: true,
+      );
     },
   );
 
-  testWidgets('Error banner announces via a live region', (tester) async {
-    final handle = tester.ensureSemantics();
+  testWidgetsWithSemantics(
+    'Loading state: the spinner has a semanticsLabel, which becomes the '
+    "Continue button's accessible name",
+    (tester) async {
+      // settle: false — the spinner animates forever, so settle never arrives.
+      await _pump(tester, _PendingAccountController.new, settle: false);
 
-    await tester.pumpWidget(_wrap(_ErrorAccountController.new));
-    await tester.pumpAndSettle();
+      expectLabeledSpinner(tester, 'Signing in');
+      final data = tester.getSemantics(find.bySemanticsLabel('Signing in'));
+      expect(data.flagsCollection.isButton, isTrue);
+    },
+  );
 
-    const message = 'A server error occurred. Please try again later.';
-    expect(find.text(message), findsOneWidget);
-    final data = tester.getSemantics(find.text(message));
-    expect(data.flagsCollection.isLiveRegion, isTrue);
-    handle.dispose();
+  testWidgetsWithSemantics('Error banner announces via a live region', (
+    tester,
+  ) async {
+    await _pump(tester, _ErrorAccountController.new);
+
+    expectLiveRegion(
+      tester,
+      'A server error occurred. Please try again later.',
+    );
+  });
+
+  testWidgets('renders no dingbat glyphs', (tester) async {
+    await _pump(tester, _IdleAccountController.new);
+
+    expectNoDingbats(tester, screen: 'AccountScreen');
   });
 }

@@ -7,50 +7,54 @@
 // swapping a CTA for an icon-only button) can't silently drop the accessible
 // name without a test failing.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lumen/core/theme/lumen_theme.dart';
 import 'package:lumen/features/onboarding/presentation/welcome_screen.dart';
 
-Widget _wrap() => MaterialApp(
-  theme: lumenTheme(Brightness.light),
-  home: const WelcomeScreen(),
-);
+import '../../support/harness.dart';
+
+Future<void> _pump(WidgetTester tester) =>
+    pumpApp(tester, home: const WelcomeScreen());
 
 void main() {
-  testWidgets('Begin CTA exposes button semantics with its visible label', (
-    tester,
-  ) async {
-    final handle = tester.ensureSemantics();
+  testWidgetsWithSemantics(
+    'Begin CTA exposes button semantics with its visible label',
+    (tester) async {
+      await _pump(tester);
 
-    await tester.pumpWidget(_wrap());
-    await tester.pumpAndSettle();
+      // exactLabel: the announced name must be "Begin" and nothing else —
+      // a containment check would still pass if something merged extra text
+      // into the CTA's accessible name.
+      expectLabeledButton(
+        tester,
+        find.text('Begin'),
+        'Begin',
+        exactLabel: true,
+      );
+      expect(find.bySemanticsLabel('Begin'), findsOneWidget);
+    },
+  );
 
-    final data = tester.getSemantics(find.text('Begin'));
-    expect(data.flagsCollection.isButton, isTrue);
-    expect(data.label, 'Begin');
-    expect(find.bySemanticsLabel('Begin'), findsOneWidget);
-    handle.dispose();
-  });
-
-  testWidgets(
+  testWidgetsWithSemantics(
     '"I already have an account" link exposes button semantics with its '
     'visible label',
     (tester) async {
-      final handle = tester.ensureSemantics();
+      await _pump(tester);
 
-      await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-
-      final data = tester.getSemantics(
+      expectLabeledButton(
+        tester,
         find.text('I already have an account'),
+        'I already have an account',
       );
-      expect(data.flagsCollection.isButton, isTrue);
       expect(
         find.bySemanticsLabel('I already have an account'),
         findsOneWidget,
       );
-      handle.dispose();
     },
   );
+
+  testWidgets('renders no dingbat glyphs', (tester) async {
+    await _pump(tester);
+
+    expectNoDingbats(tester, screen: 'WelcomeScreen');
+  });
 }

@@ -7,49 +7,38 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lumen/core/theme/lumen_theme.dart';
 import 'package:lumen/features/settings/presentation/help_about_screen.dart';
 
-Widget _wrap() => MaterialApp(
-  theme: lumenTheme(Brightness.light),
-  home: const HelpAboutScreen(),
-);
+import '../../support/harness.dart';
+
+Future<void> _pump(WidgetTester tester) =>
+    pumpApp(tester, home: const HelpAboutScreen());
 
 void main() {
-  testWidgets(
+  testWidgetsWithSemantics(
     'Quick start guide row is informational (not exposed as a button — no '
     'destination screen exists yet)',
     (tester) async {
-      final handle = tester.ensureSemantics();
+      await _pump(tester);
 
-      await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-
-      final data = tester.getSemantics(find.text('Quick start guide'));
-      expect(data.flagsCollection.isButton, isFalse);
-      handle.dispose();
+      expectNotAButton(tester, find.text('Quick start guide'));
     },
   );
 
-  testWidgets('App identity card exposes the wordmark label', (
+  testWidgetsWithSemantics('App identity card exposes the wordmark label', (
     tester,
   ) async {
-    final handle = tester.ensureSemantics();
-
-    await tester.pumpWidget(_wrap());
-    await tester.pumpAndSettle();
+    await _pump(tester);
 
     // The app-icon glyph contributes nothing to the semantics tree; only the
     // visible "Lumen" wordmark text should be announced for that card.
     expect(find.bySemanticsLabel('Lumen'), findsOneWidget);
-    handle.dispose();
   });
 
-  testWidgets('Footer notice text remains fully readable', (tester) async {
-    final handle = tester.ensureSemantics();
-
-    await tester.pumpWidget(_wrap());
-    await tester.pumpAndSettle();
+  testWidgetsWithSemantics('Footer notice text remains fully readable', (
+    tester,
+  ) async {
+    await _pump(tester);
 
     expect(
       find.bySemanticsLabel(
@@ -57,13 +46,12 @@ void main() {
       ),
       findsOneWidget,
     );
-    handle.dispose();
   });
 
   testWidgets('Dingbat glyphs are replaced by real Icons', (tester) async {
-    await tester.pumpWidget(_wrap());
-    await tester.pumpAndSettle();
+    await _pump(tester);
 
+    expectNoDingbats(tester, screen: 'HelpAboutScreen');
     // 4 support rows + 3 legal rows.
     expect(find.byIcon(Icons.chevron_right), findsNWidgets(7));
     // App-icon glyph + footer notice glyph.

@@ -6,29 +6,24 @@
 // and that once the underlying fetch starts succeeding, tapping the button
 // renders the loaded profile — the only way to recover today is leaving and
 // re-entering the route (profileControllerProvider is autoDispose).
+//
+// Both use `expectRetryReissuesOneRequest` (test/support/retry_trap.dart),
+// which additionally pins the two things a hand-written retry test tends to
+// omit: that the affordance is a real, labelled button, and that a tap
+// re-issues EXACTLY ONE read rather than none or two.
 
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
-import 'package:lumen/core/theme/lumen_theme.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
+
+import '../../support/harness.dart';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-MeResponse _sampleMe() => MeResponse(
-  (b) => b
-    ..id = 'user-1'
-    ..displayName = 'María'
-    ..locale = 'es'
-    ..timezone = 'Europe/Madrid'
-    ..onboardingCompleted = true,
-);
 
 /// A [ProfileController] whose `build()` delegates to [_next] every time it
 /// (re)builds. `ref.invalidate` disposes the current notifier and invokes the
@@ -43,18 +38,19 @@ class _ScriptedProfileController extends ProfileController {
   Future<CacheResult<MeResponse>> build() async => _next();
 }
 
-Widget _wrap(CacheResult<MeResponse> Function() next) {
-  return ProviderScope(
+Future<void> _pump(
+  WidgetTester tester,
+  CacheResult<MeResponse> Function() next,
+) {
+  return pumpApp(
+    tester,
+    home: const ProfileScreen(),
     overrides: [
+      ...lumenOverrides(),
       profileControllerProvider.overrideWith(
         () => _ScriptedProfileController(next),
       ),
     ],
-    child: MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: lumenTheme(Brightness.light),
-      home: const ProfileScreen(),
-    ),
   );
 }
 
@@ -68,27 +64,26 @@ void main() {
     'profile once the fetch succeeds',
     (tester) async {
       var attempt = 0;
-      await tester.pumpWidget(
-        _wrap(() {
-          attempt++;
-          if (attempt == 1) {
-            // A plain Error (not a Failure/Exception) so Riverpod's default
-            // retry policy (ProviderContainer.defaultRetry — up to 10
-            // automatic retries with backoff) does NOT kick in: it explicitly
-            // skips retrying `error is Error`. That keeps this test's timing
-            // deterministic instead of racing the retry timer.
-            throw StateError('Simulated failure for test.');
-          }
-          return Fresh(_sampleMe());
-        }),
-      );
-      await tester.pumpAndSettle();
+      await _pump(tester, () {
+        attempt++;
+        if (attempt == 1) {
+          // A plain Error (not a Failure/Exception) so Riverpod's default
+          // retry policy (ProviderContainer.defaultRetry — up to 10
+          // automatic retries with backoff) does NOT kick in: it explicitly
+          // skips retrying `error is Error`. That keeps this test's timing
+          // deterministic instead of racing the retry timer.
+          throw StateError('Simulated failure for test.');
+        }
+        return Fresh(meResponseFixture(id: 'user-1'));
+      });
 
-      expect(find.text('Try again'), findsOneWidget);
       expect(find.text('Profile & health'), findsNothing);
 
-      await tester.tap(find.text('Try again'));
-      await tester.pumpAndSettle();
+      await expectRetryReissuesOneRequest(
+        tester,
+        label: 'Try again',
+        requestCount: () => attempt,
+      );
 
       expect(find.text('Profile & health'), findsOneWidget);
       expect(find.text('Try again'), findsNothing);
@@ -100,22 +95,21 @@ void main() {
     'profile once the fetch succeeds',
     (tester) async {
       var attempt = 0;
-      await tester.pumpWidget(
-        _wrap(() {
-          attempt++;
-          if (attempt == 1) {
-            return const NetworkRequired<MeResponse>(NetworkFailure());
-          }
-          return Fresh(_sampleMe());
-        }),
-      );
-      await tester.pumpAndSettle();
+      await _pump(tester, () {
+        attempt++;
+        if (attempt == 1) {
+          return const NetworkRequired<MeResponse>(NetworkFailure());
+        }
+        return Fresh(meResponseFixture(id: 'user-1'));
+      });
 
-      expect(find.text('Retry'), findsOneWidget);
       expect(find.text('Profile & health'), findsNothing);
 
-      await tester.tap(find.text('Retry'));
-      await tester.pumpAndSettle();
+      await expectRetryReissuesOneRequest(
+        tester,
+        label: 'Retry',
+        requestCount: () => attempt,
+      );
 
       expect(find.text('Profile & health'), findsOneWidget);
       expect(find.text('Retry'), findsNothing);

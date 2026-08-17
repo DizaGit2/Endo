@@ -28,11 +28,9 @@
 // is what makes "registration is enough" falsifiable instead of tautological.
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lumen/api/model/me_response.dart';
-import 'package:lumen/app.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/router/app_router.dart';
@@ -43,6 +41,8 @@ import 'package:lumen/features/settings/data/me_repository.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
 import 'package:lumen/shared/widgets/lumen_scaffold.dart';
 import 'package:mocktail/mocktail.dart';
+
+import '../../support/harness.dart';
 
 // ---------------------------------------------------------------------------
 // Probe screen — renders its own name so a test can assert which route won
@@ -174,8 +174,7 @@ Future<void> _pumpProbeRouter(
   );
   addTearDown(router.dispose);
 
-  await tester.pumpWidget(MaterialApp.router(routerConfig: router));
-  await tester.pumpAndSettle();
+  await pumpRouterApp(tester, routerConfig: router);
 }
 
 int _selectedIndex(WidgetTester tester) =>
@@ -187,17 +186,6 @@ int _selectedIndex(WidgetTester tester) =>
 
 class _MockMeRepository extends Mock implements MeRepository {}
 
-class _FixedAuthController extends AuthController {
-  _FixedAuthController(this._status);
-  final AuthStatus _status;
-
-  @override
-  AuthStatus build() {
-    initialized = Future<void>.value();
-    return _status;
-  }
-}
-
 class _FakeProfileController extends ProfileController {
   @override
   Future<CacheResult<MeResponse>> build() async => Fresh(_me(true));
@@ -206,16 +194,10 @@ class _FakeProfileController extends ProfileController {
   Future<void> saveDisplayName(String name) async {}
 }
 
-MeResponse _me(bool? onboardingCompleted) {
-  return MeResponse(
-    (b) => b
-      ..id = 'user-1'
-      ..displayName = 'María'
-      ..locale = 'es'
-      ..timezone = 'Europe/Madrid'
-      ..onboardingCompleted = onboardingCompleted,
-  );
-}
+MeResponse _me(bool? onboardingCompleted) => meResponseFixture(
+  id: 'user-1',
+  onboardingCompleted: onboardingCompleted,
+);
 
 /// Pumps the real [LumenApp] (and therefore the real `goRouterProvider` route
 /// table) with an authenticated session whose `/me` reports
@@ -227,23 +209,20 @@ Future<void> _pumpRealApp(
   final repo = _MockMeRepository();
   when(repo.getMe).thenAnswer((_) async => Fresh(_me(onboardingCompleted)));
 
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [
-        authStatusProvider.overrideWith(
-          () => _FixedAuthController(AuthStatus.authenticated),
-        ),
-        meRepositoryProvider.overrideWithValue(repo),
-        profileControllerProvider.overrideWith(_FakeProfileController.new),
-      ],
-      child: const LumenApp(),
-    ),
+  // settle: false — the splash spinner animates forever, so "settle" never
+  // arrives while the profile load is still in flight. A handful of frames is
+  // enough for the /me read to resolve, the refreshListenable to fire and
+  // GoRouter to re-run the redirect.
+  await pumpLumenApp(
+    tester,
+    settle: false,
+    overrides: [
+      ...lumenOverrides(),
+      meRepositoryProvider.overrideWithValue(repo),
+      profileControllerProvider.overrideWith(_FakeProfileController.new),
+    ],
   );
 
-  // Not pumpAndSettle(): the splash spinner animates forever, so "settle"
-  // never arrives while the profile load is still in flight. A handful of
-  // frames is enough for the /me read to resolve, the refreshListenable to
-  // fire and GoRouter to re-run the redirect.
   for (var i = 0; i < 6; i++) {
     await tester.pump(const Duration(milliseconds: 16));
   }

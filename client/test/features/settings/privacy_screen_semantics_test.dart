@@ -10,78 +10,66 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lumen/core/theme/lumen_theme.dart';
 import 'package:lumen/features/settings/presentation/privacy_screen.dart';
 
-Widget _wrap() => MaterialApp(
-  theme: lumenTheme(Brightness.light),
-  home: const PrivacyScreen(),
-);
+import '../../support/harness.dart';
+
+Future<void> _pump(WidgetTester tester) =>
+    pumpApp(tester, home: const PrivacyScreen());
 
 void main() {
-  testWidgets('Face ID row merges label + subtitle into one unit', (
-    tester,
-  ) async {
-    final handle = tester.ensureSemantics();
-
-    await tester.pumpWidget(_wrap());
-    await tester.pumpAndSettle();
-
-    final data = tester.getSemantics(find.text('Face ID'));
-    expect(data.label, contains('Face ID'));
-    expect(data.label, contains('Required to open'));
-    expect(data.flagsCollection.isButton, isFalse);
-    handle.dispose();
-  });
-
-  testWidgets('Encryption status row merges label + value into one unit', (
-    tester,
-  ) async {
-    final handle = tester.ensureSemantics();
-
-    await tester.pumpWidget(_wrap());
-    await tester.pumpAndSettle();
-
-    final data = tester.getSemantics(find.text('Encryption status'));
-    expect(data.label, contains('Encryption status'));
-    expect(data.label, contains('AES-256'));
-    handle.dispose();
-  });
-
-  testWidgets(
-    'Delete all data row is informational (not exposed as a button — no '
-    'destination screen exists yet)',
+  testWidgetsWithSemantics(
+    'Face ID row merges label + subtitle into one unit',
     (tester) async {
-      final handle = tester.ensureSemantics();
+      await _pump(tester);
 
-      await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-
-      final data = tester.getSemantics(find.text('Delete all data'));
-      expect(data.flagsCollection.isButton, isFalse);
-      handle.dispose();
+      expectNotAButton(
+        tester,
+        find.text('Face ID'),
+        merged: const ['Face ID', 'Required to open'],
+      );
     },
   );
 
-  testWidgets('Warrant-canary notice text remains fully readable', (
-    tester,
-  ) async {
-    final handle = tester.ensureSemantics();
+  testWidgetsWithSemantics(
+    'Encryption status row merges label + value into one unit',
+    (tester) async {
+      await _pump(tester);
 
-    await tester.pumpWidget(_wrap());
-    await tester.pumpAndSettle();
+      final data = tester.getSemantics(find.text('Encryption status'));
+      expect(data.label, contains('Encryption status'));
+      expect(data.label, contains('AES-256'));
+    },
+  );
 
-    expect(
-      find.bySemanticsLabel(RegExp('Lumen has never received a data request')),
-      findsOneWidget,
-    );
-    handle.dispose();
-  });
+  testWidgetsWithSemantics(
+    'Delete all data row is informational (not exposed as a button — no '
+    'destination screen exists yet)',
+    (tester) async {
+      await _pump(tester);
+
+      expectNotAButton(tester, find.text('Delete all data'));
+    },
+  );
+
+  testWidgetsWithSemantics(
+    'Warrant-canary notice text remains fully readable',
+    (tester) async {
+      await _pump(tester);
+
+      expect(
+        find.bySemanticsLabel(
+          RegExp('Lumen has never received a data request'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('Dingbat glyphs are replaced by real Icons', (tester) async {
-    await tester.pumpWidget(_wrap());
-    await tester.pumpAndSettle();
+    await _pump(tester);
 
+    expectNoDingbats(tester, screen: 'PrivacyScreen');
     expect(find.byIcon(Icons.chevron_right), findsOneWidget); // Delete all data
     expect(find.byIcon(Icons.check), findsOneWidget); // AES-256 ✓
     expect(find.byIcon(Icons.auto_awesome), findsOneWidget); // ✦ warrant canary

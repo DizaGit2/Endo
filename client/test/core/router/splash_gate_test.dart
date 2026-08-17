@@ -15,30 +15,21 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/me_response.dart';
-import 'package:lumen/app.dart';
-import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
 import 'package:mocktail/mocktail.dart';
 
+import '../../support/harness.dart';
+
 // ---------------------------------------------------------------------------
 // Fakes
 // ---------------------------------------------------------------------------
 
 class _MockMeRepository extends Mock implements MeRepository {}
-
-class _AuthenticatedController extends AuthController {
-  @override
-  AuthStatus build() {
-    initialized = Future<void>.value();
-    return AuthStatus.authenticated;
-  }
-}
 
 class _FakeProfileController extends ProfileController {
   @override
@@ -48,31 +39,23 @@ class _FakeProfileController extends ProfileController {
   Future<void> saveDisplayName(String name) async {}
 }
 
-MeResponse _me() {
-  return MeResponse(
-    (b) => b
-      ..id = 'user-1'
-      ..displayName = 'María'
-      ..locale = 'es'
-      ..timezone = 'Europe/Madrid'
-      ..onboardingCompleted = true,
-  );
-}
+MeResponse _me() => meResponseFixture(id: 'user-1');
 
 /// Pumps the real app with an authenticated session whose `/me` read behaves
 /// as [repo] dictates.
+///
+/// settle: false — the splash spinner animates forever, so settle never
+/// arrives while the gate read is in flight.
 Future<void> _pumpApp(WidgetTester tester, MeRepository repo) async {
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [
-        authStatusProvider.overrideWith(_AuthenticatedController.new),
-        meRepositoryProvider.overrideWithValue(repo),
-        profileControllerProvider.overrideWith(_FakeProfileController.new),
-      ],
-      child: const LumenApp(),
-    ),
+  await pumpLumenApp(
+    tester,
+    settle: false,
+    overrides: [
+      ...lumenOverrides(),
+      meRepositoryProvider.overrideWithValue(repo),
+      profileControllerProvider.overrideWith(_FakeProfileController.new),
+    ],
   );
-  await tester.pump();
   await tester.pump(const Duration(milliseconds: 16));
 }
 
@@ -86,7 +69,9 @@ void main() {
     'once the bound elapses',
     (tester) async {
       final repo = _MockMeRepository();
-      when(repo.getMe).thenAnswer((_) => Completer<CacheResult<MeResponse>>().future);
+      when(
+        repo.getMe,
+      ).thenAnswer((_) => Completer<CacheResult<MeResponse>>().future);
 
       await _pumpApp(tester, repo);
 
@@ -99,7 +84,10 @@ void main() {
       await tester.pump(const Duration(seconds: 9));
 
       expect(find.byType(CircularProgressIndicator), findsNothing);
-      expect(find.text('Something went wrong. Please try again.'), findsOneWidget);
+      expect(
+        find.text('Something went wrong. Please try again.'),
+        findsOneWidget,
+      );
       expect(find.text('Try again'), findsOneWidget);
       // The user is held, not guessed past: no onboarding, no profile.
       expect(find.text('Set up Lumen'), findsNothing);
@@ -107,19 +95,18 @@ void main() {
     },
   );
 
-  testWidgets('the retry surface announces itself (liveRegion)', (tester) async {
-    final handle = tester.ensureSemantics();
+  testWidgetsWithSemantics('the retry surface announces itself (liveRegion)', (
+    tester,
+  ) async {
     final repo = _MockMeRepository();
-    when(repo.getMe).thenAnswer((_) => Completer<CacheResult<MeResponse>>().future);
+    when(
+      repo.getMe,
+    ).thenAnswer((_) => Completer<CacheResult<MeResponse>>().future);
 
     await _pumpApp(tester, repo);
     await tester.pump(const Duration(seconds: 9));
 
-    final data = tester.getSemantics(
-      find.text('Something went wrong. Please try again.'),
-    );
-    expect(data.flagsCollection.isLiveRegion, isTrue);
-    handle.dispose();
+    expectLiveRegion(tester, 'Something went wrong. Please try again.');
   });
 
   // -------------------------------------------------------------------------
@@ -156,7 +143,9 @@ void main() {
   // The bound must not fire on a healthy start
   // -------------------------------------------------------------------------
 
-  testWidgets('a prompt /me read never shows the retry surface', (tester) async {
+  testWidgets('a prompt /me read never shows the retry surface', (
+    tester,
+  ) async {
     final repo = _MockMeRepository();
     when(repo.getMe).thenAnswer((_) async => Fresh(_me()));
 

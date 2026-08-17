@@ -11,30 +11,19 @@
 // independent of how auth resolved.
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/app_router.dart';
 import 'package:lumen/core/router/routes.dart';
-import 'package:lumen/core/theme/lumen_theme.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/shared/widgets/lumen_scaffold.dart';
+
+import '../../support/harness.dart';
 
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
-
-class _FixedAuthController extends AuthController {
-  _FixedAuthController(this._status);
-  final AuthStatus _status;
-
-  @override
-  AuthStatus build() {
-    initialized = Future<void>.value();
-    return _status;
-  }
-}
 
 /// Pumps the production route table at [initialLocation], wired to the
 /// production redirect adapter with a pinned [status] / [onboarding].
@@ -52,19 +41,11 @@ Future<void> _pumpShell(
   );
   addTearDown(router.dispose);
 
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [
-        authStatusProvider.overrideWith(() => _FixedAuthController(status)),
-      ],
-      child: MaterialApp.router(
-        debugShowCheckedModeBanner: false,
-        theme: lumenTheme(Brightness.light),
-        routerConfig: router,
-      ),
-    ),
+  await pumpRouterApp(
+    tester,
+    routerConfig: router,
+    overrides: lumenOverrides(auth: status),
   );
-  await tester.pumpAndSettle();
 }
 
 int _selectedIndex(WidgetTester tester) =>
