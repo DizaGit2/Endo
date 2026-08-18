@@ -959,6 +959,15 @@ rotted entry fails the suite, so a screen without tests cannot ship quietly.
 Riverpod trap: `Override` is
 not exported by `flutter_riverpod.dart` in 3.3.2; it lives in `flutter_riverpod/misc.dart`.
 
+**Every onboarding step body must spend its own vertical space (from T9b).** `OnboardingStepSlot` gives your
+step body a bounded box at least as tall as the viewport — it does **not**, by itself, pin anything. Add
+`const Spacer()` immediately before your CTA, after your last content block and before any advisory or
+banner (see `cycle_setup_screen.dart:204` or `account_screen.dart:181` for placement). Without it,
+`Continue` renders wherever your content ends with blank space below it — the exact bug T9b fixed for
+screen 3, and one the `_StepNotBuiltYet` placeholder cannot demonstrate. **Adding that `Spacer` to your own
+screen is in scope** even where a brief says you are changing a container rather than content; the container
+fix alone cannot move a CTA that has no flex child to spend the height on.
+
 *Onboarding (screens 3–7).*
 - [ ] **T8 — Onboarding shell + repository.** Step chrome ("Step N of 7"), `GET /onboarding/state` resume, `POST /onboarding/complete`, and the 409 `onboarding_incomplete` / `missingSteps` path. Screen 3 also reads `GET /settings/cycle` — `OnboardingStateResponse` returns `lastPeriodStart` but not the other three answers.
 - [ ] **T9 — Screen 3 cycle_setup.** `POST /onboarding/cycle` (MERGE; `lastPeriodStart` required every time; backdate floor; sanity warnings render as a non-blocking note after a successful save).
