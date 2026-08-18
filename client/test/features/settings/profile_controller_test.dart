@@ -5,20 +5,45 @@
 //   (b) saveDisplayName() calls updateMe then refreshes (triggers a new load).
 //   (c) NetworkRequired failure surfaces as AsyncError.
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/locale/locale_provider.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 import 'package:mocktail/mocktail.dart';
+
+import '../../support/provider_overrides.dart';
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
 class MockMeRepository extends Mock implements MeRepository {}
+
+/// Records every provider failure Riverpod reports.
+///
+/// Needed because the thing under test is an exception that is otherwise
+/// INVISIBLE: a `ref.read` on a disposed provider throws
+/// `UnmountedRefException`, and with nobody listening to the disposed
+/// controller the throw is swallowed. Asserting only on the sink cannot tell
+/// "the guard returned early" from "the read threw and was discarded".
+final class _FailureSpy extends ProviderObserver {
+  final failures = <Object>[];
+
+  @override
+  void providerDidFail(
+    ProviderObserverContext context,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    failures.add(error);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -258,5 +283,179 @@ void main() {
       );
     });
   });
-}
 
+  // -------------------------------------------------------------------------
+  // (f) the profile publishes its locale (P4b-T6)
+  // -------------------------------------------------------------------------
+  //
+  // `localeProvider` resolves profile -> device -> es-ES. The profile half of
+  // that chain only works if something actually pushes `MeResponse.locale` into
+  // it, and this controller is the one place a profile is ever loaded.
+
+  group('ProfileController publishes the profile locale', () {
+    ProviderContainer localeContainer() {
+      final container = ProviderContainer(
+        overrides: [
+          meRepositoryProvider.overrideWithValue(mockRepo),
+          // Pinned so the assertions do not depend on the host machine.
+          deviceLocaleProvider.overrideWithValue('en-US'),
+          // `profileLocaleProvider` watches auth so sign-out forgets the
+          // locale; an un-pinned AuthController transitions to
+          // `unauthenticated` mid-test and clears what was just adopted.
+          ...lumenOverrides(),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('a loaded profile switches the effective locale away from the device',
+        () async {
+      when(() => mockRepo.getMe()).thenAnswer((_) async => Fresh(_sampleMe()));
+
+      final container = localeContainer();
+      expect(container.read(localeProvider), 'en_US',
+          reason: 'before the profile loads, the device locale stands');
+
+      await container.read(profileControllerProvider.future);
+
+      expect(container.read(profileLocaleProvider), 'es');
+      expect(container.read(localeProvider), 'es');
+    });
+
+    test('a STALE profile publishes its locale too', () async {
+      // Offline is not a reason to render a Spanish user an American calendar.
+      when(() => mockRepo.getMe()).thenAnswer((_) async => Stale(_sampleMe()));
+
+      final container = localeContainer();
+      await container.read(profileControllerProvider.future);
+
+      expect(container.read(localeProvider), 'es');
+    });
+
+    test('NetworkRequired neither publishes nor erases', () async {
+      // The first half of this test is a POSITIVE CONTROL. Asserting only that
+      // the sink is null after a NetworkRequired proves nothing: null is the
+      // container's starting value, so it would pass with `_adoptLocale`
+      // deleted outright. Publishing something first makes the assertion
+      // load-bearing in both directions — the read must not publish, and must
+      // not wipe what is already there ("leaves the previous answer standing").
+      var call = 0;
+      when(() => mockRepo.getMe()).thenAnswer((_) async {
+        call++;
+        return call == 1
+            ? Fresh(_sampleMe())
+            : const NetworkRequired<MeResponse>(NetworkFailure());
+      });
+
+      final container = localeContainer();
+      final sub = container.listen(profileControllerProvider, (_, _) {});
+      addTearDown(sub.close);
+
+      await container.read(profileControllerProvider.future);
+      expect(container.read(localeProvider), 'es',
+          reason: 'control: the locale really was published first');
+
+      container.invalidate(profileControllerProvider);
+      await container.read(profileControllerProvider.future);
+
+      expect(container.read(profileLocaleProvider), 'es');
+      expect(container.read(localeProvider), 'es');
+    });
+
+    test('a session that only ever sees NetworkRequired keeps the device '
+        'locale', () async {
+      when(() => mockRepo.getMe())
+          .thenAnswer((_) async => const NetworkRequired<MeResponse>(
+                NetworkFailure(),
+              ));
+
+      final container = localeContainer();
+      await container.read(profileControllerProvider.future);
+
+      expect(container.read(profileLocaleProvider), isNull);
+      expect(container.read(localeProvider), 'en_US');
+    });
+
+    test('the post-save re-fetch republishes the locale', () async {
+      // saveDisplayName re-reads /me, and that response can legitimately carry
+      // a different locale (the user changed it on another device). Without an
+      // adopt on this path the screen would show the new name and the old
+      // locale until the next cold start.
+      final before = _sampleMe();
+      final after = _sampleMe().rebuild((b) => b..locale = 'en-GB');
+      var call = 0;
+      when(() => mockRepo.getMe()).thenAnswer((_) async {
+        call++;
+        return Fresh(call == 1 ? before : after);
+      });
+      when(() => mockRepo.updateMe(displayName: any(named: 'displayName')))
+          .thenAnswer((_) async {});
+
+      final container = localeContainer();
+      await container.read(profileControllerProvider.future);
+      expect(container.read(localeProvider), 'es');
+
+      await container
+          .read(profileControllerProvider.notifier)
+          .saveDisplayName('Nueva');
+
+      expect(container.read(localeProvider), 'en_GB');
+    });
+
+    test('a read landing after the screen unmounted publishes nothing, quietly',
+        () async {
+      // The session guard on this side of the app. Unlike the onboarding gate
+      // (which carries a generation counter) this provider is autoDispose and
+      // dies with the screen — so `ref.mounted` is the whole check.
+      //
+      // BOTH assertions are needed and the second is the one with teeth:
+      // autoDispose alone already keeps the sink null, because the late
+      // `ref.read` throws `UnmountedRefException` and the throw is discarded.
+      // Asserting only `isNull` would pass with or without the guard.
+      final gate = Completer<CacheResult<MeResponse>>();
+      when(() => mockRepo.getMe()).thenAnswer((_) => gate.future);
+
+      final spy = _FailureSpy();
+      final container = ProviderContainer(
+        observers: [spy],
+        overrides: [
+          meRepositoryProvider.overrideWithValue(mockRepo),
+          deviceLocaleProvider.overrideWithValue('en-US'),
+          ...lumenOverrides(),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final sub = container.listen(profileControllerProvider, (_, _) {});
+      await Future<void>.delayed(Duration.zero);
+
+      sub.close(); // the screen unmounts -> autoDispose disposes the controller
+      await Future<void>.delayed(Duration.zero);
+
+      gate.complete(Fresh(_sampleMe()));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(container.read(profileLocaleProvider), isNull);
+      expect(
+        spy.failures,
+        isEmpty,
+        reason: 'the late adopt must return early, not raise '
+            'UnmountedRefException and have it swallowed; '
+            'got ${spy.failures.map((e) => e.runtimeType).toList()}',
+      );
+    });
+
+    test('a null locale on the profile falls back rather than throwing',
+        () async {
+      // Every generated property is nullable; `locale` is no exception.
+      final noLocale = _sampleMe().rebuild((b) => b..locale = null);
+      when(() => mockRepo.getMe()).thenAnswer((_) async => Fresh(noLocale));
+
+      final container = localeContainer();
+      await container.read(profileControllerProvider.future);
+
+      expect(container.read(localeProvider), 'en_US');
+    });
+  });
+}

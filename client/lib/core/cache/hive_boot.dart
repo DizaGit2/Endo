@@ -64,6 +64,7 @@ Future<CacheStore> initHive({
         ),
       );
 
+  // lumen:allow-device-clock cache TTL, not a cycle date (D-12); overridable seam
   final effectiveClock = clock ?? DateTime.now;
 
   // ── AES key bootstrap ──────────────────────────────────────────────────

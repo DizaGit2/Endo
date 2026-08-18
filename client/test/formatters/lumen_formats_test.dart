@@ -217,4 +217,151 @@ void main() {
           reason: 'percent should end with " %", got "$result"');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // orderedWeekdays() — the week LAYOUT, added in P4b-T6
+  // ---------------------------------------------------------------------------
+  //
+  // Weekday LABELS are deliberately not returned: strings stay English in P4b
+  // (ruling R-04). A screen holds its own seven labels and indexes them by the
+  // order this returns, so the grid rotates without any string being translated.
+  group('LumenFormats.orderedWeekdays', () {
+    test('es_ES starts on Monday', () {
+      expect(LumenFormats.orderedWeekdays('es_ES'),
+          [1, 2, 3, 4, 5, 6, DateTime.sunday]);
+    });
+
+    test('en_US starts on Sunday', () {
+      expect(LumenFormats.orderedWeekdays('en_US'),
+          [DateTime.sunday, 1, 2, 3, 4, 5, 6]);
+    });
+
+    test('every locale yields each weekday exactly once, STARTING where it '
+        'should', () {
+      // The set-equality half is satisfied by EVERY rotation, including a
+      // locale-blind one — so on its own it cannot fail in the direction that
+      // matters. The expected first day is the positive control that can.
+      const expectedFirst = <String, int>{
+        'es_ES': DateTime.monday,
+        'en_US': DateTime.sunday,
+        'fr_FR': DateTime.monday,
+        'es': DateTime.monday,
+      };
+
+      for (final entry in expectedFirst.entries) {
+        final ordered = LumenFormats.orderedWeekdays(entry.key);
+        expect(ordered, hasLength(7), reason: entry.key);
+        expect(ordered.toSet(), {1, 2, 3, 4, 5, 6, 7}, reason: entry.key);
+        expect(ordered.first, entry.value, reason: entry.key);
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // leadingBlankDays() — the month grid's offset, added in P4b-T6
+  // ---------------------------------------------------------------------------
+  group('LumenFormats.leadingBlankDays', () {
+    // 2026-04-01 is a Wednesday.
+    final april = DateTime(2026, 4, 1);
+    // 2026-03-01 is a Sunday — the case where the two conventions disagree most.
+    final march = DateTime(2026, 3, 1);
+
+    test('sanity: the fixtures really are a Wednesday and a Sunday', () {
+      expect(april.weekday, DateTime.wednesday);
+      expect(march.weekday, DateTime.sunday);
+    });
+
+    test('April 2026: 2 blanks Monday-first, 3 Sunday-first', () {
+      expect(LumenFormats.leadingBlankDays(april, 'es_ES'), 2);
+      expect(LumenFormats.leadingBlankDays(april, 'en_US'), 3);
+    });
+
+    test('March 2026: 6 blanks Monday-first, 0 Sunday-first', () {
+      expect(LumenFormats.leadingBlankDays(march, 'es_ES'), 6);
+      expect(LumenFormats.leadingBlankDays(march, 'en_US'), 0);
+    });
+
+    test('every month of 2026, both conventions, pinned', () {
+      // The range invariant (0..6) is kept, but it is NOT the assertion with
+      // teeth: EVERY `% 7` implementation satisfies it, locale-blind ones
+      // included. The expected offsets are the positive control — the en_US
+      // column is exactly one more than the es_ES column except where the
+      // month starts on a Sunday, and a locale-blind implementation cannot
+      // produce both columns.
+      const mondayFirst = <int>[3, 6, 6, 2, 4, 0, 2, 5, 1, 3, 6, 1];
+      const sundayFirst = <int>[4, 0, 0, 3, 5, 1, 3, 6, 2, 4, 0, 2];
+
+      for (var month = 1; month <= 12; month++) {
+        final first = DateTime(2026, month);
+        for (final entry in <String, List<int>>{
+          'es_ES': mondayFirst,
+          'en_US': sundayFirst,
+        }.entries) {
+          final blanks = LumenFormats.leadingBlankDays(first, entry.key);
+          expect(blanks, inInclusiveRange(0, 6),
+              reason: '${entry.key} month $month');
+          expect(blanks, entry.value[month - 1],
+              reason: '${entry.key} 2026-$month starts on weekday '
+                  '${first.weekday}');
+        }
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // monthYear() — month-precision display for `diagnosedOn`, added in P4b-T6
+  // ---------------------------------------------------------------------------
+  group('LumenFormats.monthYear', () {
+    final august = DateTime(2026, 8);
+
+    test('renders month precision — no invented day', () {
+      expect(LumenFormats.monthYear(august, 'en_US'), '8/2026');
+      expect(LumenFormats.monthYear(august, 'es_ES'), '8/2026');
+    });
+
+    test('ignores the day component it is handed', () {
+      expect(LumenFormats.monthYear(DateTime(2026, 8, 15), 'en_US'), '8/2026');
+    });
+
+    test('is locale-driven rather than one fixed pattern', () {
+      // ja puts the year first. Not a supported app locale — it is here purely
+      // as proof that the locale argument is consulted at all.
+      expect(LumenFormats.monthYear(august, 'ja'), startsWith('2026'));
+    });
+
+    test('is numeric, so no month NAME is translated into the UI (R-04)', () {
+      expect(LumenFormats.monthYear(august, 'es_ES'), isNot(contains('ago')));
+      expect(LumenFormats.monthYear(august, 'en_US'), isNot(contains('Aug')));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // hasLocaleData() — what the locale resolver leans on, added in P4b-T6
+  // ---------------------------------------------------------------------------
+  group('LumenFormats.hasLocaleData', () {
+    test('true for the locales this app ships', () {
+      expect(LumenFormats.hasLocaleData('es_ES'), isTrue);
+      expect(LumenFormats.hasLocaleData('en_US'), isTrue);
+      expect(LumenFormats.hasLocaleData('es'), isTrue);
+    });
+
+    test('false for a well-formed locale intl carries no data for', () {
+      expect(LumenFormats.hasLocaleData('zz_ZZ'), isFalse);
+      // The one that surprises: intl has `de`, but no `de_DE` entry at all.
+      expect(LumenFormats.hasLocaleData('de'), isTrue);
+      expect(LumenFormats.hasLocaleData('de_DE'), isFalse);
+    });
+
+    test('false, rather than throwing, for junk', () {
+      expect(LumenFormats.hasLocaleData('not a locale!!'), isFalse);
+      expect(LumenFormats.hasLocaleData(''), isFalse);
+    });
+
+    // NOTE: "works before initializeDateFormatting has run" is NOT asserted
+    // here — this file's setUpAll has already run it, so the assertion could
+    // not fail. It is proved instead by `test/core/locale/locale_provider_test`
+    // and `test/formatters/lumen_wire_test`, which format dates and never
+    // initialise anything; `flutter test` gives each FILE its own isolate, so
+    // a lazy-init regression turns both of them red with LocaleDataException.
+  });
 }

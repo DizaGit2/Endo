@@ -5,6 +5,7 @@ import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/locale/locale_provider.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 
 // ---------------------------------------------------------------------------
@@ -81,6 +82,9 @@ OnboardingStatus onboardingStatusFrom(MeResponse? me) {
 ///   [OnboardingStatus.unknown] and no answer survives into the next session
 ///   (the profile behind it is per-user PII);
 /// - becoming [AuthStatus.authenticated] kicks off a single `/me` read;
+/// - that read also publishes the profile's locale into `profileLocaleProvider`
+///   (P4b-T6), which is what makes the app locale-aware from the first frame
+///   rather than from whenever the user first opens Settings;
 /// - an in-flight read that lands after the session changed is discarded
 ///   (see [_generation]), so a logout can never be undone by a late response.
 ///
@@ -114,17 +118,28 @@ class OnboardingStatusController extends Notifier<OnboardingStatus> {
 
   Future<void> _load(int generation) async {
     OnboardingStatus resolved;
+    // Held rather than mapped immediately: this same read is the app's only
+    // once-per-session `/me`, so it is also the only place the user's own
+    // locale can reach `profileLocaleProvider` before a screen renders a date.
+    // ProfileScreen (screen 31) is the only other producer, and a user who
+    // never opens Settings would otherwise spend the whole session on the
+    // device locale — Sunday-first and 12-hour for an `es-ES` user on a US
+    // phone (D-03/D-05).
+    MeResponse? profile;
     try {
       final result = await ref
           .read(meRepositoryProvider)
           .getMe()
           .timeout(ref.read(onboardingGateTimeoutProvider));
-      resolved = switch (result) {
-        Fresh(:final value) => onboardingStatusFrom(value),
-        Stale(:final value) => onboardingStatusFrom(value),
+      profile = switch (result) {
+        Fresh(:final value) => value,
+        Stale(:final value) => value,
         // Offline with no cache, so the answer is unknowable right now.
-        NetworkRequired() => OnboardingStatus.incomplete,
+        NetworkRequired() => null,
       };
+      // Unchanged behaviour: `onboardingStatusFrom(null)` is `incomplete`,
+      // which is what the NetworkRequired arm resolved to before.
+      resolved = onboardingStatusFrom(profile);
     } on AuthFailure {
       // The session itself is invalid (an expired refresh token surfaces here
       // as a 401 that cachedRead deliberately rethrows rather than masking).
@@ -150,6 +165,14 @@ class OnboardingStatusController extends Notifier<OnboardingStatus> {
     // The session moved on while the read was in flight (sign-out, or another
     // auth transition): the answer belongs to a session that no longer exists.
     if (!ref.mounted || generation != _generation) return;
+
+    // Deliberately AFTER the staleness guard, for the same reason `state` is:
+    // adopting here from a previous session's response would re-populate the
+    // locale sink that signing out just cleared, and on a shared device that is
+    // the previous user's locale.
+    if (profile != null) {
+      ref.read(profileLocaleProvider.notifier).adopt(profile.locale);
+    }
     state = resolved;
   }
 

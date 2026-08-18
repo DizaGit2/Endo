@@ -13,6 +13,9 @@
 //   • an unreadable profile resolves to `incomplete`, the leavable direction.
 //   • sign-out resets the status, and an in-flight read that lands after
 //     sign-out cannot resurrect it.
+//   • the same read publishes the profile's locale (P4b-T6) — this is the
+//     app's only once-per-session /me, so it is the only place the user's own
+//     locale can reach the formatters before a screen renders a date.
 
 import 'dart:async';
 
@@ -22,6 +25,7 @@ import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/locale/locale_provider.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -75,6 +79,10 @@ void main() {
       overrides: [
         authStatusProvider.overrideWith(() => _FakeAuthController(status)),
         meRepositoryProvider.overrideWithValue(repo),
+        // Pinned so a locale assertion never depends on the host machine's
+        // regional settings. Deliberately NOT es-ES: every locale assertion
+        // below has to move it to be worth anything.
+        deviceLocaleProvider.overrideWithValue('en-US'),
         if (gateTimeout != null)
           onboardingGateTimeoutProvider.overrideWithValue(gateTimeout),
       ],
@@ -356,5 +364,97 @@ void main() {
         );
       },
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // The gate's /me read is also the app's locale source (P4b-T6)
+  // -------------------------------------------------------------------------
+  //
+  // Without this, a user whose profile says `es-ES` on an `en-US` device gets
+  // Sunday-first weeks, a 12-hour clock and period decimals for the whole
+  // session — until they happen to open Settings > Profile, which is the only
+  // other place a profile is loaded, and then everything flips mid-session.
+
+  group('publishes the profile locale', () {
+    test('a Fresh profile moves the effective locale off the device', () async {
+      when(repo.getMe).thenAnswer(
+        (_) async => Fresh(_me(onboardingCompleted: true)),
+      );
+
+      final container = makeContainer(AuthStatus.authenticated);
+      expect(container.read(localeProvider), 'en_US');
+
+      await pumpEventQueue();
+
+      expect(container.read(profileLocaleProvider), 'es');
+      expect(container.read(localeProvider), 'es');
+    });
+
+    test('a Stale profile publishes it too', () async {
+      when(repo.getMe).thenAnswer(
+        (_) async => Stale(_me(onboardingCompleted: true)),
+      );
+
+      final container = makeContainer(AuthStatus.authenticated);
+      await pumpEventQueue();
+
+      expect(container.read(localeProvider), 'es');
+    });
+
+    test('NetworkRequired publishes nothing, and erases nothing', () async {
+      // Same shape as the profile controller's: asserting the sink is null
+      // after a NetworkRequired proves nothing, because null is where it
+      // starts. Seeding it first is the positive control — it catches the
+      // plausible wrong implementation `adopt(profile?.locale)`, which would
+      // publish a null over a locale that was already there.
+      when(repo.getMe).thenAnswer(
+        (_) async => const NetworkRequired<MeResponse>(NetworkFailure()),
+      );
+
+      final container = makeContainer(AuthStatus.authenticated);
+      container.read(profileLocaleProvider.notifier).adopt('fr-FR');
+      // 'fr', not 'fr_FR': intl ships no `fr_FR` entry, so the resolver
+      // shortens it — the same fact `hasLocaleData` documents for `de_DE`.
+      expect(container.read(localeProvider), 'fr',
+          reason: 'control: something really was published first');
+
+      await pumpEventQueue();
+
+      expect(container.read(profileLocaleProvider), 'fr-FR');
+      expect(container.read(localeProvider), 'fr');
+    });
+
+    test('a session that only ever sees NetworkRequired keeps the device '
+        'locale', () async {
+      when(repo.getMe).thenAnswer(
+        (_) async => const NetworkRequired<MeResponse>(NetworkFailure()),
+      );
+
+      final container = makeContainer(AuthStatus.authenticated);
+      await pumpEventQueue();
+
+      expect(container.read(profileLocaleProvider), isNull);
+      expect(container.read(localeProvider), 'en_US');
+    });
+
+    test('a read that lands after sign-out publishes nothing', () async {
+      // Same reasoning as the status itself: on a shared device that response
+      // carries the PREVIOUS user's locale, and sign-out just cleared it.
+      final gate = Completer<CacheResult<MeResponse>>();
+      when(repo.getMe).thenAnswer((_) => gate.future);
+
+      final container = makeContainer(AuthStatus.authenticated);
+      await pumpEventQueue();
+
+      (container.read(authStatusProvider.notifier) as _FakeAuthController)
+          .setStatus(AuthStatus.unauthenticated);
+      await pumpEventQueue();
+
+      gate.complete(Fresh(_me(onboardingCompleted: true)));
+      await pumpEventQueue();
+
+      expect(container.read(profileLocaleProvider), isNull);
+      expect(container.read(localeProvider), 'en_US');
+    });
   });
 }
