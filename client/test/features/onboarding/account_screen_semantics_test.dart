@@ -16,6 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/features/onboarding/application/account_controller.dart';
+import 'package:lumen/features/onboarding/application/account_validation.dart';
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
 import 'package:lumen/shared/widgets/lumen_input_field.dart';
 
@@ -44,6 +45,25 @@ class _ErrorAccountController extends AccountController {
   @override
   Future<void> build() async {
     throw const ServerFailure();
+  }
+}
+
+/// A per-field rejection (P4b-T7) — the shape both a locally-invalid form and
+/// a server 400 leave behind, since screen 2 renders one failure type for both.
+///
+/// The failure comes from the REAL validator rather than a hand-written
+/// literal. A fixture that spells its own copy would make the dingbat guard
+/// below inspect the fixture instead of the shipped string — proved by
+/// mutation: a banned glyph planted in `AccountValidation.emailInvalid` left
+/// the hand-written version of this test green.
+class _FieldErrorAccountController extends AccountController {
+  @override
+  Future<void> build() async {
+    throw AccountValidation.validate(
+      email: 'maya',
+      password: 'a-good-passphrase',
+      displayName: 'Maya',
+    )!;
   }
 }
 
@@ -137,8 +157,45 @@ void main() {
     },
   );
 
+  testWidgetsWithSemantics(
+    'a rejected field puts its message in the semantics tree, and the form '
+    'still announces that something failed',
+    (tester) async {
+      // P4b-T7. A red outline is invisible to a screen reader, so a field
+      // error that exists only as paint is an error only sighted users get.
+      // The message has to be a node of its own; and because a node the user
+      // has not swiped onto is silent, the banner keeps its live region so the
+      // failure is ANNOUNCED at the moment it happens.
+      await _pump(tester, _FieldErrorAccountController.new);
+
+      expect(
+        find.bySemanticsLabel('Enter a valid email address.'),
+        findsOneWidget,
+        reason: 'the field error must be reachable by assistive tech',
+      );
+      expectLiveRegion(tester, 'Check the highlighted fields.');
+    },
+  );
+
   testWidgets('renders no dingbat glyphs', (tester) async {
     await _pump(tester, _IdleAccountController.new);
+
+    expectNoDingbats(tester, screen: 'AccountScreen');
+  });
+
+  testWidgets('renders no dingbat glyphs while showing a field error', (
+    tester,
+  ) async {
+    // The rejected state draws copy the idle golden and the idle dingbat check
+    // never see.
+    await _pump(tester, _FieldErrorAccountController.new);
+
+    // PIN THE PREMISE. `expectNoDingbats` only requires that SOME `Text`
+    // exists, so on its own this test would stay green if screen 2 stopped
+    // passing `errorText` altogether — it would go on reporting "no dingbats
+    // while showing a field error" with no field error on screen. This line is
+    // what makes the name true.
+    expect(find.text(AccountValidation.emailInvalid), findsOneWidget);
 
     expectNoDingbats(tester, screen: 'AccountScreen');
   });

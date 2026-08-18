@@ -17,10 +17,12 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 /// wrongly.
 ///
 /// Deliberately NOT a `TextFormField`: there is no `Form` anywhere in the
-/// client and validation is server-side (see `error_mapper.dart`'s
-/// `ValidationFailure.fields`). A screen that needs per-field errors should
-/// render them beside the field rather than reaching for Flutter's validator
-/// machinery halfway.
+/// client and the rules live outside the widget tree (see `error_mapper.dart`'s
+/// `ValidationFailure.fields`, and `account_validation.dart` for the
+/// client-side mirror of them). A screen that needs per-field errors passes
+/// [errorText] rather than reaching for Flutter's validator machinery halfway —
+/// the same string arrives whether the device rejected the form or the server
+/// did, so there is one rendering path for both.
 ///
 /// **Accessible name (P4b-T5b).** [label] is required and is what a screen
 /// reader announces for the field. It has to be: the design system draws the
@@ -43,6 +45,7 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 /// - [hint] — placeholder text; there is no floating label by design (the
 ///   design system puts the label above the field, see `_FieldLabel`).
 /// - [obscure] — password entry.
+/// - [errorText] — the rejection to draw under the field; `null` when clean.
 /// - [keyboardType] — e.g. [TextInputType.emailAddress].
 /// - [enabled] — pass `false` while a write is in flight.
 class LumenInputField extends StatelessWidget {
@@ -52,6 +55,7 @@ class LumenInputField extends StatelessWidget {
     required this.hint,
     super.key,
     this.obscure = false,
+    this.errorText,
     this.keyboardType,
     this.enabled = true,
   });
@@ -68,6 +72,20 @@ class LumenInputField extends StatelessWidget {
   /// Whether to obscure the entered characters (password entry).
   final bool obscure;
 
+  /// Why this field was rejected, drawn under it in the error colour, or
+  /// `null` when there is nothing wrong with it.
+  ///
+  /// Typically `ValidationFailure.messageFor(<wire field name>)` — which is
+  /// already `null` for a field the failure did not name, so a screen can pass
+  /// it straight through.
+  ///
+  /// **It is not announced automatically.** Flutter renders the message as its
+  /// own semantics node beside the field, not as part of the field's name, so
+  /// a screen reader reaches it by swiping rather than on rejection. Pair it
+  /// with a `LumenErrorBanner`, whose live region announces that the submit
+  /// failed at the moment it does.
+  final String? errorText;
+
   /// The soft-keyboard type to request.
   final TextInputType? keyboardType;
 
@@ -77,6 +95,11 @@ class LumenInputField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
+    // The design system has no error token of its own (`LumenColors` is the
+    // mockups' palette and the mockups draw no error state), so the field
+    // borrows the theme's — set explicitly in `lumenTheme`, not a Material
+    // default that could drift.
+    final errorColor = Theme.of(context).colorScheme.error;
 
     OutlineInputBorder border(Color color) => OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
@@ -108,6 +131,18 @@ class LumenInputField extends StatelessWidget {
           enabledBorder: border(c.border),
           focusedBorder: border(c.accent),
           disabledBorder: border(c.border),
+          errorText: errorText,
+          // Both error borders are spelled out because Material's defaults are
+          // NOT this design system's: leaving them unset swaps the 12 px
+          // outline every other state draws for the theme's 4 px one the
+          // moment a field goes red.
+          errorBorder: border(errorColor),
+          focusedErrorBorder: border(errorColor),
+          errorStyle: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w400,
+            color: errorColor,
+          ),
         ),
       ),
     );

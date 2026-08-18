@@ -30,6 +30,7 @@ Future<TextEditingController> _pumpField(
   String hint = 'you@example.com',
   bool obscure = false,
   bool enabled = true,
+  String? errorText,
   TextInputType? keyboardType,
   Brightness brightness = Brightness.light,
 }) async {
@@ -46,6 +47,7 @@ Future<TextEditingController> _pumpField(
         hint: hint,
         obscure: obscure,
         enabled: enabled,
+        errorText: errorText,
         keyboardType: keyboardType,
       ),
     ),
@@ -125,6 +127,90 @@ void main() {
       await _pumpField(tester, keyboardType: TextInputType.emailAddress);
 
       expect(_field(tester).keyboardType, TextInputType.emailAddress);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Per-field errors (P4b-T7) — what screen 2 binds `ValidationFailure.fields`
+  // to. The widget dartdoc has always said a screen needing per-field errors
+  // "should render them beside the field"; this is that, once, instead of
+  // thirteen screens each inventing a Text under a box.
+  // -------------------------------------------------------------------------
+
+  group('errorText', () {
+    testWidgets('renders the message it is given, and none when given none', (
+      tester,
+    ) async {
+      // Both fields in ONE tree. "This field shows no error" is also true of
+      // every field that has never been told about one, so the erroring field
+      // beside it is the control: same widget, same theme, same pump.
+      final withError = TextEditingController();
+      final without = TextEditingController();
+      addTearDown(withError.dispose);
+      addTearDown(without.dispose);
+
+      await pumpApp(
+        tester,
+        home: Scaffold(
+          body: Column(
+            children: [
+              LumenInputField(
+                controller: withError,
+                label: 'Email',
+                hint: 'you@example.com',
+                errorText: 'Enter a valid email address.',
+              ),
+              LumenInputField(
+                controller: without,
+                label: 'Name',
+                hint: 'Maya',
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final fields = find.byType(TextField);
+      expect(
+        tester.widget<TextField>(fields.at(0)).decoration!.errorText,
+        'Enter a valid email address.',
+      );
+      expect(
+        tester.widget<TextField>(fields.at(1)).decoration!.errorText,
+        isNull,
+      );
+      // Rendered, not merely configured.
+      expect(find.text('Enter a valid email address.'), findsOneWidget);
+    });
+
+    testWidgets('the error borders keep the 12 px radius the rest of the '
+        'field uses', (tester) async {
+      // Material's default error border is not the one this design system
+      // draws: leaving `errorBorder` unset swaps the 12 px outline for the
+      // theme's 4 px one the moment a field goes red.
+      await _pumpField(tester, errorText: 'Nope.');
+      final decoration = _decoration(tester);
+
+      for (final border in <InputBorder?>[
+        decoration.errorBorder,
+        decoration.focusedErrorBorder,
+      ]) {
+        expect(_border(border).radius, 12);
+        expect(_border(border).color, const Color(0xFFB3261E));
+      }
+    });
+
+    testWidgets('the message is drawn at 12 / w400, on the error colour', (
+      tester,
+    ) async {
+      // Two weights only (CLAUDE.md); 12 is the size the label above the field
+      // uses, so the box reads as one unit rather than three type scales.
+      await _pumpField(tester, errorText: 'Nope.');
+      final style = _decoration(tester).errorStyle!;
+
+      expect(style.fontSize, 12);
+      expect(style.fontWeight, FontWeight.w400);
+      expect(style.color, const Color(0xFFB3261E));
     });
   });
 

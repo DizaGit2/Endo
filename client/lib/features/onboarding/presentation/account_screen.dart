@@ -3,14 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/onboarding/application/account_controller.dart';
+import 'package:lumen/features/onboarding/application/account_validation.dart';
 import 'package:lumen/shared/widgets/lumen_error_banner.dart';
 import 'package:lumen/shared/widgets/lumen_input_field.dart';
 import 'package:lumen/shared/widgets/lumen_section_label.dart';
 import 'package:lumen/shared/widgets/lumen_step_dots.dart';
 
-// D-01: social login deferred to phase 2.
-// The mockup shows "Apple · Google" buttons — omitted in v1 (Keycloak email/
-// password only per architecture §A).
+// D-01 was REOPENED on 2026-07-08: social login is IN for v1, and lands in its
+// own phase, P4c. The mockup's "Apple · Google" buttons are therefore not
+// dropped — they are simply not this phase's work, and P4b must not add them.
+// Until P4c, registration is Keycloak email/password only (architecture §A).
 
 /// Screen 2 — Create your account / sign in (onboarding step 2 of 7).
 ///
@@ -21,7 +23,13 @@ import 'package:lumen/shared/widgets/lumen_step_dots.dart';
 /// States:
 /// - Idle  — form is editable, submit button shows label.
 /// - Loading — submit button shows [CircularProgressIndicator].
-/// - Error — inline red banner above the submit button, form still editable.
+/// - Error — inline banner above the submit button, plus a message under each
+///   rejected field, form still editable and still holding what was typed.
+///
+/// **Rejections have one rendering path** (P4b-T7). [AccountController]
+/// answers a locally-invalid form with the same [ValidationFailure] shape a
+/// server 400 produces — `fields` keyed by the camelCase wire name — so
+/// `messageFor` below does not know or care which end rejected the form.
 class AccountScreen extends ConsumerStatefulWidget {
   const AccountScreen({super.key});
 
@@ -72,7 +80,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
 
     // Extract failure message when in error state.
     final failure = state is AsyncError ? state.error : null;
-    final errorMessage = _failureMessage(failure);
+    final errorMessage = _bannerMessage(failure);
+    // Non-null only for a rejection that named fields; every other failure
+    // leaves all three fields clean and speaks through the banner alone.
+    final rejected = failure is ValidationFailure ? failure : null;
 
     return Scaffold(
       backgroundColor: c.surface,
@@ -133,6 +144,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                           label: 'Name',
                           hint: 'Maya',
                           enabled: !isLoading,
+                          errorText: rejected?.messageFor(
+                            AccountFields.displayName,
+                          ),
                         ),
 
                         const SizedBox(height: 14),
@@ -146,6 +160,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                           hint: 'you@example.com',
                           keyboardType: TextInputType.emailAddress,
                           enabled: !isLoading,
+                          errorText: rejected?.messageFor(AccountFields.email),
                         ),
 
                         const SizedBox(height: 14),
@@ -159,6 +174,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                           hint: '••••••••',
                           obscure: true,
                           enabled: !isLoading,
+                          errorText: rejected?.messageFor(
+                            AccountFields.password,
+                          ),
                         ),
 
                         const Spacer(),
@@ -240,8 +258,23 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
 // Helpers — failure message
 // ---------------------------------------------------------------------------
 
-String? _failureMessage(Object? failure) {
+/// What the banner above the CTA says, or `null` when there is nothing wrong.
+///
+/// The banner is never suppressed in favour of the field errors, even though
+/// they say more: it is the screen's only live region, so dropping it would
+/// mean a screen-reader user got no announcement at all that the submit had
+/// failed — the field messages are ordinary nodes and stay silent until
+/// swiped onto.
+///
+/// For a [ValidationFailure] it prefers the server's reserved
+/// [ValidationFailure.requestKey] messages, which are the cross-field errors
+/// that name no input and would otherwise render nowhere.
+String? _bannerMessage(Object? failure) {
   if (failure == null) return null;
+  if (failure is ValidationFailure) {
+    final crossField = failure.requestMessages;
+    return crossField.isEmpty ? failure.message : crossField.first;
+  }
   if (failure is Failure) return failure.message;
   return 'An unexpected error occurred.';
 }
