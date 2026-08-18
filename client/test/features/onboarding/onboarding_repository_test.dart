@@ -16,10 +16,12 @@
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lumen/api/model/baseline_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
+import 'package:lumen/api/model/save_baseline_request.dart';
 import 'package:lumen/api/model/save_onboarding_cycle_request.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
 import 'package:lumen/core/cache/cached_query.dart';
@@ -77,6 +79,16 @@ SaveOnboardingCycleRequest _capturedCycleRequest(MockLumenApiApi api) {
         ),
       ).captured.last
       as SaveOnboardingCycleRequest;
+}
+
+/// The baseline request the repository actually put on the wire.
+SaveBaselineRequest _capturedBaselineRequest(MockLumenApiApi api) {
+  return verify(
+        () => api.onboardingBaselinePost(
+          saveBaselineRequest: captureAny(named: 'saveBaselineRequest'),
+        ),
+      ).captured.last
+      as SaveBaselineRequest;
 }
 
 /// A 409 shaped exactly like `OnboardingConflict.Incomplete` on the wire.
@@ -634,6 +646,164 @@ void main() {
         throwsA(isA<ServerFailure>()),
       );
       verifyNever(() => store.invalidate(any()));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /onboarding/baseline (P4b-T10)
+  // -------------------------------------------------------------------------
+
+  group('saveBaseline', () {
+    setUpAll(
+      () => registerFallbackValue(SaveBaselineRequest((b) => b..heightCm = 1)),
+    );
+
+    void answerSave([BaselineResponse? body]) {
+      when(
+        () => api.onboardingBaselinePost(
+          saveBaselineRequest: any(named: 'saveBaselineRequest'),
+        ),
+      ).thenAnswer(apiSuccess(body ?? baselineFixture()));
+    }
+
+    test('it sends only the fields it was given — an omitted one is absent, '
+        'never a default', () async {
+      answerSave();
+
+      await repo.saveBaseline(heightCm: 165);
+
+      final one = _capturedBaselineRequest(api);
+      expect(one.heightCm, 165);
+      expect(one.dob, isNull);
+      expect(one.weightKg, isNull);
+      expect(one.endoStatus, isNull);
+      // Neither has a control on screen 4 (the mockup draws none), so neither
+      // is a parameter — a dead one would invite a caller to believe it was
+      // persisted.
+      expect(one.rasrmStage, isNull);
+      expect(one.diagnosedOn, isNull);
+
+      // The positive control, and the whole point: those nulls are also what a
+      // builder that sets NOTHING produces. The same repository, called with
+      // the other three, must carry them.
+      await repo.saveBaseline(
+        dob: Date(1996, 4, 6),
+        weightKg: 62,
+        endoStatus: 'diagnosed',
+      );
+
+      final rest = _capturedBaselineRequest(api);
+      expect(rest.dob, Date(1996, 4, 6));
+      expect(rest.weightKg, 62);
+      expect(rest.endoStatus, 'diagnosed');
+      expect(rest.heightCm, isNull);
+    });
+
+    test('the weight is rounded to ONE decimal before it is serialised',
+        () async {
+      answerSave();
+
+      // The case §C.0.2 names: a computed kilogram — an lbs conversion, a
+      // slider step — does not land on a tenth, and the backend REJECTS extra
+      // precision rather than rounding it (OnboardingStepsService.cs:192-197).
+      await repo.saveBaseline(weightKg: 0.1 + 0.2);
+      expect(_capturedBaselineRequest(api).weightKg, 0.3);
+
+      await repo.saveBaseline(weightKg: 60.35);
+      expect(_capturedBaselineRequest(api).weightKg, 60.4);
+
+      // The control: rounding must not move a value that is already storable.
+      // Without it the two rows above pass for a repository that rounded to
+      // the nearest whole kilogram.
+      await repo.saveBaseline(weightKg: 60.4);
+      expect(_capturedBaselineRequest(api).weightKg, 60.4);
+    });
+
+    test('a body carrying none of the fields never reaches the wire',
+        () async {
+      answerSave();
+
+      // The 400 unique to this endpoint (`provide at least one baseline
+      // field`, OnboardingStepResult.cs:332) exists because D-02's skip means
+      // NOT calling the endpoint. An empty body is therefore a client bug, and
+      // this is the last place it can be stopped.
+      expect(repo.saveBaseline, throwsA(isA<ArgumentError>()));
+      verifyNever(
+        () => api.onboardingBaselinePost(
+          saveBaselineRequest: any(named: 'saveBaselineRequest'),
+        ),
+      );
+
+      // Control: one supplied field is enough, and the same call then posts.
+      await repo.saveBaseline(endoStatus: 'not_applicable');
+      verify(
+        () => api.onboardingBaselinePost(
+          saveBaselineRequest: any(named: 'saveBaselineRequest'),
+        ),
+      ).called(1);
+    });
+
+    test('it invalidates the profile and the onboarding state', () async {
+      answerSave();
+
+      await repo.saveBaseline(heightCm: 165);
+
+      final keys = verify(() => store.invalidate(captureAny())).captured;
+      // `GET /me` splices this very projection into `MeResponse`, so a cached
+      // profile is wrong the moment this returns.
+      expect(keys, contains(_profileKey));
+      // `baselineProvided` moves.
+      expect(keys, contains(_stateKey));
+      // Not the cycle settings: this endpoint writes neither
+      // `user_cycle_settings` nor `cycle_events`.
+      expect(keys, isNot(contains(_cycleSettingsKey)));
+    });
+
+    test('a 400 arrives as a ValidationFailure keyed by wire field name',
+        () async {
+      when(
+        () => api.onboardingBaselinePost(
+          saveBaselineRequest: any(named: 'saveBaselineRequest'),
+        ),
+      ).thenAnswer(
+        apiValidationProblem<BaselineResponse>(
+          path: '/onboarding/baseline',
+          fields: const <String, List<String>>{
+            'weightKg': <String>['value must have at most 1 decimal place'],
+          },
+        ),
+      );
+
+      await expectLater(
+        repo.saveBaseline(weightKg: 60.4),
+        throwsA(
+          isA<ValidationFailure>().having(
+            (ValidationFailure f) => f.messageFor('weightKg'),
+            'messageFor(weightKg)',
+            'value must have at most 1 decimal place',
+          ),
+        ),
+      );
+      // Nothing was stored, so nothing cached is wrong.
+      verifyNever(() => store.invalidate(any()));
+    });
+
+    test('an empty 200 body is a typed failure, not a force-unwrap', () async {
+      when(
+        () => api.onboardingBaselinePost(
+          saveBaselineRequest: any(named: 'saveBaselineRequest'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<BaselineResponse>(
+          requestOptions: RequestOptions(path: '/onboarding/baseline'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(
+        repo.saveBaseline(heightCm: 165),
+        throwsA(isA<ServerFailure>()),
+      );
     });
   });
 }

@@ -364,4 +364,57 @@ void main() {
     // initialise anything; `flutter test` gives each FILE its own isolate, so
     // a lazy-init regression turns both of them red with LocaleDataException.
   });
+
+  // ---------------------------------------------------------------------------
+  // decimalSeparator() / parseDecimal() — the READ side, added in P4b-T10
+  // ---------------------------------------------------------------------------
+  group('LumenFormats.decimalSeparator', () {
+    test('it is the separator the same locale FORMATS with', () {
+      // Stated against `decimal`'s own output rather than against a literal:
+      // the two must agree, or a field would refuse the character the app
+      // itself prints.
+      expect(LumenFormats.decimalSeparator('es_ES'), ',');
+      expect(LumenFormats.decimal(1.5, 'es_ES'), contains(','));
+
+      expect(LumenFormats.decimalSeparator('en_US'), '.');
+      expect(LumenFormats.decimal(1.5, 'en_US'), contains('.'));
+    });
+  });
+
+  group('LumenFormats.parseDecimal', () {
+    test('it reads back what the same locale wrote', () {
+      // The round trip is the property worth having: screen 4 prefills a
+      // stored weight through `decimal` and parses the edited text back.
+      expect(LumenFormats.parseDecimal(LumenFormats.decimal(60.4, 'es_ES'),
+          'es_ES'), 60.4);
+      expect(LumenFormats.parseDecimal(LumenFormats.decimal(60.4, 'en_US'),
+          'en_US'), 60.4);
+    });
+
+    test('the separator is the LOCALE\'s, not a fixed period', () {
+      expect(LumenFormats.parseDecimal('60,4', 'es_ES'), 60.4);
+      expect(LumenFormats.parseDecimal('60.4', 'en_US'), 60.4);
+      // The control that makes the pair above a fact about the locale: a
+      // `double.tryParse` that ignored the locale would answer 60.4 for the
+      // es_ES row above and null here, and a parser that always stripped
+      // commas would answer 604 for this one.
+      expect(LumenFormats.parseDecimal('60.4', 'es_ES'), isNot(60.4));
+    });
+
+    test('an integer with no separator parses in either locale', () {
+      expect(LumenFormats.parseDecimal('62', 'es_ES'), 62.0);
+      expect(LumenFormats.parseDecimal('62', 'en_US'), 62.0);
+    });
+
+    test('junk is null, never a coerced number', () {
+      // A field that cannot be read is an empty answer, not a zero: screen 4
+      // sends nothing for a field it cannot parse, and the endpoint's MERGE
+      // leaves the stored value alone.
+      expect(LumenFormats.parseDecimal('', 'en_US'), isNull);
+      expect(LumenFormats.parseDecimal('abc', 'en_US'), isNull);
+      expect(LumenFormats.parseDecimal('.', 'en_US'), isNull);
+      // Control: the same call with a readable string does answer.
+      expect(LumenFormats.parseDecimal('7', 'en_US'), 7.0);
+    });
+  });
 }

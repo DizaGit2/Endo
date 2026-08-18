@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 
 /// The Lumen text field: a filled [TextField] on [LumenColors.input] with a
@@ -48,6 +49,9 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 /// - [errorText] — the rejection to draw under the field; `null` when clean.
 /// - [keyboardType] — e.g. [TextInputType.emailAddress].
 /// - [enabled] — pass `false` while a write is in flight.
+/// - [inputFormatters] — what the field will accept at all (P4b-T10).
+/// - [onChanged] — every edit, for a screen whose state is not the controller.
+/// - [suffixText] — a unit drawn inside the field, painted in every state.
 class LumenInputField extends StatelessWidget {
   const LumenInputField({
     required this.controller,
@@ -58,6 +62,9 @@ class LumenInputField extends StatelessWidget {
     this.errorText,
     this.keyboardType,
     this.enabled = true,
+    this.inputFormatters,
+    this.onChanged,
+    this.suffixText,
   });
 
   /// The text being edited. Owned (and disposed) by the caller.
@@ -92,6 +99,45 @@ class LumenInputField extends StatelessWidget {
   /// Whether the field accepts input. `false` greys it out.
   final bool enabled;
 
+  /// What the field will accept at all — refusing a keystroke rather than
+  /// correcting the value afterwards.
+  ///
+  /// Added by P4b-T10 for screen 4's weight, where the backend **rejects**
+  /// more than one decimal place instead of rounding it, and rounding it away
+  /// client-side would store a number the user did not type.
+  final List<TextInputFormatter>? inputFormatters;
+
+  /// Called on every edit.
+  ///
+  /// A screen whose source of truth is a Riverpod controller rather than this
+  /// [TextEditingController] needs the parsed value as it is typed; without
+  /// this it would have to add its own listener and remember to remove it.
+  final ValueChanged<String>? onChanged;
+
+  /// A unit drawn inside the field, after the value — the mockups' `.fu` span.
+  ///
+  /// **Not the hint.** A hint disappears the moment the field has content,
+  /// including on a prefilled one, so a returning user editing a stored height
+  /// would see `165` with nothing saying centimetres. The mockups draw the unit
+  /// beside the value in every state, and so does this — but only because of
+  /// [InputDecoration.floatingLabelBehavior] below, which is why that line is
+  /// not decoration.
+  ///
+  /// **Material paints a suffix at opacity 0 on an empty, unfocused field.**
+  /// `_AffixText` wraps it in `AnimatedOpacity(opacity: labelIsFloating ? 1.0 :
+  /// 0.0)` (`input_decorator.dart:1827-1830`) and the suffix is built with
+  /// `labelIsFloating: labelShouldWithdraw` (`:2434`), which is `!isEmpty ||
+  /// (isFocused && enabled)` (`:1969`). So a unit added here alone would be
+  /// invisible in exactly the state a first-time user starts in — laid out,
+  /// reserving its strip, and painted at zero. `FloatingLabelBehavior.always`
+  /// forces `labelShouldWithdraw` true (`:2076-2078`) and is a no-op for
+  /// everything else, because this decoration passes no `labelText`/`label`.
+  ///
+  /// Pinned by opacity, never by presence: `find.text('cm')` passes against a
+  /// zero-opacity widget, and that is how the gap shipped once. See
+  /// `test/widgets/lumen_input_field_test.dart`'s `suffixText` group.
+  final String? suffixText;
+
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
@@ -113,9 +159,17 @@ class LumenInputField extends StatelessWidget {
         obscureText: obscure,
         keyboardType: keyboardType,
         enabled: enabled,
+        inputFormatters: inputFormatters,
+        onChanged: onChanged,
         style: TextStyle(fontSize: 14, color: c.ink),
         decoration: InputDecoration(
           hintText: hint,
+          suffixText: suffixText,
+          suffixStyle: TextStyle(fontSize: 10, color: c.muted),
+          // Load-bearing for [suffixText] and inert for everything else — see
+          // its doc. Without it the unit is painted at opacity 0 until the
+          // field is focused or typed into.
+          floatingLabelBehavior: FloatingLabelBehavior.always,
           hintStyle: TextStyle(
             color: c.muted.withValues(alpha: 0.6),
             fontSize: 14,

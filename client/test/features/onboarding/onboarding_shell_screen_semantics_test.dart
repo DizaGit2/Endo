@@ -15,6 +15,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/features/onboarding/application/baseline_controller.dart';
 import 'package:lumen/features/onboarding/application/cycle_setup_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_step.dart';
@@ -67,6 +68,18 @@ class _SettledCycleSetup extends CycleSetupController {
   );
 }
 
+/// Screen 4, pinned to a settled form.
+///
+/// Same reason as [_SettledCycleSetup]: since P4b-T10 the `baseline` arm reads
+/// `GET /me` and `GET /cycle/calendar` on mount, and unpinned its spinner is
+/// still animating when this file's step-4 assertions run.
+class _SettledBaseline extends BaselineController {
+  @override
+  AsyncValue<BaselineForm> build() => const AsyncValue<BaselineForm>.data(
+    BaselineForm(answers: BaselineAnswers(), saved: BaselineAnswers()),
+  );
+}
+
 /// The SHELL's back affordance.
 ///
 /// Since P4b-T9 the step-3 body draws its own `Icons.chevron_left` for the
@@ -87,6 +100,7 @@ List<Override> _overrides(List<Override> extra) => <Override>[
     () => FakeAuthController(AuthStatus.unauthenticated),
   ),
   cycleSetupControllerProvider.overrideWith(_SettledCycleSetup.new),
+  baselineControllerProvider.overrideWith(_SettledBaseline.new),
   ...extra,
 ];
 

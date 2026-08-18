@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/api/api/lumen_api_api.dart';
+import 'package:lumen/api/model/baseline_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_start_request.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
+import 'package:lumen/api/model/save_baseline_request.dart';
 import 'package:lumen/api/model/save_onboarding_cycle_request.dart';
 import 'package:lumen/api/serializers.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
@@ -15,6 +17,7 @@ import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
 import 'package:lumen/core/error/error_mapper.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/formatters/lumen_wire.dart';
 import 'package:lumen/core/network/api_client.dart';
 
 // ---------------------------------------------------------------------------
@@ -227,6 +230,123 @@ class OnboardingRepository {
       if (previous != null && previous != anchor)
         ...CacheKeys.keysForDate(previous.toDateTime()),
     ];
+  }
+
+  // ── saveBaseline ───────────────────────────────────────────────────────────
+
+  /// Calls `POST /onboarding/baseline` — screen 4's write.
+  ///
+  /// **MERGE** (`ARCHITECTURE.md` §C.0.1): only a supplied field is written and
+  /// an omitted one is left **unchanged**, never reset to a default. Every
+  /// parameter is therefore optional, and a null means "this screen has nothing
+  /// to say about that field" rather than "clear it" — there is no way to clear
+  /// one back to null on this endpoint at all.
+  ///
+  /// **An empty call throws instead of posting**, and that is the rule this
+  /// endpoint has and no other on the P4a surface does: a body carrying none of
+  /// the six fields is a **400** (`provide at least one baseline field`,
+  /// `OnboardingStepResult.cs:332`). D-02 makes the step skippable and "skip"
+  /// means *not calling the endpoint*, so an empty body can only be a client
+  /// bug — an [ArgumentError] names it here, where the stack still points at
+  /// the caller, instead of spending a round trip to be told the same thing.
+  /// It is the same kind of guard as the server's own
+  /// `RasrmStages.Encode` [ArgumentOutOfRangeException]: unreachable from a
+  /// correct caller.
+  ///
+  /// **How loud it actually is depends on who calls.** A direct caller — a
+  /// test, a future repository consumer — gets the throw with the stack
+  /// pointing at itself. Through screen 4 it is quieter than that:
+  /// `BaselineController.submit` wraps the call in `catch (_)`, so an
+  /// [ArgumentError] would arrive as an `UnknownFailure` banner with the
+  /// message every unclassifiable error in the app shows, and nothing would
+  /// name this rule on screen. That is the right trade — a caught programming
+  /// error beats a crash in a user's hands — but it is why the controller has
+  /// its own `unsent.isEmpty` early return: the guard that USERS are protected
+  /// by is that one, and this is the backstop that keeps the body
+  /// unconstructable if it is ever removed.
+  ///
+  /// **[weightKg] is rounded to one decimal here**, immediately before the
+  /// request is built, because the backend REJECTS more precision rather than
+  /// rounding it (`OnboardingStepsService.cs:192-197`) and a *computed*
+  /// kilogram — a slider step, an lbs→kg conversion — does not land on a tenth
+  /// (`0.1 + 0.2` serialises as `0.30000000000000004`). [LumenWire.weightKg] is
+  /// the one place that rounding is spelled. Screen 4 does not let a user TYPE
+  /// more than one decimal, so this can only ever tidy representation error —
+  /// it must never be the thing that silently drops a digit somebody entered.
+  ///
+  /// **There is no `rasrmStage` and no `diagnosedOn` parameter.** Screen 4's
+  /// mockup draws no control for either (`Screens/screen_04_baseline.html`) and
+  /// no copy for one exists in `definitions.md`, so a parameter here would be a
+  /// dead one that invites a caller to believe it was persisted — the same
+  /// reason [saveCycle] has no `avgPeriodLengthDays`. When a surface for them
+  /// exists, `diagnosedOn` goes on the wire as a `yyyy-MM` **string** built by
+  /// [LumenWire.diagnosedOn]; it is not a `Date` and the generated serializer
+  /// would throw on it (§C.0.2).
+  ///
+  /// Errors, all as typed [Failure]s:
+  /// - **400** → [ValidationFailure] keyed by wire field name (`dob`,
+  ///   `heightCm`, `weightKg`, `endoStatus`), plus the cross-field `request`
+  ///   key. The bounds behind them are the server's own **structural storage**
+  ///   domain and are not restated on this side of the wire; in particular
+  ///   there is **no age gate and no lower bound on `dob`** anywhere — C-12
+  ///   makes the population a design target, not a data-entry gate.
+  /// - **409** → [ConflictFailure] with `code: onboarding_already_completed`.
+  Future<BaselineResponse> saveBaseline({
+    Date? dob,
+    int? heightCm,
+    double? weightKg,
+    String? endoStatus,
+  }) async {
+    if (dob == null &&
+        heightCm == null &&
+        weightKg == null &&
+        endoStatus == null) {
+      throw ArgumentError(
+        'POST /onboarding/baseline rejects a body carrying none of its fields '
+        '(400 "provide at least one baseline field"). Skipping this step means '
+        'not calling this method at all.',
+      );
+    }
+
+    final request = SaveBaselineRequest(
+      (b) => b
+        // Left unset when null: `built_value` omits a null member from the
+        // wire, and an absent member is what the server reads as "leave the
+        // stored value alone".
+        ..dob = dob
+        ..heightCm = heightCm
+        ..weightKg = weightKg == null ? null : LumenWire.weightKg(weightKg)
+        ..endoStatus = endoStatus,
+    );
+
+    late final BaselineResponse body;
+
+    await cachedWrite(
+      store: _store,
+      write: () async {
+        final response = await _api.onboardingBaselinePost(
+          saveBaselineRequest: request,
+        );
+        final data = response.data;
+        if (data == null) {
+          throw const ServerFailure(
+            'The server returned an empty baseline response.',
+          );
+        }
+        body = data;
+      },
+      // `GET /me` splices this exact projection into `MeResponse` (§C.0.2's six
+      // new keys), so a cached profile is wrong the moment this returns; and
+      // `GET /onboarding/state.baselineProvided` moves. Nothing dated: the
+      // weight seeds `body_metrics`, which no key in the policy stands for and
+      // no P4b read serves.
+      invalidateKeys: const <String>[
+        CacheKeys.profile,
+        CacheKeys.onboardingState,
+      ],
+    );
+
+    return body;
   }
 
   // ── complete ───────────────────────────────────────────────────────────────

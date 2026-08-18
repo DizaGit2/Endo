@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lumen/api/model/date.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
+import 'package:lumen/features/onboarding/application/baseline_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_step.dart';
 import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.dart';
@@ -25,6 +27,22 @@ class _SettledFlow extends OnboardingFlowController {
   );
 }
 
+/// Screen 4, pinned to a settled form.
+///
+/// Rule 5 again, one level down: since P4b-T10 the step-4 body reads `GET /me`
+/// and `GET /cycle/calendar` on mount, so the shell's own golden would
+/// photograph that body's spinner rather than the chrome this pair is about.
+class _SettledBaseline extends BaselineController {
+  @override
+  AsyncValue<BaselineForm> build() => AsyncValue<BaselineForm>.data(
+    BaselineForm(
+      answers: const BaselineAnswers(),
+      saved: const BaselineAnswers(),
+      today: Date(2026, 4, 20),
+    ),
+  );
+}
+
 void main() {
   goldenTestLightAndDark(
     subject: 'OnboardingShellScreen',
@@ -43,6 +61,7 @@ void main() {
         onboardingFlowControllerProvider.overrideWith(
           () => _SettledFlow(OnboardingStep.baseline),
         ),
+        baselineControllerProvider.overrideWith(_SettledBaseline.new),
       ],
     ),
   );

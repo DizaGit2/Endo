@@ -32,9 +32,11 @@ Future<TextEditingController> _pumpField(
   bool enabled = true,
   String? errorText,
   TextInputType? keyboardType,
+  String? suffixText,
+  String text = '',
   Brightness brightness = Brightness.light,
 }) async {
-  final controller = TextEditingController();
+  final controller = TextEditingController(text: text);
   addTearDown(controller.dispose);
 
   await pumpApp(
@@ -49,10 +51,31 @@ Future<TextEditingController> _pumpField(
         enabled: enabled,
         errorText: errorText,
         keyboardType: keyboardType,
+        suffixText: suffixText,
       ),
     ),
   );
   return controller;
+}
+
+/// What the suffix is actually PAINTED at.
+///
+/// Material renders `suffixText` through `_AffixText`, which wraps it in
+/// `AnimatedOpacity(opacity: labelIsFloating ? 1.0 : 0.0)`
+/// (`input_decorator.dart:1827-1830`) — so the widget is in the tree, laid out
+/// and reserving its strip, at zero opacity. `find.text('cm')` cannot tell the
+/// two states apart; this can.
+double _suffixOpacity(WidgetTester tester, String suffix) {
+  return tester
+      .widget<AnimatedOpacity>(
+        find
+            .ancestor(
+              of: find.text(suffix),
+              matching: find.byType(AnimatedOpacity),
+            )
+            .first,
+      )
+      .opacity;
 }
 
 TextField _field(WidgetTester tester) =>
@@ -281,6 +304,47 @@ void main() {
 
       expect(style.color, lumenLight.ink);
       expect(style.fontSize, 14);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // The suffix — drawn, and drawn when the field is EMPTY (P4b-T10, round 2)
+  // -------------------------------------------------------------------------
+
+  group('suffixText', () {
+    testWidgets('it is painted on an EMPTY, unfocused field', (tester) async {
+      await _pumpField(tester, suffixText: 'cm');
+
+      // The state a first-time onboarding user starts screen 4 in. Material
+      // gates prefix/suffix opacity on `labelShouldWithdraw`
+      // (`input_decorator.dart:2434`), which is `!isEmpty || (isFocused &&
+      // enabled)` (`:1969`) — so without `FloatingLabelBehavior.always`
+      // (`:2076-2078`) the unit is laid out and painted at opacity 0.
+      //
+      // Presence is NOT the assertion. `find.text('cm')` passes against a
+      // zero-opacity widget, which is exactly how this shipped once: a
+      // presence check sold as a visibility check.
+      expect(find.text('cm'), findsOneWidget);
+      expect(_suffixOpacity(tester, 'cm'), 1.0);
+    });
+
+    testWidgets('it is still painted once the field has content', (
+      tester,
+    ) async {
+      // The control for the row above, and the case a hint could never serve:
+      // a prefilled field is non-empty from its first frame, so a hint has
+      // already gone by the time the user reads it.
+      await _pumpField(tester, suffixText: 'cm', text: '165');
+
+      expect(_suffixOpacity(tester, 'cm'), 1.0);
+    });
+
+    testWidgets('a field with no suffix draws none', (tester) async {
+      // The control that keeps the two rows above about the SUFFIX rather
+      // than about any text the decoration happens to contain.
+      await _pumpField(tester, hint: 'kg');
+
+      expect(find.text('cm'), findsNothing);
     });
   });
 

@@ -20,6 +20,7 @@
 // Later P4b tasks add their own screen's DTOs here rather than inline.
 
 import 'package:built_collection/built_collection.dart';
+import 'package:lumen/api/model/baseline_response.dart';
 import 'package:lumen/api/model/cycle_calendar_response.dart';
 import 'package:lumen/api/model/cycle_settings_response.dart';
 import 'package:lumen/api/model/date.dart';
@@ -29,12 +30,24 @@ import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 
 /// `GET /me`. The shipped default is a fully-onboarded Spanish-locale user.
+///
+/// **The six baseline keys default to null** (`diagnosedOn`, `dob`,
+/// `endoStatus`, `heightCm`, `latestWeightKg`, `rasrmStage` — P4a spliced them
+/// in, §C.0.2). That is the honest default: D-02 makes screen 4 skippable, so
+/// "not answered" is the shape most accounts have, and the P3b-era Hive cache
+/// carries none of them.
 MeResponse meResponseFixture({
   String? id = 'user-abc123',
   String? displayName = 'María',
   String? locale = 'es',
   String? timezone = 'Europe/Madrid',
   bool? onboardingCompleted = true,
+  Date? dob,
+  int? heightCm,
+  double? latestWeightKg,
+  String? endoStatus,
+  int? rasrmStage,
+  String? diagnosedOn,
 }) {
   return MeResponse(
     (b) => b
@@ -42,7 +55,50 @@ MeResponse meResponseFixture({
       ..displayName = displayName
       ..locale = locale
       ..timezone = timezone
-      ..onboardingCompleted = onboardingCompleted,
+      ..onboardingCompleted = onboardingCompleted
+      ..dob = dob
+      ..heightCm = heightCm
+      ..latestWeightKg = latestWeightKg
+      ..endoStatus = endoStatus
+      ..rasrmStage = rasrmStage
+      ..diagnosedOn = diagnosedOn,
+  );
+}
+
+/// `POST /onboarding/baseline`. The default is the answer a user who has
+/// answered nothing gets back — plus one month string, deliberately.
+///
+/// The response is the server's RE-READ of the stored row, not an echo of the
+/// request, so a fixture that returns nothing is what a first save of one field
+/// legitimately looks like for the other five. Note `latestWeightKg` — the
+/// response names the weight differently from the request's `weightKg`, because
+/// it comes from the latest live `body_metrics` row rather than from the
+/// profile.
+///
+/// **`diagnosedOn` defaults to a real `yyyy-MM` string** rather than to null.
+/// It is a `String?` and NOT a `Date?` because the generated `DateSerializer`
+/// calls `DateTime.parse`, which throws on `"2026-08"` (§C.0.2) — and every
+/// consumer of a successful save maps this response by hand. A hand-parse
+/// added there would throw inside `submit`'s try, be swallowed by its
+/// `catch (_)` and surface as a generic banner; with the default null, no test
+/// could ever redden. So every save in every test carries the string that would
+/// break it.
+BaselineResponse baselineFixture({
+  Date? dob,
+  int? heightCm,
+  double? latestWeightKg,
+  String? endoStatus,
+  int? rasrmStage,
+  String? diagnosedOn = '2026-08',
+}) {
+  return BaselineResponse(
+    (b) => b
+      ..dob = dob
+      ..heightCm = heightCm
+      ..latestWeightKg = latestWeightKg
+      ..endoStatus = endoStatus
+      ..rasrmStage = rasrmStage
+      ..diagnosedOn = diagnosedOn,
   );
 }
 

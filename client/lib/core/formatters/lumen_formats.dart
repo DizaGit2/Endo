@@ -161,6 +161,47 @@ abstract final class LumenFormats {
       _numberFmt(value, locale, decimalDigits);
 
   // -------------------------------------------------------------------------
+  // Reading a typed number back (P4b-T10)
+  // -------------------------------------------------------------------------
+
+  /// The character [locale] separates a number's fraction with — `","` under
+  /// `es_ES`, `"."` under `en_US`.
+  ///
+  /// Taken from the same `intl` symbols [decimal] formats with, so a field that
+  /// only accepts this character can never refuse what the app itself printed
+  /// into it.
+  ///
+  /// It is here rather than in a screen because `NumberFormat` may be named in
+  /// this file alone (`test/core/locale/formatting_guard_test.dart`), and
+  /// because a screen that hard-coded `'.'` would silently reject the comma a
+  /// Spanish keyboard puts under the user's thumb.
+  static String decimalSeparator(String locale) =>
+      NumberFormat.decimalPattern(locale).symbols.DECIMAL_SEP;
+
+  /// Reads [text] as a number written in [locale]'s own convention, or `null`
+  /// when it is not one.
+  ///
+  /// The inverse of [decimal], and the reason it takes a locale at all: `"60,4"`
+  /// is sixty-point-four in `es_ES` and `double.tryParse` answers `null` for it,
+  /// while a client that stripped commas first would read it as six hundred and
+  /// four in `en_US`.
+  ///
+  /// **Null, never zero, for unreadable input.** A field that cannot be read is
+  /// an unanswered field: screen 4 sends nothing for it, and the endpoint's
+  /// MERGE leaves whatever is stored alone. A coerced `0` would be a datum the
+  /// user never gave.
+  ///
+  /// This is a DISPLAY-side entry point (it reads what a person typed); the
+  /// value it returns still goes through `LumenWire` before it is serialised.
+  static double? parseDecimal(String text, String locale) {
+    try {
+      return NumberFormat.decimalPattern(locale).parse(text).toDouble();
+    } on FormatException {
+      return null;
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // First day of week
   // -------------------------------------------------------------------------
 
