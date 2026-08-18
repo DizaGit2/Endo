@@ -950,7 +950,11 @@ rotted entry fails the suite, so a screen without tests cannot ship quietly.
 - **Empty build** (no `await`; the initial state is a fixed value): convert to `Notifier<AsyncValue<T>>` with a synchronous `AsyncValue<T> build() => const AsyncData(<initial>);`. This deletes the race at the root — there is no build future left to lose to. Behaviour-preserving where `build()` was already empty.
 - **Loading build** (a real `await` — a repository fetch or cache read, as in `ProfileController`): **do not convert.** The `AsyncNotifier` is earning its keep, and hand-rolling the load trades this race for a worse bespoke one. Write every rejection through `AsyncValue.guard(...)` rather than a bare synchronous `state = AsyncError(...)`, or gate the mutating action on a settled controller.
 - **`await future` is not the guard.** It resolves with the first non-loading state, so on a second submit after a rejection it rethrows the *previous* failure.
-- **Test rule, in every one of the twelve tasks' acceptance criteria:** a controller test that reads a notifier and immediately calls a mutating method must settle the container first (`await container.read(xProvider.future)` or an equivalent pump). Reading-then-mutating without settling asserts on an undefined race between two writers, not on the code — whichever shape the controller has. Riverpod trap: `Override` is
+- **Test rule, in every one of the twelve tasks' acceptance criteria:** a controller test that reads a notifier and immediately calls a mutating method must settle the container first (`await container.read(xProvider.future)` or an equivalent pump). Reading-then-mutating without settling asserts on an undefined race between two writers, not on the code — whichever shape the controller has.
+
+**Tap-target ruling (made at T9; binds T14/T16 and every dense grid after them).** Screen 3's day cells are **26 logical px** and its chips ~36 px — below Material's 48×48 guideline, and faithful to the mockups' absolute sizes, which is the phase's stated fidelity bar. **They ship as drawn.** The target we can claim conformance against is **WCAG 2.2 SC 2.5.8 (Target Size Minimum, AA) = 24×24**, which both meet; Material's 48 is a design guideline, not a conformance requirement, and nothing in the harness gates tap size (`a11y_guard.dart` has no `meetsGuideline`). **Do not expand the month grid's hit areas to reach 48** — at seven columns on a 390 px surface the rows are only 26 px tall, so vertical expansion would overlap adjacent rows and produce mis-taps on a calendar, which is worse for the same users it claims to help. **Screens 10, 11 and 14 reuse screen 3's grid geometry unchanged**, so this is decided once rather than per screen. Recorded for P12's polish pass to revisit **with real-device testing** — the only thing that can settle it, since a 26 px target is comfortable under a stylus and marginal under a thumb and no amount of static review distinguishes those.
+
+Riverpod trap: `Override` is
 not exported by `flutter_riverpod.dart` in 3.3.2; it lives in `flutter_riverpod/misc.dart`.
 
 *Onboarding (screens 3–7).*
@@ -962,7 +966,34 @@ not exported by `flutter_riverpod.dart` in 3.3.2; it lives in `flutter_riverpod/
 - [ ] **T13 — Screen 7 notifications + push seam.** FULL REPLACE of the four categories (seed ON/ON/OFF/OFF); token+platform all-or-nothing; "Not now" calls `POST /onboarding/complete` and writes no preference row; the R-09 `PushTokenSource` seam and the **every-app-start** `POST /me/devices` registration.
 
 *Cycle + logging (screens 8–11).*
-- [ ] **T14 — Cycle repository + providers.** Month-bucketed calendar reads, day read/write, event upsert/delete; the server's `today`/`timezone` are authoritative (never re-derive today from the device clock); ≤366-day window.
+- [ ] **T9b — Pin the onboarding CTA to the bottom of the shell (NEW, from T9's review).** T8's shell puts
+  the step body in `Expanded(SingleChildScrollView(...))` — an unbounded height constraint — so the
+  mockup's `margin-top:auto` has nothing to push against and Continue floats mid-screen with ~300px of
+  dead space beneath it. The fix is the pattern **screens 1 and 2 already ship**: `LayoutBuilder` →
+  `SingleChildScrollView` → `ConstrainedBox(minHeight: constraints.maxHeight)` → `IntrinsicHeight` →
+  body `Column` with a `Spacer()` before its CTA. **Do it before T10.** Screens 1 and 2 are standalone
+  routes with their own `Scaffold` and never pass through `onboardingStepContent`, so **their goldens do
+  not move** — only the shell's and screen 3's, four PNGs, both pairs in this feature. Cost after T13 is
+  ten PNGs plus four screens authored and reviewed against the wrong CTA position. **Caveat:** screen 3's
+  golden and semantics tests hand-copy the shell chrome; those reproductions must move in lockstep or the
+  golden photographs a layout the app no longer draws — replace the duplication with one `test/support`
+  helper while you are there.
+- [ ] **T14 — Cycle repository + providers.** **Reconcile with T9's `ServerTodayRepository` (from T9's
+  review, verbatim):** (1) `client/lib/core/time/server_today.dart` already calls `GET /cycle/calendar`
+  **with no window** and discards everything but `today` — do not delete it, do not widen it into the
+  windowed read, do not add a second uncached caller. (2) T14 owns the **windowed** read: request exactly
+  `CacheKeys.monthWindow(date)` for the month it keys and file under `CacheKeys.calendarMonth(date)`; both
+  are already reserved by the policy, and `OnboardingRepository._cycleWriteKeys` already invalidates the
+  month key on screen 3's write. (3) Decide the **cache-warm** question explicitly — a windowless response
+  *is* the user's current month, so it MAY be written to `calendarMonth(response.today)` write-only (never
+  served, since serving requires already knowing today); if T14 takes it, inject `CacheStore` into
+  `ServerTodayRepository` and rewrite its dartdoc, and if T14 declines, that dartdoc must say "not **read**
+  from cache", because "not cached" is a different and currently-overstated claim. (4) Give the app **one
+  today per session** — an app-scoped (non-`autoDispose`) `FutureProvider` memoising
+  `ServerTodayRepository.today()`, so screens 3, 4, 10, 11 and 14 share one round trip; without it, the
+  pattern is one uncached GET per dated screen mount, forever, on mobile. (5) Preserve the invariant
+  screen 3 depends on: `today()` throws a typed `Failure` and **never answers a guess** — any memoising
+  layer must not cache a failure. Month-bucketed calendar reads, day read/write, event upsert/delete; the server's `today`/`timezone` are authoritative (never re-derive today from the device clock); ≤366-day window.
 - [ ] **T15 — Screen 10 cycle calendar.** One dot = "this day has a logged entry" (`pain != null || mood != null || hasNotes || eventCount > 0 || symptomCount > 0`); phase legend renders the unavailable state; navigation only — **no period write from this screen** (R-10 keeps `POST /cycle/events` to one writer).
 - [ ] **T16 — Screen 11 day detail.** `GET/POST /cycle/day/{date}` (MERGE — **no clear affordance**), the day's symptoms via `GET /symptoms?from=D&to=D`, and the period-event editor that owns `POST /cycle/events` (**FULL UPSERT — re-hydrate `notes` and `flowIntensity` or they are wiped**). Mood only; **energy and activity sections are dropped** (D-10 defers energy; activity is P5).
 - [ ] **T17 — Screen 8 dashboard.** Greeting, server `today`, the explicit phase-unavailable state, today's pain/mood from the calendar row, quick-log entry points, month link. **Cut: confidence ring, cycle-day counter, insight card, labs nudge, activity tile** — all P6/P7a. **Also closes the navigation dead end, both directions in one commit** (R-19): flips `lumenRedirect`'s authed default from `/profile` to the Home branch **and** mounts screen 31 as the More branch's root, dropping the More placeholder. The redirect test rows naming `/profile` move with it. Doing only one half strands the user — outbound, they reach Home with no route to sign-out or account deletion; inbound, profile ends up with two URLs and divergent back behaviour.
