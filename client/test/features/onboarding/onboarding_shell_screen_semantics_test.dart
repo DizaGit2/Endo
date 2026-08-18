@@ -15,6 +15,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/features/onboarding/application/cycle_setup_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_step.dart';
 import 'package:lumen/features/onboarding/data/onboarding_repository.dart';
@@ -49,10 +50,43 @@ OnboardingFlow _flow(OnboardingStep step, {Failure? failure}) => OnboardingFlow(
   failure: failure,
 );
 
+/// Screen 3, pinned to a settled form.
+///
+/// Since P4b-T9 the `cycle` arm renders a screen that reads
+/// `GET /settings/cycle` and `GET /cycle/calendar` on mount. Unpinned, its
+/// indeterminate spinner is still animating when this file's step-3 assertions
+/// run and `pumpAndSettle` never returns. This file is about the SHELL.
+class _SettledCycleSetup extends CycleSetupController {
+  @override
+  AsyncValue<CycleSetupForm> build() => AsyncValue<CycleSetupForm>.data(
+    CycleSetupForm(
+      answers: const CycleAnswers(),
+      saved: const CycleAnswers(),
+      visibleMonth: DateTime(2026, 4),
+    ),
+  );
+}
+
+/// The SHELL's back affordance.
+///
+/// Since P4b-T9 the step-3 body draws its own `Icons.chevron_left` for the
+/// previous month, so `find.byIcon` alone no longer identifies this control.
+/// Both carry their name on the icon's `semanticLabel`, and 'Back' is
+/// `MaterialLocalizations.backButtonTooltip` — the same string the assertion
+/// below already pins.
+final Finder _shellBack = find.byWidgetPredicate(
+  (Widget widget) =>
+      widget is Icon &&
+      widget.icon == Icons.chevron_left &&
+      widget.semanticLabel == 'Back',
+  description: "the shell's back affordance",
+);
+
 List<Override> _overrides(List<Override> extra) => <Override>[
   authStatusProvider.overrideWith(
     () => FakeAuthController(AuthStatus.unauthenticated),
   ),
+  cycleSetupControllerProvider.overrideWith(_SettledCycleSetup.new),
   ...extra,
 ];
 
@@ -129,7 +163,7 @@ void main() {
 
       // 'Back' is `MaterialLocalizations.backButtonTooltip` — the platform's own
       // word for this control, not a string this task invented.
-      expectLabeledButton(tester, find.byIcon(Icons.chevron_left), 'Back');
+      expectLabeledButton(tester, _shellBack, 'Back');
     },
   );
 
@@ -143,9 +177,9 @@ void main() {
       tester,
       step: OnboardingStep.goals,
     );
-    expect(find.byIcon(Icons.chevron_left), findsOneWidget);
+    expect(_shellBack, findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.chevron_left));
+    await tester.tap(_shellBack);
     await tester.pumpAndSettle();
 
     expect(
@@ -153,14 +187,14 @@ void main() {
       OnboardingStep.baseline,
     );
     expect(find.text('STEP 4 OF 7 · ABOUT YOU'), findsOneWidget);
-    expect(find.byIcon(Icons.chevron_left), findsOneWidget);
+    expect(_shellBack, findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.chevron_left));
+    await tester.tap(_shellBack);
     await tester.pumpAndSettle();
 
     expect(find.text('STEP 3 OF 7 · CYCLE'), findsOneWidget);
     expect(
-      find.byIcon(Icons.chevron_left),
+      _shellBack,
       findsNothing,
       reason:
           'Screen 2 created an account that now exists, so "back" off the first '

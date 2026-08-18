@@ -17,6 +17,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/app_router.dart';
 import 'package:lumen/core/router/routes.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lumen/features/onboarding/application/cycle_setup_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_step.dart';
@@ -54,6 +55,11 @@ Future<void> _pumpShell(
       // `GET /onboarding/state` on mount. Pinned settled so this file stays
       // about the SHELL CHROME rather than about a network read.
       onboardingFlowControllerProvider.overrideWith(_SettledOnboarding.new),
+      // …and since P4b-T9 the `cycle` step renders screen 3, which reads
+      // `GET /settings/cycle` and `GET /cycle/calendar` on mount. Pinned for
+      // the same reason: an unresolved read leaves an indeterminate spinner on
+      // screen and `pumpAndSettle` never returns.
+      cycleSetupControllerProvider.overrideWith(_SettledCycleSetup.new),
     ],
   );
 }
@@ -63,6 +69,18 @@ class _SettledOnboarding extends OnboardingFlowController {
   @override
   AsyncValue<OnboardingFlow> build() => AsyncValue<OnboardingFlow>.data(
     OnboardingFlow(step: OnboardingStep.cycle, state: onboardingStateFixture()),
+  );
+}
+
+/// Screen 3, pinned to a settled form.
+class _SettledCycleSetup extends CycleSetupController {
+  @override
+  AsyncValue<CycleSetupForm> build() => AsyncValue<CycleSetupForm>.data(
+    CycleSetupForm(
+      answers: const CycleAnswers(),
+      saved: const CycleAnswers(),
+      visibleMonth: DateTime(2026, 4),
+    ),
   );
 }
 

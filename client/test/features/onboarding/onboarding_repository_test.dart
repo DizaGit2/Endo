@@ -18,7 +18,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
+import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
+import 'package:lumen/api/model/save_onboarding_cycle_request.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
@@ -40,6 +42,42 @@ import '../../support/harness.dart';
 /// can be checked against.
 const _stateKey = 'GET:/onboarding/state';
 const _profileKey = 'GET:/me';
+const _cycleSettingsKey = 'GET:/settings/cycle';
+
+/// A 409 shaped exactly like the `POST /onboarding/cycle` conflict on the wire
+/// (`OnboardingStepResult.cs`): a DIFFERENT code from the completion's, and it
+/// means the opposite thing.
+DioException _alreadyCompleted409() {
+  final options = RequestOptions(path: '/onboarding/cycle');
+  return DioException(
+    requestOptions: options,
+    type: DioExceptionType.badResponse,
+    response: Response<Map<String, dynamic>>(
+      requestOptions: options,
+      statusCode: 409,
+      data: <String, dynamic>{
+        'title': 'The request conflicts with the current onboarding state.',
+        'status': 409,
+        'detail':
+            'Onboarding is already complete; the cycle anchor can no longer '
+            'be moved here.',
+        'code': 'onboarding_already_completed',
+      },
+    ),
+  );
+}
+
+/// The request the repository actually put on the wire.
+SaveOnboardingCycleRequest _capturedCycleRequest(MockLumenApiApi api) {
+  return verify(
+        () => api.onboardingCyclePost(
+          saveOnboardingCycleRequest: captureAny(
+            named: 'saveOnboardingCycleRequest',
+          ),
+        ),
+      ).captured.last
+      as SaveOnboardingCycleRequest;
+}
 
 /// A 409 shaped exactly like `OnboardingConflict.Incomplete` on the wire.
 DioException _incomplete409({
@@ -341,6 +379,260 @@ void main() {
       );
 
       await expectLater(repo.complete(), throwsA(isA<ServerFailure>()));
+      verifyNever(() => store.invalidate(any()));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /onboarding/cycle
+  // -------------------------------------------------------------------------
+  //
+  // The endpoint is a MERGE on the three self-reports and `lastPeriodStart` is
+  // required on every post (ARCHITECTURE.md §C.0.1). Screen 3 is where a user
+  // comes back to fix a mistyped date, sending the anchor and NOTHING else —
+  // assigning all three columns unconditionally is what silently reset the
+  // user's own answers, and it is why the endpoint stopped doing that.
+
+  group('saveCycle', () {
+    // mocktail needs a real instance before `any(named:)` can match a
+    // non-nullable argument of this type.
+    setUpAll(
+      () => registerFallbackValue(
+        SaveOnboardingCycleRequest(
+          (b) => b..lastPeriodStart = Date(2026, 1, 1),
+        ),
+      ),
+    );
+
+    void answerSave([OnboardingCycleResponse? body]) {
+      when(
+        () => api.onboardingCyclePost(
+          saveOnboardingCycleRequest: any(named: 'saveOnboardingCycleRequest'),
+        ),
+      ).thenAnswer(apiSuccess(body ?? onboardingCycleFixture()));
+    }
+
+    test(
+      'it sends the anchor every time and only the answers it was given',
+      () async {
+        answerSave();
+
+        await repo.saveCycle(lastPeriodStart: Date(2026, 4, 6));
+
+        final anchorOnly = _capturedCycleRequest(api);
+        expect(anchorOnly.lastPeriodStart, Date(2026, 4, 6));
+        expect(anchorOnly.avgCycleLengthDays, isNull);
+        expect(anchorOnly.regularity, isNull);
+        // Never collected on screen 3, and there is no way to clear it back to
+        // null on any P4a surface — so it is not a parameter and never a key.
+        expect(anchorOnly.avgPeriodLengthDays, isNull);
+
+        // The positive control, and the whole point of this test: those three
+        // nulls are also what a builder that sets NOTHING produces. The same
+        // repository, called with the two answers, must carry them.
+        await repo.saveCycle(
+          lastPeriodStart: Date(2026, 4, 6),
+          avgCycleLengthDays: 29,
+          regularity: 'irregular',
+        );
+
+        final full = _capturedCycleRequest(api);
+        expect(full.avgCycleLengthDays, 29);
+        expect(full.regularity, 'irregular');
+        expect(full.avgPeriodLengthDays, isNull);
+      },
+    );
+
+    test('it invalidates the onboarding state, the cycle settings and the '
+        "anchor's own day", () async {
+      answerSave();
+
+      await repo.saveCycle(lastPeriodStart: Date(2026, 4, 6));
+
+      final keys = verify(() => store.invalidate(captureAny())).captured;
+      expect(keys, contains(_stateKey));
+      expect(keys, contains(_cycleSettingsKey));
+      // One POST writes two tables: `user_cycle_settings` AND the
+      // `cycle_events.period_start` anchor. The dated keys come from the one
+      // policy that can name every key a date appears in.
+      expect(keys, contains('GET:/cycle/day/2026-04-06'));
+      expect(keys, contains('GET:/symptoms?day=2026-04-06'));
+      expect(keys, contains('GET:/cycle/calendar?month=2026-04'));
+      // Not the profile: this endpoint does not stamp
+      // `onboarding_completed_at`, and a client that invalidated `/me` here
+      // would re-read it on every correction of a mistyped date.
+      expect(keys, isNot(contains(_profileKey)));
+    });
+
+    test(
+      'correcting the date invalidates the day the anchor LEFT as well',
+      () async {
+        answerSave();
+
+        await repo.saveCycle(
+          lastPeriodStart: Date(2026, 4, 6),
+          previousLastPeriodStart: Date(2026, 3, 9),
+        );
+
+        final moved = verify(() => store.invalidate(captureAny())).captured;
+        // The server MOVES the onboarding seed rather than adding a second one
+        // (`StageOnboardingAnchorAsync`, case 2), so the old day loses a
+        // `period_start` it used to have. Invalidating only the new day leaves a
+        // cached March calendar drawing an anchor that is no longer there.
+        expect(moved, contains('GET:/cycle/calendar?month=2026-03'));
+        expect(moved, contains('GET:/cycle/day/2026-03-09'));
+
+        // Positive control: the March keys are absent when the anchor did NOT
+        // move, so the two assertions above are about the move rather than about
+        // a repository that invalidates every month it can think of.
+        await repo.saveCycle(
+          lastPeriodStart: Date(2026, 4, 6),
+          previousLastPeriodStart: Date(2026, 4, 6),
+        );
+        final unmoved = verify(() => store.invalidate(captureAny())).captured;
+        expect(unmoved, isNot(contains('GET:/cycle/calendar?month=2026-03')));
+        expect(unmoved, contains('GET:/cycle/calendar?month=2026-04'));
+      },
+    );
+
+    test('a rejected save invalidates nothing', () async {
+      answerSave();
+      await repo.saveCycle(lastPeriodStart: Date(2026, 4, 6));
+      final afterSuccess = verify(
+        () => store.invalidate(captureAny()),
+      ).captured;
+      // The control: this store DOES record invalidations, so the emptiness
+      // below is a fact about the rejection rather than about a mock nobody
+      // wired.
+      expect(afterSuccess, isNotEmpty);
+
+      when(
+        () => api.onboardingCyclePost(
+          saveOnboardingCycleRequest: any(named: 'saveOnboardingCycleRequest'),
+        ),
+      ).thenAnswer(apiNetworkFailure<OnboardingCycleResponse>());
+
+      await expectLater(
+        repo.saveCycle(lastPeriodStart: Date(2026, 4, 6)),
+        throwsA(isA<NetworkFailure>()),
+      );
+      verifyNever(() => store.invalidate(any()));
+    });
+
+    test('it returns the resolved values the server echoed', () async {
+      answerSave(
+        onboardingCycleFixture(
+          lastPeriodStart: Date(2026, 4, 6),
+          avgCycleLengthDays: 28,
+          regularity: 'somewhat',
+        ),
+      );
+
+      // Sent nothing but the anchor; the response still names the 28 and the
+      // `somewhat` the server applied, which is what lets screen 3 show a user
+      // a value they never typed.
+      final response = await repo.saveCycle(lastPeriodStart: Date(2026, 4, 6));
+
+      expect(response.avgCycleLengthDays, 28);
+      expect(response.regularity, 'somewhat');
+      expect(response.warnings, isEmpty);
+    });
+
+    test('the sanity warnings arrive alongside a SUCCESSFUL save', () async {
+      answerSave(
+        onboardingCycleFixture(
+          avgCycleLengthDays: 400,
+          warnings: const <String>['avg_cycle_length_out_of_sanity_band'],
+        ),
+      );
+
+      // The value was STORED and the call did not throw: the band is a hint,
+      // never a rejection. Both halves are asserted — a save that threw would
+      // also fail to return a bad value.
+      final response = await repo.saveCycle(
+        lastPeriodStart: Date(2026, 4, 6),
+        avgCycleLengthDays: 400,
+      );
+
+      expect(response.avgCycleLengthDays, 400);
+      expect(response.warnings, <String>[
+        'avg_cycle_length_out_of_sanity_band',
+      ]);
+    });
+
+    test('a 400 arrives as a ValidationFailure that names the field', () async {
+      when(
+        () => api.onboardingCyclePost(
+          saveOnboardingCycleRequest: any(named: 'saveOnboardingCycleRequest'),
+        ),
+      ).thenAnswer(
+        apiValidationProblem<OnboardingCycleResponse>(
+          fields: <String, List<String>>{
+            'lastPeriodStart': <String>[
+              'date is before the earliest allowed date',
+            ],
+          },
+        ),
+      );
+
+      // The backdate floor is `users.created_at - 2 years` and NO endpoint
+      // returns `created_at`, so the client cannot pre-validate it. The whole
+      // mirror is this: carry the server's own message back to its own field.
+      final failure = await repo
+          .saveCycle(lastPeriodStart: Date(2020, 1, 1))
+          .then<Object?>((_) => null, onError: (Object e) => e);
+
+      expect(failure, isA<ValidationFailure>());
+      expect(
+        (failure as ValidationFailure).messageFor('lastPeriodStart'),
+        'date is before the earliest allowed date',
+      );
+      // …and it names only the field the server named.
+      expect(failure.messageFor('avgCycleLengthDays'), isNull);
+    });
+
+    test(
+      'the post-completion 409 arrives as a typed ConflictFailure',
+      () async {
+        when(
+          () => api.onboardingCyclePost(
+            saveOnboardingCycleRequest: any(
+              named: 'saveOnboardingCycleRequest',
+            ),
+          ),
+        ).thenThrow(_alreadyCompleted409());
+
+        final failure = await repo
+            .saveCycle(lastPeriodStart: Date(2026, 4, 6))
+            .then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(failure, isA<ConflictFailure>());
+        // `onboarding_already_completed`, NOT `onboarding_incomplete`: the two
+        // codes live on the same surface and mean opposite things.
+        expect(
+          (failure as ConflictFailure).code,
+          'onboarding_already_completed',
+        );
+        expect(failure.message, contains('can no longer be moved'));
+      },
+    );
+
+    test('a 200 with no body is a server failure', () async {
+      when(
+        () => api.onboardingCyclePost(
+          saveOnboardingCycleRequest: any(named: 'saveOnboardingCycleRequest'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<OnboardingCycleResponse>(
+          requestOptions: RequestOptions(path: '/onboarding/cycle'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(
+        repo.saveCycle(lastPeriodStart: Date(2026, 4, 6)),
+        throwsA(isA<ServerFailure>()),
+      );
       verifyNever(() => store.invalidate(any()));
     });
   });
