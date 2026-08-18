@@ -8,6 +8,8 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/onboarding/application/cycle_setup_controller.dart';
 import 'package:lumen/shared/widgets/lumen_error_banner.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
+import 'package:lumen/shared/widgets/lumen_field_label.dart';
+import 'package:lumen/shared/widgets/lumen_field_message.dart';
 
 // ---------------------------------------------------------------------------
 // Copy
@@ -155,12 +157,12 @@ class _Body extends ConsumerWidget {
         // evaluate neither.
         if (rejected?.messageFor('lastPeriodStart') != null) ...[
           const SizedBox(height: 6),
-          _FieldMessage(rejected!.messageFor('lastPeriodStart')!),
+          LumenFieldMessage(rejected!.messageFor('lastPeriodStart')!),
         ],
 
         const SizedBox(height: 14),
 
-        const _FieldLabel('Average cycle length'),
+        const LumenFieldLabel('Average cycle length'),
         const SizedBox(height: 6),
         _CycleLengthChips(
           form: form,
@@ -169,12 +171,12 @@ class _Body extends ConsumerWidget {
         ),
         if (rejected?.messageFor('avgCycleLengthDays') != null) ...[
           const SizedBox(height: 6),
-          _FieldMessage(rejected!.messageFor('avgCycleLengthDays')!),
+          LumenFieldMessage(rejected!.messageFor('avgCycleLengthDays')!),
         ],
 
         const SizedBox(height: 14),
 
-        const _FieldLabel('Regularity'),
+        const LumenFieldLabel('Regularity'),
         const SizedBox(height: 6),
         Row(
           children: <Widget>[
@@ -193,7 +195,7 @@ class _Body extends ConsumerWidget {
         ),
         if (rejected?.messageFor('regularity') != null) ...[
           const SizedBox(height: 6),
-          _FieldMessage(rejected!.messageFor('regularity')!),
+          LumenFieldMessage(rejected!.messageFor('regularity')!),
         ],
 
         // The mockup's `.btn { margin-top:auto }`. What it pushes against is
@@ -609,52 +611,6 @@ class _Chip extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Small parts
 // ---------------------------------------------------------------------------
-
-/// The mockup's `.lb` field label — uppercased by presentation, announced in
-/// sentence case.
-///
-/// The split is P4b-T8's lesson, applied one widget over: an all-caps run is
-/// spelled out letter by letter by many screen readers, so what is drawn and
-/// what is announced are deliberately different strings.
-class _FieldLabel extends StatelessWidget {
-  const _FieldLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Theme.of(context).extension<LumenColors>()!;
-    return Semantics(
-      label: text,
-      excludeSemantics: true,
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w500,
-          color: c.muted,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
-}
-
-/// One field's rejection message, in the server's own words.
-class _FieldMessage extends StatelessWidget {
-  const _FieldMessage(this.message);
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Theme.of(context).extension<LumenColors>()!;
-    return Text(
-      message,
-      style: TextStyle(fontSize: 12, color: c.accent, height: 1.4),
-    );
-  }
-}
 
 /// A non-blocking note about a save that already succeeded.
 ///

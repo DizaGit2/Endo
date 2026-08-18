@@ -9,6 +9,8 @@ import 'package:lumen/core/locale/lumen_material_localizations.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/onboarding/application/baseline_controller.dart';
 import 'package:lumen/shared/widgets/lumen_error_banner.dart';
+import 'package:lumen/shared/widgets/lumen_field_label.dart';
+import 'package:lumen/shared/widgets/lumen_field_message.dart';
 import 'package:lumen/shared/widgets/lumen_input_field.dart';
 
 // ---------------------------------------------------------------------------
@@ -219,7 +221,7 @@ class _BodyState extends ConsumerState<_Body> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  const _FieldLabel('Date of birth', announce: false),
+                  const LumenFieldLabel('Date of birth', announce: false),
                   const SizedBox(height: 6),
                   _DobField(
                     form: form,
@@ -234,7 +236,7 @@ class _BodyState extends ConsumerState<_Body> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  const _FieldLabel('Height', announce: false),
+                  const LumenFieldLabel('Height', announce: false),
                   const SizedBox(height: 6),
                   LumenInputField(
                     controller: _height,
@@ -266,16 +268,16 @@ class _BodyState extends ConsumerState<_Body> {
 
         if (rejected?.messageFor('dob') != null) ...<Widget>[
           const SizedBox(height: 6),
-          _FieldMessage(rejected!.messageFor('dob')!),
+          LumenFieldMessage(rejected!.messageFor('dob')!),
         ],
         if (rejected?.messageFor('heightCm') != null) ...<Widget>[
           const SizedBox(height: 6),
-          _FieldMessage(rejected!.messageFor('heightCm')!),
+          LumenFieldMessage(rejected!.messageFor('heightCm')!),
         ],
 
         const SizedBox(height: 14),
 
-        const _FieldLabel('Weight', announce: false),
+        const LumenFieldLabel('Weight', announce: false),
         const SizedBox(height: 6),
         LumenInputField(
           controller: _weight,
@@ -293,12 +295,12 @@ class _BodyState extends ConsumerState<_Body> {
         ),
         if (rejected?.messageFor('weightKg') != null) ...<Widget>[
           const SizedBox(height: 6),
-          _FieldMessage(rejected!.messageFor('weightKg')!),
+          LumenFieldMessage(rejected!.messageFor('weightKg')!),
         ],
 
         const SizedBox(height: 14),
 
-        const _FieldLabel('Endometriosis status'),
+        const LumenFieldLabel('Endometriosis status'),
         const SizedBox(height: 6),
         for (final status in EndoStatus.values) ...<Widget>[
           if (status != EndoStatus.values.first) const SizedBox(height: 6),
@@ -310,7 +312,7 @@ class _BodyState extends ConsumerState<_Body> {
         ],
         if (rejected?.messageFor('endoStatus') != null) ...<Widget>[
           const SizedBox(height: 6),
-          _FieldMessage(rejected!.messageFor('endoStatus')!),
+          LumenFieldMessage(rejected!.messageFor('endoStatus')!),
         ],
 
         // The mockup's `.btn { margin-top:auto }`. What it pushes against is
@@ -654,62 +656,4 @@ class _OneDecimalPlace extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) => _pattern.hasMatch(newValue.text) ? newValue : oldValue;
-}
-
-/// The mockup's `.lb` field label — uppercased by presentation, announced in
-/// sentence case.
-///
-/// The split is P4b-T8's lesson: an all-caps run is spelled out letter by
-/// letter by many screen readers, so what is drawn and what is announced are
-/// deliberately different strings.
-///
-/// [announce] is false for a label whose CONTROL already carries the same name
-/// — the two measurement fields (`LumenInputField` takes a required `label`)
-/// and the date-of-birth box. Announcing it twice puts a second, unassociated
-/// "Height" in the reading order right before the field that is actually
-/// called Height, which is noise rather than help; the same reasoning as
-/// screen 3's `ExcludeSemantics` on its weekday header. The endo-status label
-/// keeps its announcement, because the thing it names is three separate
-/// buttons and nothing else would say what they are for.
-class _FieldLabel extends StatelessWidget {
-  const _FieldLabel(this.text, {this.announce = true});
-
-  final String text;
-
-  /// Whether a screen reader hears this label as a node of its own.
-  final bool announce;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Theme.of(context).extension<LumenColors>()!;
-    final drawn = Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w500,
-        color: c.muted,
-        letterSpacing: 0.5,
-      ),
-    );
-
-    if (!announce) return ExcludeSemantics(child: drawn);
-
-    return Semantics(label: text, excludeSemantics: true, child: drawn);
-  }
-}
-
-/// One field's rejection message, in the server's own words.
-class _FieldMessage extends StatelessWidget {
-  const _FieldMessage(this.message);
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Theme.of(context).extension<LumenColors>()!;
-    return Text(
-      message,
-      style: TextStyle(fontSize: 12, color: c.accent, height: 1.4),
-    );
-  }
 }
