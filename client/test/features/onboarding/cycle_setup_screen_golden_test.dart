@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/core/locale/locale_provider.dart';
@@ -41,19 +40,11 @@ void main() {
     subject: 'CycleSetupScreen',
     fileName: 'cycle_setup_screen',
     build: (brightness) => goldenApp(
-      // The chrome the shell puts around a step body. Reproduced rather than
-      // mounted, so this pair photographs screen 3 and not the eyebrow, the
-      // dots and the back affordance T8 already has goldens for.
-      home: const Scaffold(
-        body: SafeArea(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(28, 8, 28, 24),
-              child: CycleSetupScreen(),
-            ),
-          ),
-        ),
-      ),
+      // The frame the shell puts around a step body — the shell's own insets
+      // and its own step slot, not a copy of them, so this pair cannot go on
+      // photographing a layout the app has stopped drawing. It leaves out the
+      // eyebrow, the dots and the back affordance, which T8 already goldens.
+      home: onboardingStepHost(const CycleSetupScreen()),
       brightness: brightness,
       overrides: [
         // Pinned: without it the month header and the week's first column

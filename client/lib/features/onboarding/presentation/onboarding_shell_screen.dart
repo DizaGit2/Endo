@@ -86,7 +86,7 @@ class _FlowBody extends ConsumerWidget {
     final c = Theme.of(context).extension<LumenColors>()!;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
+      padding: kOnboardingStepPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -134,9 +134,7 @@ class _FlowBody extends ConsumerWidget {
           const SizedBox(height: 14),
 
           Expanded(
-            child: SingleChildScrollView(
-              child: onboardingStepContent(flow.step),
-            ),
+            child: OnboardingStepSlot(child: onboardingStepContent(flow.step)),
           ),
 
           // A failed `POST /onboarding/complete` is a failure of a page that is
@@ -154,6 +152,52 @@ class _FlowBody extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The step's box
+// ---------------------------------------------------------------------------
+
+/// The page insets every onboarding step is laid out inside.
+///
+/// Public because a test that photographs one step body on its own has to
+/// reproduce the shell's frame to lay it out as it ships, and a second copy of
+/// these four numbers is a second thing to keep in step. See
+/// `test/support/onboarding_step_host.dart`.
+const EdgeInsets kOnboardingStepPadding = EdgeInsets.fromLTRB(28, 8, 28, 24);
+
+/// The box a step body is given, and the thing its `Spacer()` pushes against.
+///
+/// A plain `Expanded(SingleChildScrollView(...))` hands the body an
+/// **unbounded** height: the scroll view sizes its child to that child's own
+/// height, so a `Spacer` inside it has nothing to expand into and the mockups'
+/// `margin-top:auto` CTA lands wherever the content happens to end. This is the
+/// chain screens 1 and 2 already ship for the same reason
+/// (`welcome_screen.dart`, `account_screen.dart`): [ConstrainedBox] makes the
+/// body at least as tall as the viewport, [IntrinsicHeight] lets it be taller
+/// when its own content needs it, and the scroll view carries whatever spills.
+///
+/// So a short body fills the slot and its CTA sits on the bottom edge; a body
+/// taller than the slot keeps its natural height, the `Spacer` contributes
+/// nothing, and the whole thing scrolls.
+class OnboardingStepSlot extends StatelessWidget {
+  const OnboardingStepSlot({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(child: child),
+          ),
+        );
+      },
     );
   }
 }

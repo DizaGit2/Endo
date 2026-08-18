@@ -196,6 +196,13 @@ class _Body extends ConsumerWidget {
           _FieldMessage(rejected!.messageFor('regularity')!),
         ],
 
+        // The mockup's `.btn { margin-top:auto }`. What it pushes against is
+        // [OnboardingStepSlot], which is why this is a `Spacer` and not a
+        // `SizedBox` of some measured height: the CTA rides the bottom of the
+        // step on every surface, and takes no space at all on one too short
+        // for the body, which scrolls instead.
+        const Spacer(),
+
         // After a SUCCESSFUL save, never before one: the band does not block a
         // write, so there is nothing to say until the value is stored.
         for (final code in form.warnings)

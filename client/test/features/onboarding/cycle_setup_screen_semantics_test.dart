@@ -63,20 +63,6 @@ class _SettledFlow extends OnboardingFlowController {
   );
 }
 
-/// The chrome the shell puts around a step body, reproduced so the screen is
-/// laid out exactly as it ships without dragging the eyebrow, the dots and the
-/// back affordance into a test about screen 3.
-Widget _hosted() => const Scaffold(
-  body: SafeArea(
-    child: SingleChildScrollView(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(28, 8, 28, 24),
-        child: CycleSetupScreen(),
-      ),
-    ),
-  ),
-);
-
 class _Harness {
   _Harness({
     Date? resumeAnchor,
@@ -145,8 +131,15 @@ class _Harness {
     ).thenAnswer((_) async => throw failure);
   }
 
+  /// The frame the shell puts around a step body — [onboardingStepHost], built
+  /// out of the shell's own insets and its own step slot, so this file drives
+  /// screen 3 under the constraints it actually ships under.
   Future<void> pump(WidgetTester tester) async {
-    await pumpApp(tester, home: _hosted(), overrides: overrides);
+    await pumpApp(
+      tester,
+      home: onboardingStepHost(const CycleSetupScreen()),
+      overrides: overrides,
+    );
   }
 }
 
