@@ -28,6 +28,7 @@
 // is what makes "registration is enough" falsifiable instead of tautological.
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lumen/api/model/me_response.dart';
@@ -35,7 +36,10 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/router/app_router.dart';
 import 'package:lumen/core/router/routes.dart';
+import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
+import 'package:lumen/features/onboarding/application/onboarding_step.dart';
+import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
@@ -186,6 +190,15 @@ int _selectedIndex(WidgetTester tester) =>
 
 class _MockMeRepository extends Mock implements MeRepository {}
 
+/// The onboarding shell, pinned to a settled first step so the gate's
+/// destination renders without a network read.
+class _SettledOnboarding extends OnboardingFlowController {
+  @override
+  AsyncValue<OnboardingFlow> build() => AsyncValue<OnboardingFlow>.data(
+    OnboardingFlow(step: OnboardingStep.cycle, state: onboardingStateFixture()),
+  );
+}
+
 class _FakeProfileController extends ProfileController {
   @override
   Future<CacheResult<MeResponse>> build() async => Fresh(_me(true));
@@ -220,6 +233,11 @@ Future<void> _pumpRealApp(
       ...lumenOverrides(),
       meRepositoryProvider.overrideWithValue(repo),
       profileControllerProvider.overrideWith(_FakeProfileController.new),
+      // P4b-T8 replaced `/onboarding`'s placeholder with the real shell, which
+      // reads `GET /onboarding/state` on mount. The gate's destination now has
+      // a dependency, so the harness that lands on it has to supply one — the
+      // resume answer itself is irrelevant here, only that the shell settles.
+      onboardingFlowControllerProvider.overrideWith(_SettledOnboarding.new),
     ],
   );
 
@@ -394,7 +412,7 @@ void main() {
       (tester) async {
         await _pumpRealApp(tester, onboardingCompleted: false);
 
-        expect(find.text('Set up Lumen'), findsOneWidget);
+        expect(find.byType(OnboardingShellScreen), findsOneWidget);
       },
     );
 
@@ -404,7 +422,7 @@ void main() {
       (tester) async {
         await _pumpRealApp(tester, onboardingCompleted: null);
 
-        expect(find.text('Set up Lumen'), findsOneWidget);
+        expect(find.byType(OnboardingShellScreen), findsOneWidget);
       },
     );
 
@@ -419,7 +437,7 @@ void main() {
         // onboardingStatusProvider listen in _RouterRefreshNotifier would
         // leave it green). Assert the destination, not just the non-destination.
         expect(find.byType(ProfileScreen), findsOneWidget);
-        expect(find.text('Set up Lumen'), findsNothing);
+        expect(find.byType(OnboardingShellScreen), findsNothing);
       },
     );
   });

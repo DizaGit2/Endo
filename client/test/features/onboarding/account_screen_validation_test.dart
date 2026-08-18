@@ -29,6 +29,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/onboarding_start_request.dart';
 import 'package:lumen/api/model/onboarding_start_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
+import 'package:lumen/core/cache/hive_boot.dart';
 import 'package:lumen/core/network/api_client.dart';
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
 import 'package:lumen/shared/widgets/lumen_input_field.dart';
@@ -124,6 +125,11 @@ Future<_RecordingAuthController> _pump(
       // last-one-wins.
       authStatusProvider.overrideWith(() => auth),
       lumenApiProvider.overrideWithValue(api),
+      // `OnboardingRepository` took a `CacheStore` in P4b-T8 (the resume read
+      // and the completion write are cached/invalidating), and
+      // `cacheStoreProvider` THROWS unless overridden. Screen 2 uses none of
+      // that, so an always-missing store is exactly right here.
+      cacheStoreProvider.overrideWithValue(emptyCacheStore()),
     ],
   );
   return auth;

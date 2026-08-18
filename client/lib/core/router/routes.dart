@@ -23,8 +23,13 @@ abstract final class Routes {
   ///
   /// A registered route since P4b-T1: authenticated users whose
   /// `MeResponse.onboardingCompleted` is not true are gated here by
-  /// [lumenRedirect]. P4b-T8 replaces its placeholder screen with the real
-  /// step-by-step flow (screens 3–7).
+  /// [lumenRedirect]. Since P4b-T8 it renders `OnboardingShellScreen`, which
+  /// holds the whole of screens 3–7.
+  ///
+  /// **The steps are deliberately NOT sub-routes.** The gate funnels every
+  /// location an un-onboarded user asks for to exactly this path, so
+  /// `/onboarding/cycle` would be redirected straight back here; the step lives
+  /// in the shell's controller instead.
   static const onboarding = '/onboarding';
 
   // ── The five bottom-nav tabs ───────────────────────────────────────────────

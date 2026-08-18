@@ -8,8 +8,9 @@
 //      first field is a swipe-through cost paid on every onboarding screen.
 //   2. Because it announces nothing, the progress it shows visually
 //      ("step 2 of 7") reaches a screen-reader user only if the SCREEN says so.
-//      Screens 1 and 2 do not say it today, and that gap is recorded where the
-//      person who fixes onboarding will actually be reading:
+//      P4b-T8 made it say so: `LumenStepChrome` announces "Step N of 7" from
+//      the eyebrow of every screen in the flow, and the test that used to
+//      record the gap now asserts the announcement —
 //      `test/features/onboarding/welcome_screen_semantics_test.dart`.
 //
 // `expectNoDingbats` is deliberately not used here — it fails a tree with no

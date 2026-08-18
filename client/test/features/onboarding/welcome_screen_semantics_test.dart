@@ -53,31 +53,39 @@ void main() {
     },
   );
 
-  testWidgetsWithSemantics(
-    'the step position is conveyed visually only — recorded, not endorsed',
-    (tester) async {
-      // P4b-T5b. `LumenStepDots` is decoration and announces nothing, which is
-      // correct for seven coloured boxes (see
-      // `test/widgets/lumen_step_dots_semantics_test.dart`). The consequence is
-      // that "step 1 of 7" reaches a screen-reader user only if this SCREEN
-      // says it, and it does not — so the position is invisible to assistive
-      // tech across the whole onboarding flow.
-      //
-      // Filed here rather than with the widget because this is the screen that
-      // has to say it, and the natural fix is a Semantics label on the header
-      // rather than any change to the shared row.
-      await _pump(tester);
+  testWidgetsWithSemantics('the step position is announced, not only drawn', (
+    tester,
+  ) async {
+    // P4b-T8 closes the deficiency P4b-T5b pinned here. The old test asserted
+    // that this flow conveyed its position visually ONLY, and carried an
+    // instruction to delete it once that stopped being true; this is its
+    // replacement.
+    //
+    // `LumenStepDots` still announces nothing, and that is still correct —
+    // seven coloured boxes belong nowhere in the reading order (see
+    // `test/widgets/lumen_step_dots_semantics_test.dart`). So the position has
+    // to come from the eyebrow, and the eyebrow is drawn UPPERCASED, which is
+    // what made it useless: `LUMEN · 1 OF 7` is an all-caps run many screen
+    // readers spell out, punctuated by a middle dot read as noise.
+    //
+    // Hence both halves below. The first is the positive control for the
+    // second: the shouted string really is on screen, so its absence from the
+    // semantics tree is a fact about what is announced rather than about a
+    // screen that failed to render.
+    await _pump(tester);
 
-      expect(find.byType(LumenStepDots), findsOneWidget);
-      expect(
-        find.bySemanticsLabel(RegExp('[Ss]tep')),
-        findsNothing,
-        reason:
-            'If this flow now announces its step position, delete this test '
-            'and say so — it exists to record that it did not.',
-      );
-    },
-  );
+    expect(find.byType(LumenStepDots), findsOneWidget);
+    expect(
+      find.text('LUMEN · 1 OF 7'),
+      findsOneWidget,
+      reason: 'premise: the mockup eyebrow is drawn, unchanged and uppercased',
+    );
+
+    // "Lumen" is in no other Text on this screen, so the announcement carries
+    // the word rather than dropping it along with the shouting.
+    expect(find.bySemanticsLabel('Lumen, step 1 of 7'), findsOneWidget);
+    expect(find.bySemanticsLabel('LUMEN · 1 OF 7'), findsNothing);
+  });
 
   testWidgets('renders no dingbat glyphs', (tester) async {
     await _pump(tester);

@@ -3,15 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/routes.dart';
-import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
+import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.dart';
 import 'package:lumen/features/onboarding/presentation/welcome_screen.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
 import 'package:lumen/features/shell/presentation/tab_placeholder_screen.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:lumen/shared/widgets/lumen_scaffold.dart';
-import 'package:lumen/shared/widgets/lumen_section_label.dart';
 
 // ---------------------------------------------------------------------------
 // Redirect logic (pure function — unit-testable without a router instance)
@@ -205,7 +204,7 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
   GoRoute(path: Routes.profile, builder: (_, _) => const ProfileScreen()),
   GoRoute(
     path: Routes.onboarding,
-    builder: (_, _) => const _OnboardingPlaceholderScreen(),
+    builder: (_, _) => const OnboardingShellScreen(),
   ),
   StatefulShellRoute.indexedStack(
     builder: (_, _, navigationShell) =>
@@ -396,61 +395,6 @@ class _GateUnavailableBody extends ConsumerWidget {
     return LumenErrorRetry(
       message: 'Something went wrong. Please try again.',
       onRetry: () => ref.invalidate(onboardingStatusProvider),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Onboarding — placeholder until P4b-T8 builds the real flow
-// ---------------------------------------------------------------------------
-
-/// Stand-in for the onboarding flow (screens 3–7).
-///
-/// [Routes.onboarding] has to be a real registered route for the gate above to
-/// have anywhere to send an authenticated-but-not-onboarded user, and a
-/// redirect target that does not exist is worse than no gate at all. P4b-T8
-/// replaces this builder with the real onboarding shell; it is private here for
-/// the same reason [_SplashScreen] is — it is router chrome, not a feature
-/// screen, and nothing else may reference it.
-class _OnboardingPlaceholderScreen extends StatelessWidget {
-  const _OnboardingPlaceholderScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Theme.of(context).extension<LumenColors>()!;
-
-    return Scaffold(
-      backgroundColor: c.surface,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 48, 28, 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const LumenSectionLabel(
-                'Onboarding',
-                fontSize: 11,
-                letterSpacing: 1.5,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Set up Lumen',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w500,
-                  color: c.ink,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'A few questions about your cycle come next, so Lumen can '
-                'make sense of what you log.',
-                style: TextStyle(fontSize: 14, height: 1.5, color: c.muted),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

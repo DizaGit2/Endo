@@ -16,7 +16,11 @@ import 'package:go_router/go_router.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/app_router.dart';
 import 'package:lumen/core/router/routes.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
+import 'package:lumen/features/onboarding/application/onboarding_step.dart';
+import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.dart';
 import 'package:lumen/shared/widgets/lumen_scaffold.dart';
 
 import '../../support/harness.dart';
@@ -44,7 +48,21 @@ Future<void> _pumpShell(
   await pumpRouterApp(
     tester,
     routerConfig: router,
-    overrides: lumenOverrides(auth: status),
+    overrides: [
+      ...lumenOverrides(auth: status),
+      // `/onboarding` renders the real shell since P4b-T8, and the shell reads
+      // `GET /onboarding/state` on mount. Pinned settled so this file stays
+      // about the SHELL CHROME rather than about a network read.
+      onboardingFlowControllerProvider.overrideWith(_SettledOnboarding.new),
+    ],
+  );
+}
+
+/// The onboarding shell, pinned to a settled first step.
+class _SettledOnboarding extends OnboardingFlowController {
+  @override
+  AsyncValue<OnboardingFlow> build() => AsyncValue<OnboardingFlow>.data(
+    OnboardingFlow(step: OnboardingStep.cycle, state: onboardingStateFixture()),
   );
 }
 
@@ -215,7 +233,7 @@ void main() {
         onboarding: OnboardingStatus.incomplete,
       );
 
-      expect(find.text('Set up Lumen'), findsOneWidget);
+      expect(find.byType(OnboardingShellScreen), findsOneWidget);
       expect(find.byType(LumenBottomNav), findsNothing);
       expect(find.byType(NavigationBar), findsNothing);
     });

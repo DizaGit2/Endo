@@ -6,7 +6,7 @@ import 'package:lumen/features/onboarding/application/account_controller.dart';
 import 'package:lumen/features/onboarding/application/account_validation.dart';
 import 'package:lumen/shared/widgets/lumen_error_banner.dart';
 import 'package:lumen/shared/widgets/lumen_input_field.dart';
-import 'package:lumen/shared/widgets/lumen_section_label.dart';
+import 'package:lumen/shared/widgets/lumen_step_chrome.dart';
 import 'package:lumen/shared/widgets/lumen_step_dots.dart';
 
 // D-01 was REOPENED on 2026-07-08: social login is IN for v1, and lands in its
@@ -99,13 +99,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Section tag
+                        // Section tag — [LumenStepChrome], so the position is
+                        // announced as "Step 2 of 7" rather than as the
+                        // uppercased eyebrow a screen reader would otherwise
+                        // spell out. Same pixels as the bare label it replaces.
                         const Center(
-                          child: LumenSectionLabel(
-                            'Step 2 of 7',
-                            fontSize: 11,
-                            letterSpacing: 1.5,
-                          ),
+                          child: LumenStepChrome(step: 2, totalSteps: 7),
                         ),
 
                         const SizedBox(height: 14),
@@ -296,4 +295,3 @@ class _FieldLabel extends StatelessWidget {
     );
   }
 }
-

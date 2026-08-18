@@ -20,6 +20,7 @@ import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
+import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:mocktail/mocktail.dart';
@@ -91,7 +92,7 @@ void main() {
       );
       expect(find.text('Try again'), findsOneWidget);
       // The user is held, not guessed past: no onboarding, no profile.
-      expect(find.text('Set up Lumen'), findsNothing);
+      expect(find.byType(OnboardingShellScreen), findsNothing);
       expect(find.byType(ProfileScreen), findsNothing);
     },
   );

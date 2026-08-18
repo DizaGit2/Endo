@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
-import 'package:lumen/shared/widgets/lumen_section_label.dart';
+import 'package:lumen/shared/widgets/lumen_step_chrome.dart';
 import 'package:lumen/shared/widgets/lumen_step_dots.dart';
 
 /// Screen 1 — Welcome (onboarding step 1 of 7).
@@ -36,11 +36,17 @@ class WelcomeScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // Section tag — sentence-case source; widget uppercases.
-                        const LumenSectionLabel(
-                          'Lumen · 1 of 7',
-                          fontSize: 11,
-                          letterSpacing: 1.5,
+                        // Section tag — the mockup's own string, drawn
+                        // uppercased by the widget. [LumenStepChrome] rather
+                        // than a bare label so the step position is ANNOUNCED
+                        // ("Step 1 of 7") instead of reaching a screen reader
+                        // as the shouted, dot-punctuated eyebrow. Pixels are
+                        // unchanged: the chrome draws the same
+                        // [LumenSectionLabel] with the same two arguments.
+                        const LumenStepChrome(
+                          step: 1,
+                          totalSteps: 7,
+                          lead: 'Lumen',
                         ),
 
                         const SizedBox(height: 24),

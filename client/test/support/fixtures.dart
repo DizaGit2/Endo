@@ -19,7 +19,9 @@
 //
 // Later P4b tasks add their own screen's DTOs here rather than inline.
 
+import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/me_response.dart';
+import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 
 /// `GET /me`. The shipped default is a fully-onboarded Spanish-locale user.
@@ -53,14 +55,30 @@ OnboardingStateResponse onboardingStateFixture({
   bool? goalsProvided = false,
   bool? hormonesProvided = false,
   bool? notificationsProvided = false,
+  Date? lastPeriodStart,
+  DateTime? completedAt,
 }) {
   return OnboardingStateResponse(
     (b) => b
       ..completed = completed
+      ..completedAt = completedAt
       ..baselineProvided = baselineProvided
       ..cycleProvided = cycleProvided
       ..goalsProvided = goalsProvided
       ..hormonesProvided = hormonesProvided
-      ..notificationsProvided = notificationsProvided,
+      ..notificationsProvided = notificationsProvided
+      ..lastPeriodStart = lastPeriodStart,
+  );
+}
+
+/// `POST /onboarding/complete`. The default is a first, successful completion.
+OnboardingCompleteResponse onboardingCompleteFixture({
+  DateTime? completedAt,
+  bool? alreadyCompleted = false,
+}) {
+  return OnboardingCompleteResponse(
+    (b) => b
+      ..completedAt = completedAt ?? DateTime.utc(2026, 4, 6, 9, 30)
+      ..alreadyCompleted = alreadyCompleted,
   );
 }
