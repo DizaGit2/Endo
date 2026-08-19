@@ -7,12 +7,14 @@ import 'package:lumen/api/api/lumen_api_api.dart';
 import 'package:lumen/api/model/baseline_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goals_response.dart';
+import 'package:lumen/api/model/hormone_prefs_response.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_start_request.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/api/model/save_baseline_request.dart';
 import 'package:lumen/api/model/save_goals_request.dart';
+import 'package:lumen/api/model/save_hormone_prefs_request.dart';
 import 'package:lumen/api/model/save_onboarding_cycle_request.dart';
 import 'package:lumen/api/serializers.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
@@ -41,6 +43,8 @@ import 'package:lumen/core/network/api_client.dart';
 /// - [saveGoals]       — `POST /onboarding/goals`, screen 5's write. The first
 ///                       **FULL REPLACE** of the flow: a code left out is
 ///                       stored as deselected.
+/// - [saveHormones]    — `POST /onboarding/hormones`, screen 6's write. FULL
+///                       REPLACE too, but with **no minimum** — see below.
 /// - [complete]        — `POST /onboarding/complete`, the end of the flow.
 ///
 /// **What [getState] deliberately does NOT do.** It returns the response whole
@@ -429,6 +433,87 @@ class OnboardingRepository {
       // appears in no other cached read — `MeResponse` has no goals member, and
       // nothing here stamps `onboarding_completed_at`, so invalidating the
       // profile would re-read it every time a user changed a chip.
+      invalidateKeys: const <String>[CacheKeys.onboardingState],
+    );
+
+    return body;
+  }
+
+  // ── saveHormones ───────────────────────────────────────────────────────────
+
+  /// Calls `POST /onboarding/hormones` — screen 6's write.
+  ///
+  /// **FULL REPLACE of the complete row set** (`ARCHITECTURE.md` §C.0.1), the
+  /// same shape as [saveGoals]: [codes] is the whole desired state of
+  /// `user_hormone_prefs`, not a list of additions. The server writes a row for
+  /// **every** code in `HormoneCatalog.Codes.All` and sets `Charted` from
+  /// membership of this array (`OnboardingStepsService.cs:448-464`,
+  /// `StagePreferenceRows`), so a code left out is **stored as deselected**. A
+  /// caller that sends only what changed silently discards every hormone the
+  /// user had charted on an earlier visit.
+  ///
+  /// **[codes] carries WIRE CODES, never display labels.** The two that differ
+  /// are the whole reason this is worth saying: `estradiol` is drawn as
+  /// "Estrogen" and `glp1` as "GLP-1" (B16, `HormoneCatalog.cs:32,40`). A label
+  /// on this array is an unknown code and a 400 keyed `chartedHormones[i]`.
+  ///
+  /// **An empty array is a valid answer and is POSTED, not refused.** This is
+  /// where screen 6 parts company with screen 5: `POST /onboarding/goals` is
+  /// min 1 and [saveGoals] throws rather than spend a round trip to be told,
+  /// but this endpoint has **no minimum at all** — "chart nothing" is a real
+  /// answer and a different state from having skipped the step. The server
+  /// keys `value is required` on a **null** `chartedHormones` and on nothing
+  /// else (`OnboardingStepsService.cs:435-436`), where `SaveGoalsAsync` adds a
+  /// second arm for `Count == 0` (`:369-375`). So the guard that belongs on
+  /// screen 5 must not be copied here, and the array has to reach the wire as
+  /// `[]`: `built_value` omits a **null** member, and an omitted
+  /// `chartedHormones` is exactly the null the server rejects. Passing the list
+  /// to `ListBuilder` unconditionally is what keeps the member non-null.
+  ///
+  /// **Charted is not extracted.** The flag decides only whether a series is
+  /// *drawn*; P7b extracts all seven hormones from every lab regardless of what
+  /// this call stores (D-14, `OnboardingContracts.cs:210-214`).
+  ///
+  /// **What this deliberately does NOT do**, because the server accepts both
+  /// and a client that rejects what the server stores is a defect: it does not
+  /// de-duplicate (duplicates collapse silently server-side,
+  /// `OnboardingStepsService.cs:1127-1149`, a `HashSet` keyed
+  /// `StringComparer.Ordinal`) and it does not normalise case (matching is
+  /// **Ordinal**, so `Estradiol` is an unknown code and a 400).
+  ///
+  /// Errors, all as typed [Failure]s:
+  /// - **400** → [ValidationFailure] keyed `chartedHormones` for the whole
+  ///   array, or `chartedHormones[i]` for one member
+  ///   (`ValidationFailure.path('chartedHormones', i)`).
+  /// - **409** → [ConflictFailure] with `code: onboarding_already_completed`.
+  Future<HormonePrefsResponse> saveHormones({
+    required List<String> codes,
+  }) async {
+    final request = SaveHormonePrefsRequest(
+      (b) => b..chartedHormones = ListBuilder<String>(codes),
+    );
+
+    late final HormonePrefsResponse body;
+
+    await cachedWrite(
+      store: _store,
+      write: () async {
+        final response = await _api.onboardingHormonesPost(
+          saveHormonePrefsRequest: request,
+        );
+        final data = response.data;
+        if (data == null) {
+          throw const ServerFailure(
+            'The server returned an empty hormone response.',
+          );
+        }
+        body = data;
+      },
+      // `GET /onboarding/state` carries both `hormonesProvided` and the hormone
+      // projection itself, so this write moves it. Nothing else:
+      // `user_hormone_prefs` appears in no other cached read — `MeResponse` has
+      // no hormone member, `GET /settings/hormones` is a P6 endpoint that does
+      // not exist yet, and nothing here stamps `onboarding_completed_at`.
       invalidateKeys: const <String>[CacheKeys.onboardingState],
     );
 

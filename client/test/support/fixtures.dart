@@ -26,6 +26,8 @@ import 'package:lumen/api/model/cycle_settings_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goal_selection.dart';
 import 'package:lumen/api/model/goals_response.dart';
+import 'package:lumen/api/model/hormone_prefs_response.dart';
+import 'package:lumen/api/model/hormone_selection.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
@@ -120,6 +122,7 @@ OnboardingStateResponse onboardingStateFixture({
   Date? lastPeriodStart,
   DateTime? completedAt,
   Map<String, bool>? goals,
+  Map<String, bool>? hormones,
 }) {
   return OnboardingStateResponse(
     (b) => b
@@ -136,7 +139,10 @@ OnboardingStateResponse onboardingStateFixture({
       // against the real contract.
       ..goals = goals == null
           ? null
-          : ListBuilder<GoalSelection>(goalSelections(goals)),
+          : ListBuilder<GoalSelection>(goalSelections(goals))
+      ..hormones = hormones == null
+          ? null
+          : ListBuilder<HormoneSelection>(hormoneSelections(hormones)),
   );
 }
 
@@ -184,6 +190,62 @@ GoalsResponse goalsResponseFixture([Map<String, bool>? selections]) {
     (b) => b
       ..goals = ListBuilder<GoalSelection>(
         goalSelections(selections ?? kSeededGoals),
+      ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hormones (P4b-T12)
+// ---------------------------------------------------------------------------
+
+/// The seven hormone codes in `HormoneCatalog.Codes.All` order, each with the
+/// D-14 seed flag.
+///
+/// This is the list `OnboardingStepsService.ReadHormonePrefsAsync` answers for
+/// a user who has never answered the step: **all seven ON**
+/// (`UserHormonePref.DefaultCharted = HormoneCatalog.Codes.All`,
+/// `UserHormonePref.cs:39`). It is a FIXTURE, not a client-side source of
+/// truth - the screen renders whatever the response carries, and this map
+/// exists so a test can state what the server would have said.
+///
+/// The keys are the WIRE codes. Two of them differ from the label screen 6
+/// draws: `estradiol` shows as "Estrogen" and `glp1` as "GLP-1" (B16).
+const Map<String, bool> kSeededHormones = <String, bool>{
+  'estradiol': true,
+  'progesterone': true,
+  'lh': true,
+  'fsh': true,
+  'testosterone': true,
+  'cortisol': true,
+  'glp1': true,
+};
+
+/// [selections] as wire rows, in the map's insertion order.
+///
+/// Order is load-bearing on this endpoint: the response lists the COMPLETE
+/// vocabulary in **frozen order** and the client renders that order rather than
+/// one of its own, so a test that wants to prove it needs to be able to hand
+/// over an order of its choosing.
+List<HormoneSelection> hormoneSelections(Map<String, bool> selections) {
+  return <HormoneSelection>[
+    for (final MapEntry<String, bool> entry in selections.entries)
+      HormoneSelection(
+        (b) => b
+          ..code = entry.key
+          ..charted = entry.value,
+      ),
+  ];
+}
+
+/// `POST /onboarding/hormones`. The default is the answer a user who has never
+/// answered the step gets back - every code, with the D-14 seed.
+HormonePrefsResponse hormonePrefsResponseFixture([
+  Map<String, bool>? selections,
+]) {
+  return HormonePrefsResponse(
+    (b) => b
+      ..hormones = ListBuilder<HormoneSelection>(
+        hormoneSelections(selections ?? kSeededHormones),
       ),
   );
 }

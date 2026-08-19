@@ -14,18 +14,23 @@
 //     owes an answer. Those must arrive as a typed `ConflictFailure` — no
 //     caller may read `DioException.response.data`.
 
+import 'dart:convert';
+
 import 'package:built_collection/built_collection.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/baseline_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goals_response.dart';
+import 'package:lumen/api/model/hormone_prefs_response.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/api/model/save_baseline_request.dart';
 import 'package:lumen/api/model/save_goals_request.dart';
+import 'package:lumen/api/model/save_hormone_prefs_request.dart';
 import 'package:lumen/api/model/save_onboarding_cycle_request.dart';
+import 'package:lumen/api/serializers.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
@@ -102,6 +107,36 @@ SaveBaselineRequest _capturedBaselineRequest(MockLumenApiApi api) {
         ),
       ).captured.last
       as SaveBaselineRequest;
+}
+
+/// The hormone request the repository actually put on the wire.
+SaveHormonePrefsRequest _capturedHormonesRequest(MockLumenApiApi api) {
+  return verify(
+        () => api.onboardingHormonesPost(
+          saveHormonePrefsRequest: captureAny(named: 'saveHormonePrefsRequest'),
+        ),
+      ).captured.last
+      as SaveHormonePrefsRequest;
+}
+
+/// [request] as JSON, through the same [standardSerializers] the generated
+/// client is constructed with (`api_client.dart`) - so this is the body, not a
+/// re-description of the Dart object.
+///
+/// It exists because the interesting distinction on this endpoint is invisible
+/// from the object: `built_value` omits a NULL member from the wire, and an
+/// omitted `chartedHormones` is the one thing `POST /onboarding/hormones`
+/// rejects.
+Map<String, Object?> _wireBody(SaveHormonePrefsRequest request) {
+  return json.decode(
+        json.encode(
+          standardSerializers.serializeWith(
+            SaveHormonePrefsRequest.serializer,
+            request,
+          ),
+        ),
+      )
+      as Map<String, Object?>;
 }
 
 /// A 409 shaped exactly like `OnboardingConflict.Incomplete` on the wire.
@@ -712,28 +747,29 @@ void main() {
       expect(rest.heightCm, isNull);
     });
 
-    test('the weight is rounded to ONE decimal before it is serialised',
-        () async {
-      answerSave();
+    test(
+      'the weight is rounded to ONE decimal before it is serialised',
+      () async {
+        answerSave();
 
-      // The case §C.0.2 names: a computed kilogram — an lbs conversion, a
-      // slider step — does not land on a tenth, and the backend REJECTS extra
-      // precision rather than rounding it (OnboardingStepsService.cs:192-197).
-      await repo.saveBaseline(weightKg: 0.1 + 0.2);
-      expect(_capturedBaselineRequest(api).weightKg, 0.3);
+        // The case §C.0.2 names: a computed kilogram — an lbs conversion, a
+        // slider step — does not land on a tenth, and the backend REJECTS extra
+        // precision rather than rounding it (OnboardingStepsService.cs:192-197).
+        await repo.saveBaseline(weightKg: 0.1 + 0.2);
+        expect(_capturedBaselineRequest(api).weightKg, 0.3);
 
-      await repo.saveBaseline(weightKg: 60.35);
-      expect(_capturedBaselineRequest(api).weightKg, 60.4);
+        await repo.saveBaseline(weightKg: 60.35);
+        expect(_capturedBaselineRequest(api).weightKg, 60.4);
 
-      // The control: rounding must not move a value that is already storable.
-      // Without it the two rows above pass for a repository that rounded to
-      // the nearest whole kilogram.
-      await repo.saveBaseline(weightKg: 60.4);
-      expect(_capturedBaselineRequest(api).weightKg, 60.4);
-    });
+        // The control: rounding must not move a value that is already storable.
+        // Without it the two rows above pass for a repository that rounded to
+        // the nearest whole kilogram.
+        await repo.saveBaseline(weightKg: 60.4);
+        expect(_capturedBaselineRequest(api).weightKg, 60.4);
+      },
+    );
 
-    test('a body carrying none of the fields never reaches the wire',
-        () async {
+    test('a body carrying none of the fields never reaches the wire', () async {
       answerSave();
 
       // The 400 unique to this endpoint (`provide at least one baseline
@@ -772,34 +808,36 @@ void main() {
       expect(keys, isNot(contains(_cycleSettingsKey)));
     });
 
-    test('a 400 arrives as a ValidationFailure keyed by wire field name',
-        () async {
-      when(
-        () => api.onboardingBaselinePost(
-          saveBaselineRequest: any(named: 'saveBaselineRequest'),
-        ),
-      ).thenAnswer(
-        apiValidationProblem<BaselineResponse>(
-          path: '/onboarding/baseline',
-          fields: const <String, List<String>>{
-            'weightKg': <String>['value must have at most 1 decimal place'],
-          },
-        ),
-      );
-
-      await expectLater(
-        repo.saveBaseline(weightKg: 60.4),
-        throwsA(
-          isA<ValidationFailure>().having(
-            (ValidationFailure f) => f.messageFor('weightKg'),
-            'messageFor(weightKg)',
-            'value must have at most 1 decimal place',
+    test(
+      'a 400 arrives as a ValidationFailure keyed by wire field name',
+      () async {
+        when(
+          () => api.onboardingBaselinePost(
+            saveBaselineRequest: any(named: 'saveBaselineRequest'),
           ),
-        ),
-      );
-      // Nothing was stored, so nothing cached is wrong.
-      verifyNever(() => store.invalidate(any()));
-    });
+        ).thenAnswer(
+          apiValidationProblem<BaselineResponse>(
+            path: '/onboarding/baseline',
+            fields: const <String, List<String>>{
+              'weightKg': <String>['value must have at most 1 decimal place'],
+            },
+          ),
+        );
+
+        await expectLater(
+          repo.saveBaseline(weightKg: 60.4),
+          throwsA(
+            isA<ValidationFailure>().having(
+              (ValidationFailure f) => f.messageFor('weightKg'),
+              'messageFor(weightKg)',
+              'value must have at most 1 decimal place',
+            ),
+          ),
+        );
+        // Nothing was stored, so nothing cached is wrong.
+        verifyNever(() => store.invalidate(any()));
+      },
+    );
 
     test('an empty 200 body is a typed failure, not a force-unwrap', () async {
       when(
@@ -863,27 +901,30 @@ void main() {
       ]);
     });
 
-    test('it neither de-duplicates nor folds case — the server accepts both', () async {
-      answerSave();
+    test(
+      'it neither de-duplicates nor folds case — the server accepts both',
+      () async {
+        answerSave();
 
-      // A client that rejects (or "corrects") what the server stores is a
-      // defect. Duplicates collapse silently server-side
-      // (`OnboardingStepsService.cs:1127-1149`), and matching is Ordinal — so
-      // case is the caller's business and mangling it here would send a code
-      // this client believed was valid.
-      await repo.saveGoals(
-        codes: const <String>['just_curious', 'just_curious'],
-      );
-      expect(_capturedGoalsRequest(api).goals?.toList(), <String>[
-        'just_curious',
-        'just_curious',
-      ]);
+        // A client that rejects (or "corrects") what the server stores is a
+        // defect. Duplicates collapse silently server-side
+        // (`OnboardingStepsService.cs:1127-1149`), and matching is Ordinal — so
+        // case is the caller's business and mangling it here would send a code
+        // this client believed was valid.
+        await repo.saveGoals(
+          codes: const <String>['just_curious', 'just_curious'],
+        );
+        expect(_capturedGoalsRequest(api).goals?.toList(), <String>[
+          'just_curious',
+          'just_curious',
+        ]);
 
-      await repo.saveGoals(codes: const <String>['Manage_Symptoms']);
-      expect(_capturedGoalsRequest(api).goals?.toList(), <String>[
-        'Manage_Symptoms',
-      ]);
-    });
+        await repo.saveGoals(codes: const <String>['Manage_Symptoms']);
+        expect(_capturedGoalsRequest(api).goals?.toList(), <String>[
+          'Manage_Symptoms',
+        ]);
+      },
+    );
 
     test('an empty array never reaches the wire', () async {
       answerSave();
@@ -925,33 +966,36 @@ void main() {
       expect(keys, isNot(contains(_cycleSettingsKey)));
     });
 
-    test('a 400 arrives as a ValidationFailure keyed by wire field name', () async {
-      when(
-        () => api.onboardingGoalsPost(
-          saveGoalsRequest: any(named: 'saveGoalsRequest'),
-        ),
-      ).thenAnswer(
-        apiValidationProblem<GoalsResponse>(
-          path: '/onboarding/goals',
-          fields: const <String, List<String>>{
-            'goals': <String>['select at least one goal'],
-          },
-        ),
-      );
-
-      await expectLater(
-        repo.saveGoals(codes: const <String>['manage_symptoms']),
-        throwsA(
-          isA<ValidationFailure>().having(
-            (ValidationFailure f) => f.messageFor('goals'),
-            'messageFor(goals)',
-            'select at least one goal',
+    test(
+      'a 400 arrives as a ValidationFailure keyed by wire field name',
+      () async {
+        when(
+          () => api.onboardingGoalsPost(
+            saveGoalsRequest: any(named: 'saveGoalsRequest'),
           ),
-        ),
-      );
-      // Nothing was stored, so nothing cached is wrong.
-      verifyNever(() => store.invalidate(any()));
-    });
+        ).thenAnswer(
+          apiValidationProblem<GoalsResponse>(
+            path: '/onboarding/goals',
+            fields: const <String, List<String>>{
+              'goals': <String>['select at least one goal'],
+            },
+          ),
+        );
+
+        await expectLater(
+          repo.saveGoals(codes: const <String>['manage_symptoms']),
+          throwsA(
+            isA<ValidationFailure>().having(
+              (ValidationFailure f) => f.messageFor('goals'),
+              'messageFor(goals)',
+              'select at least one goal',
+            ),
+          ),
+        );
+        // Nothing was stored, so nothing cached is wrong.
+        verifyNever(() => store.invalidate(any()));
+      },
+    );
 
     test('an empty 200 body is a typed failure, not a force-unwrap', () async {
       when(
@@ -967,6 +1011,163 @@ void main() {
 
       await expectLater(
         repo.saveGoals(codes: const <String>['manage_symptoms']),
+        throwsA(isA<ServerFailure>()),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /onboarding/hormones (P4b-T12)
+  // -------------------------------------------------------------------------
+
+  group('saveHormones', () {
+    setUpAll(
+      () => registerFallbackValue(
+        SaveHormonePrefsRequest(
+          (b) => b..chartedHormones = ListBuilder<String>(<String>['glp1']),
+        ),
+      ),
+    );
+
+    void answerSave([HormonePrefsResponse? body]) {
+      when(
+        () => api.onboardingHormonesPost(
+          saveHormonePrefsRequest: any(named: 'saveHormonePrefsRequest'),
+        ),
+      ).thenAnswer(apiSuccess(body ?? hormonePrefsResponseFixture()));
+    }
+
+    test('it sends the codes it was given, in order, untouched', () async {
+      answerSave();
+
+      // FULL REPLACE: this array IS the desired state of `user_hormone_prefs`.
+      // The repository adds nothing, drops nothing and re-orders nothing.
+      await repo.saveHormones(codes: const <String>['glp1', 'estradiol']);
+
+      expect(_capturedHormonesRequest(api).chartedHormones?.toList(), <String>[
+        'glp1',
+        'estradiol',
+      ]);
+
+      // The control: a DIFFERENT array travels differently. Without it the row
+      // above would pass for a repository that ignored its argument.
+      await repo.saveHormones(codes: const <String>['cortisol']);
+      expect(_capturedHormonesRequest(api).chartedHormones?.toList(), <String>[
+        'cortisol',
+      ]);
+    });
+
+    test('an EMPTY array is a valid answer and travels as an empty array, '
+        'never as an absent field', () async {
+      answerSave();
+
+      // "Chart nothing" is a real answer and this endpoint has NO minimum -
+      // unlike `POST /onboarding/goals`. The server keys `value is required`
+      // on a NULL and on nothing else (`OnboardingStepsService.cs:435-436`),
+      // where `SaveGoalsAsync` adds a second arm for `Count == 0` (`:369-375`).
+      // So an empty array must reach the wire rather than be refused here.
+      await repo.saveHormones(codes: const <String>[]);
+
+      final SaveHormonePrefsRequest sent = _capturedHormonesRequest(api);
+      // An equality rather than `isEmpty`: the failure this has to report
+      // clearly is a member that came back NULL, and `isEmpty` on a null throws
+      // NoSuchMethodError inside the matcher instead of printing Expected/Actual.
+      expect(sent.chartedHormones?.toList(), <String>[]);
+
+      // ...and "empty" has to survive SERIALISATION, which is where it would
+      // still become the 400 it is not: `built_value` omits a null member, and
+      // an omitted `chartedHormones` IS the null the server rejects.
+      expect(_wireBody(sent), <String, Object?>{'chartedHormones': <String>[]});
+
+      // The positive control that gives the line above its meaning: a request
+      // whose builder was never handed a list serialises with no
+      // `chartedHormones` key at all. Absent and empty are two different
+      // answers on this endpoint, and only this pair tells them apart.
+      expect(_wireBody(SaveHormonePrefsRequest((b) => b)), isEmpty);
+    });
+
+    test(
+      'it neither de-duplicates nor folds case - the server accepts both',
+      () async {
+        answerSave();
+
+        // Duplicates collapse silently server-side (`OnboardingStepsService.cs:
+        // 1127-1149`, a `HashSet` keyed `StringComparer.Ordinal`), and matching
+        // is Ordinal - so folding case here would send a code this client
+        // believed was valid and the server answers 400 for.
+        await repo.saveHormones(codes: const <String>['lh', 'lh']);
+        expect(
+          _capturedHormonesRequest(api).chartedHormones?.toList(),
+          <String>['lh', 'lh'],
+        );
+
+        await repo.saveHormones(codes: const <String>['Estradiol']);
+        expect(
+          _capturedHormonesRequest(api).chartedHormones?.toList(),
+          <String>['Estradiol'],
+        );
+      },
+    );
+
+    test('it invalidates the onboarding state and nothing else', () async {
+      answerSave();
+
+      await repo.saveHormones(codes: const <String>['estradiol']);
+
+      final keys = verify(() => store.invalidate(captureAny())).captured;
+      // `hormonesProvided` and the hormone projection both move.
+      expect(keys, contains(_stateKey));
+      // Not the profile: `MeResponse` carries no hormone member, and nothing
+      // here stamps `onboarding_completed_at`.
+      expect(keys, isNot(contains(_profileKey)));
+      expect(keys, isNot(contains(_cycleSettingsKey)));
+    });
+
+    test(
+      'a 400 arrives as a ValidationFailure keyed by wire field name',
+      () async {
+        when(
+          () => api.onboardingHormonesPost(
+            saveHormonePrefsRequest: any(named: 'saveHormonePrefsRequest'),
+          ),
+        ).thenAnswer(
+          apiValidationProblem<HormonePrefsResponse>(
+            path: '/onboarding/hormones',
+            fields: const <String, List<String>>{
+              'chartedHormones[0]': <String>['value is not an allowed value'],
+            },
+          ),
+        );
+
+        await expectLater(
+          repo.saveHormones(codes: const <String>['Estrogen']),
+          throwsA(
+            isA<ValidationFailure>().having(
+              (ValidationFailure f) => f.messageFor('chartedHormones[0]'),
+              'messageFor(chartedHormones[0])',
+              'value is not an allowed value',
+            ),
+          ),
+        );
+        // Nothing was stored, so nothing cached is wrong.
+        verifyNever(() => store.invalidate(any()));
+      },
+    );
+
+    test('an empty 200 body is a typed failure, not a force-unwrap', () async {
+      when(
+        () => api.onboardingHormonesPost(
+          saveHormonePrefsRequest: any(named: 'saveHormonePrefsRequest'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<HormonePrefsResponse>(
+          requestOptions: RequestOptions(path: '/onboarding/hormones'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(
+        repo.saveHormones(codes: const <String>['estradiol']),
         throwsA(isA<ServerFailure>()),
       );
     });

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goal_selection.dart';
+import 'package:lumen/api/model/hormone_selection.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
@@ -231,6 +232,21 @@ class OnboardingFlowController extends Notifier<AsyncValue<OnboardingFlow>> {
     _recordSaved((b) => b..goals = goals?.toBuilder());
   }
 
+  /// Records the charted set `POST /onboarding/hormones` stored (step 6).
+  ///
+  /// [hormones] is the response's list exactly as it arrived, `null` included:
+  /// a null means the wire carried no list, and `HormonesForm.fromWire` reads
+  /// that the same way whether it comes from here or from the resume read.
+  ///
+  /// **A null and an EMPTY list are different answers on this step**, and the
+  /// distinction has to survive this method: null is "the wire said nothing"
+  /// and seeds the D-14 all-ON default, while `[]` — the vocabulary with every
+  /// flag off — is the user's own "chart nothing". `POST /onboarding/hormones`
+  /// has no minimum, so both are reachable.
+  void recordHormonesSaved(BuiltList<HormoneSelection>? hormones) {
+    _recordSaved((b) => b..hormones = hormones?.toBuilder());
+  }
+
   /// Replaces the flow's copy of `GET /onboarding/state` with [update] applied.
   ///
   /// **Why this exists.** Every step controller is `autoDispose` and the shell
@@ -270,8 +286,8 @@ class OnboardingFlowController extends Notifier<AsyncValue<OnboardingFlow>> {
   ///  * a null value — the resume read has not landed, on the same terms as
   ///    [goTo]: writing one would be a guess the load is about to overwrite.
   ///
-  /// **T12 and T13 each add one method above**, `hormones` and `notifications`,
-  /// built the same way out of their own response's list.
+  /// **T13 adds the last method above**, `notifications`, built the same way
+  /// out of its own response's list. `hormones` landed at T12.
   void _recordSaved(void Function(OnboardingStateResponseBuilder) update) {
     if (!ref.mounted) return;
     final flow = state.value;

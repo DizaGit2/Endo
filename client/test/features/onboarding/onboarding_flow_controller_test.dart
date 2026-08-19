@@ -20,6 +20,7 @@ import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goal_selection.dart';
+import 'package:lumen/api/model/hormone_selection.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
@@ -500,6 +501,88 @@ void main() {
 
         expect(
           container.read(onboardingFlowControllerProvider).value!.state.goals,
+          isNull,
+        );
+      },
+    );
+
+    test('a hormone write replaces the hormone projection alone', () async {
+      // Screen 6 is the flow's SECOND full-replace step, so a stale prefill
+      // here costs what it costs on screen 5: the array is the next request's
+      // body, and a code missing from it is stored as deselected. What is
+      // recorded is the response's own list, in the response's own order.
+      stubState(
+        onboardingStateFixture(
+          cycleProvided: true,
+          goals: const <String, bool>{'manage_symptoms': true},
+          hormones: const <String, bool>{'estradiol': true, 'glp1': true},
+        ),
+      );
+      final container = _container(repo);
+      final before = await _settled(container);
+
+      // Premises, and both assertions below are their opposite.
+      expect(before.step, OnboardingStep.baseline);
+      expect(
+        before.state.hormones!.map((HormoneSelection h) => h.charted),
+        <bool>[true, true],
+      );
+
+      _notifier(container).recordHormonesSaved(
+        BuiltList<HormoneSelection>(
+          hormoneSelections(const <String, bool>{
+            'estradiol': false,
+            'glp1': false,
+          }),
+        ),
+      );
+
+      final after = container.read(onboardingFlowControllerProvider).value!;
+      expect(
+        <String, bool>{
+          for (final HormoneSelection h in after.state.hormones!)
+            h.code!: h.charted!,
+        },
+        <String, bool>{'estradiol': false, 'glp1': false},
+      );
+
+      // Recording is not navigation, and it is not a write to any other step's
+      // projection: the goals list and the booleans `resumeStepFrom` reads are
+      // untouched.
+      expect(after.step, OnboardingStep.baseline);
+      expect(after.state.goals!.first.selected, isTrue);
+      expect(after.state.cycleProvided, isTrue);
+      expect(after.state.hormonesProvided, isFalse);
+    });
+
+    test(
+      'a response that carried no hormone list is recorded as no list',
+      () async {
+        // `HormonesForm.fromWire(null)` falls back to the D-14 all-ON seed, and
+        // `fromWire([])` produces a form with NO rows at all — a screen that
+        // draws nothing. So a null must stay a null here; a builder written the
+        // auto-vivifying way (`b.hormones.replace(...)`) would turn it into an
+        // empty list, and on THIS step an empty list is also a legitimate
+        // ANSWER, so the two must not be allowed to collapse into one another.
+        stubState(
+          onboardingStateFixture(
+            cycleProvided: true,
+            hormones: const <String, bool>{'estradiol': true},
+          ),
+        );
+        final container = _container(repo);
+        final before = await _settled(container);
+        // Premise: there IS a list to lose.
+        expect(before.state.hormones, isNotNull);
+
+        _notifier(container).recordHormonesSaved(null);
+
+        expect(
+          container
+              .read(onboardingFlowControllerProvider)
+              .value!
+              .state
+              .hormones,
           isNull,
         );
       },

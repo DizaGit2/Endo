@@ -27,6 +27,11 @@
 //     complete desired state — so the stale prefill is not a stale view, it is
 //     the next request's body. A lost STORED ANSWER. That is the one this task
 //     exists for, and its test spells out what it prevents.
+//   * screen 6 · `POST /onboarding/hormones` is a FULL REPLACE with **no
+//     minimum** (P4b-T12), so the loss has a sharper edge than screen 5's: the
+//     answer a stale prefill destroys can be the EMPTY one, and the pre-save
+//     state it reverts to is all seven ON — the maximum possible over-write of
+//     a user who asked to chart nothing.
 //
 // The fake server below is not a mock that echoes: it holds rows and applies
 // each endpoint's own write rule to them, so the closing assertion of each test
@@ -49,6 +54,7 @@ import 'package:lumen/api/model/baseline_response.dart';
 import 'package:lumen/api/model/cycle_settings_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goals_response.dart';
+import 'package:lumen/api/model/hormone_prefs_response.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
@@ -58,10 +64,12 @@ import 'package:lumen/core/time/server_today.dart';
 import 'package:lumen/features/onboarding/application/baseline_controller.dart';
 import 'package:lumen/features/onboarding/application/cycle_setup_controller.dart';
 import 'package:lumen/features/onboarding/application/goals_controller.dart';
+import 'package:lumen/features/onboarding/application/hormones_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_step.dart';
 import 'package:lumen/features/onboarding/data/onboarding_repository.dart';
 import 'package:lumen/features/onboarding/presentation/goals_screen.dart';
+import 'package:lumen/features/onboarding/presentation/hormones_screen.dart';
 import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.dart';
 import 'package:lumen/features/settings/data/cycle_settings_repository.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
@@ -95,8 +103,11 @@ class _Server {
     this.lastPeriodStart,
     this.cycleProvided = false,
     this.baselineProvided = false,
+    this.goalsProvided = false,
     Map<String, bool>? goals,
-  }) : goals = Map<String, bool>.of(goals ?? kSeededGoals);
+    Map<String, bool>? hormones,
+  }) : goals = Map<String, bool>.of(goals ?? kSeededGoals),
+       hormones = Map<String, bool>.of(hormones ?? kSeededHormones);
 
   // `cycle_events` + `user_cycle_settings`.
   Date? lastPeriodStart;
@@ -109,17 +120,23 @@ class _Server {
   // `user_goals`, complete: every code carries a boolean.
   final Map<String, bool> goals;
 
+  // `user_hormone_prefs`, complete: every code carries a boolean.
+  final Map<String, bool> hormones;
+
   bool cycleProvided;
   bool baselineProvided;
-  bool goalsProvided = false;
+  bool goalsProvided;
+  bool hormonesProvided = false;
 
   /// `GET /onboarding/state`.
   OnboardingStateResponse get state => onboardingStateFixture(
     cycleProvided: cycleProvided,
     baselineProvided: baselineProvided,
     goalsProvided: goalsProvided,
+    hormonesProvided: hormonesProvided,
     lastPeriodStart: lastPeriodStart,
     goals: goals,
+    hormones: hormones,
   );
 
   /// `GET /me`.
@@ -167,6 +184,17 @@ class _Server {
     }
     goalsProvided = true;
     return goalsResponseFixture(goals);
+  }
+
+  /// `POST /onboarding/hormones` — FULL REPLACE, and with **no minimum**: an
+  /// empty [codes] is a valid answer that stores every flag as false, not a
+  /// rejection (`OnboardingStepsService.cs:435-436`).
+  HormonePrefsResponse saveHormones(List<String> codes) {
+    for (final String code in hormones.keys.toList()) {
+      hormones[code] = codes.contains(code);
+    }
+    hormonesProvided = true;
+    return hormonePrefsResponseFixture(hormones);
   }
 }
 
@@ -216,6 +244,7 @@ class _World {
     });
 
     answerGoalsSave();
+    answerHormonesSave();
 
     when(settings.getSettings).thenAnswer(
       (_) async => Fresh<CycleSettingsResponse>(server.cycleSettings),
@@ -248,10 +277,16 @@ class _World {
   /// The array every `POST /onboarding/goals` carried, in order.
   final List<List<String>> goalSaves = <List<String>>[];
 
+  /// The array every `POST /onboarding/hormones` carried, in order.
+  final List<List<String>> hormoneSaves = <List<String>>[];
+
   int baselineSaves = 0;
 
   Completer<GoalsResponse>? _heldGoals;
   List<String>? _heldCodes;
+
+  Completer<HormonePrefsResponse>? _heldHormones;
+  List<String>? _heldHormoneCodes;
 
   late ProviderContainer container;
 
@@ -289,6 +324,36 @@ class _World {
   void releaseGoalsSave() {
     _heldGoals!.complete(server.saveGoals(_heldCodes!));
     answerGoalsSave();
+  }
+
+  /// The ordinary answer for screen 6: the server applies the FULL REPLACE and
+  /// answers at once.
+  void answerHormonesSave() {
+    when(() => onboarding.saveHormones(codes: any(named: 'codes'))).thenAnswer((
+      Invocation call,
+    ) async {
+      final List<String> codes = call.namedArguments[#codes] as List<String>;
+      hormoneSaves.add(codes);
+      return server.saveHormones(codes);
+    });
+  }
+
+  /// Holds the next `POST /onboarding/hormones` OPEN, so the step can be left
+  /// while the request is still in flight — an ordinary gesture, because the
+  /// shell's back affordance is NOT gated on `submitting`.
+  void holdHormonesSave() {
+    when(() => onboarding.saveHormones(codes: any(named: 'codes'))).thenAnswer((
+      Invocation call,
+    ) {
+      _heldHormoneCodes = call.namedArguments[#codes] as List<String>;
+      hormoneSaves.add(_heldHormoneCodes!);
+      return (_heldHormones = Completer<HormonePrefsResponse>()).future;
+    });
+  }
+
+  void releaseHormonesSave() {
+    _heldHormones!.complete(server.saveHormones(_heldHormoneCodes!));
+    answerHormonesSave();
   }
 
   Future<void> pump(WidgetTester tester) async {
@@ -355,6 +420,21 @@ bool _announcesSelected(WidgetTester tester, Finder finder) =>
 /// Whether the goal row for [code] announces itself as selected.
 bool _goalSelected(WidgetTester tester, String code) =>
     _announcesSelected(tester, find.byKey(goalTileKey(code)));
+
+/// Whether the hormone row for [code] announces itself as charted.
+bool _hormoneCharted(WidgetTester tester, String code) =>
+    _announcesSelected(tester, find.byKey(hormoneRowKey(code)));
+
+/// Every code, charted or not — the shape `user_hormone_prefs` ends up in.
+const Map<String, bool> _noHormonesCharted = <String, bool>{
+  'estradiol': false,
+  'progesterone': false,
+  'lh': false,
+  'fsh': false,
+  'testosterone': false,
+  'cortisol': false,
+  'glp1': false,
+};
 
 /// The day cell for [date], located by what it announces — under es-ES that is
 /// `d/M/yyyy`.
@@ -538,6 +618,160 @@ void main() {
       'prepare_appointments': false,
       'just_curious': true,
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // Screen 6 — the same loss, over the EMPTY answer
+  // -------------------------------------------------------------------------
+
+  testWidgets('screen 6 — coming back shows the hormones the server STORED, '
+      'and Continue does not re-chart what the user turned off', (
+    tester,
+  ) async {
+    // `POST /onboarding/hormones` is a FULL REPLACE with no minimum, so "chart
+    // nothing" is a real stored answer — and the pre-save state this step
+    // would re-seed from is all seven ON. A stale prefill here does not lose
+    // one flag, it reverses every one of them.
+    final server = _Server(
+      cycleProvided: true,
+      baselineProvided: true,
+      goalsProvided: true,
+    );
+    final world = _World(server);
+    await world.pump(tester);
+
+    // Premise: the flow resumed on step 6, showing the D-14 seed the server
+    // holds — all seven ON. Every assertion after the save is its opposite.
+    expect(world.step, OnboardingStep.hormones);
+    for (final String code in kSeededHormones.keys) {
+      expect(_hormoneCharted(tester, code), isTrue);
+    }
+
+    final HormonesController left = world.container.read(
+      hormonesControllerProvider.notifier,
+    );
+
+    // The user's real answer: chart nothing.
+    for (final String code in kSeededHormones.keys) {
+      await tester.tap(find.byKey(hormoneRowKey(code)));
+    }
+    await tester.pump();
+
+    await _tapContinue(tester);
+
+    // Premise: the write landed and the step moved on, so what follows is
+    // about coming BACK rather than about a save that never happened. The
+    // empty array is a SUCCESS on this endpoint, not a rejection.
+    expect(world.hormoneSaves, <List<String>>[<String>[]]);
+    expect(server.hormones, _noHormonesCharted);
+    expect(world.step, OnboardingStep.notifications);
+
+    await _tapBack(tester);
+    expect(world.step, OnboardingStep.hormones);
+
+    // The premise the whole file rests on: `autoDispose` DISPOSED the
+    // controller on the way out, so this is a fresh one seeded from the flow.
+    expect(
+      identical(
+        world.container.read(hormonesControllerProvider.notifier),
+        left,
+      ),
+      isFalse,
+      reason:
+          'leaving the step must dispose its autoDispose controller — this '
+          'test is about what the REBUILT one seeds from',
+    );
+
+    // What the user sees is what the server holds.
+    for (final String code in kSeededHormones.keys) {
+      expect(_hormoneCharted(tester, code), isFalse);
+    }
+
+    // …and pressing Continue again re-posts the WHOLE set, so a prefill that
+    // had reverted would write all seven back ON.
+    await _tapContinue(tester);
+
+    expect(world.hormoneSaves, <List<String>>[<String>[], <String>[]]);
+    expect(server.hormones, _noHormonesCharted);
+  });
+
+  testWidgets('screen 6 — leaving the step while the save is IN FLIGHT still '
+      'records what the server stored', (tester) async {
+    // The same silent loss in a narrower window, and reachable with no back
+    // door: the shell's back affordance is NOT gated on `submitting`
+    // (`onboarding_shell_screen.dart:100,126`), so Back during a save is an
+    // ordinary gesture. It disposes the step controller, and the 200 then lands
+    // on a dead one. A refresh written BEHIND that disposal gate never runs;
+    // the user walks back through step 6 on the way to 7, the rows re-seed
+    // pre-save, and the next Continue full-replaces their answer away. That is
+    // why the record is taken before the gate and the flow notifier is read
+    // before the await.
+    final server = _Server(
+      cycleProvided: true,
+      baselineProvided: true,
+      goalsProvided: true,
+    );
+    final world = _World(server);
+    await world.pump(tester);
+
+    expect(world.step, OnboardingStep.hormones);
+    for (final String code in kSeededHormones.keys) {
+      expect(_hormoneCharted(tester, code), isTrue);
+    }
+
+    for (final String code in kSeededHormones.keys) {
+      await tester.tap(find.byKey(hormoneRowKey(code)));
+    }
+    await tester.pump();
+
+    final HormonesController left = world.container.read(
+      hormonesControllerProvider.notifier,
+    );
+
+    world.holdHormonesSave();
+    await tester.tap(find.byType(FilledButton));
+    await tester.pump();
+
+    // Premise: the request is genuinely open. Without this the Back below would
+    // be an ordinary back-navigation and this test would duplicate the one
+    // above it.
+    expect(world.container.read(hormonesControllerProvider).submitting, isTrue);
+
+    // Back, mid-flight. This is what disposes the controller the response is
+    // about to land on.
+    await _tapBack(tester);
+    expect(world.step, OnboardingStep.goals);
+
+    world.releaseHormonesSave();
+    await _settle(tester);
+
+    // Premise: the write DID land — the server holds the user's real answer, so
+    // anything the client shows from here on is either that or a lie.
+    expect(server.hormones, _noHormonesCharted);
+
+    // Forward again, the way the user reaches step 7 at all.
+    await _tapContinue(tester);
+    expect(world.step, OnboardingStep.hormones);
+    expect(
+      identical(
+        world.container.read(hormonesControllerProvider.notifier),
+        left,
+      ),
+      isFalse,
+      reason:
+          'the mid-flight Back must have disposed the step controller — this '
+          'test is about what the REBUILT one seeds from',
+    );
+
+    for (final String code in kSeededHormones.keys) {
+      expect(_hormoneCharted(tester, code), isFalse);
+    }
+
+    // …and walking on does not full-replace the stored answer away.
+    await _tapContinue(tester);
+
+    expect(world.hormoneSaves, <List<String>>[<String>[], <String>[]]);
+    expect(server.hormones, _noHormonesCharted);
   });
 
   // -------------------------------------------------------------------------
