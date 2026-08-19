@@ -8,6 +8,7 @@ import 'package:lumen/features/onboarding/presentation/baseline_screen.dart';
 import 'package:lumen/features/onboarding/presentation/cycle_setup_screen.dart';
 import 'package:lumen/features/onboarding/presentation/goals_screen.dart';
 import 'package:lumen/features/onboarding/presentation/hormones_screen.dart';
+import 'package:lumen/features/onboarding/presentation/notifications_screen.dart';
 import 'package:lumen/shared/widgets/lumen_error_banner.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:lumen/shared/widgets/lumen_step_chrome.dart';
@@ -32,10 +33,10 @@ import 'package:lumen/shared/widgets/lumen_step_dots.dart';
 /// | the resume read and its loading / retry surfaces | |
 /// | `POST /onboarding/complete` and its 409 | |
 ///
-/// The step body is [onboardingStepContent] — an exhaustive switch. Screens 3,
-/// 4, 5 and 6 are built ([CycleSetupScreen], [BaselineScreen], [GoalsScreen],
-/// [HormonesScreen]); the last arm answers the placeholder, and T13 replaces
-/// it.
+/// The step body is [onboardingStepContent] — an exhaustive switch, and since
+/// P4b-T13 every arm of it is a built screen ([CycleSetupScreen],
+/// [BaselineScreen], [GoalsScreen], [HormonesScreen], [NotificationsScreen]).
+/// There is no placeholder arm left.
 class OnboardingShellScreen extends ConsumerWidget {
   const OnboardingShellScreen({super.key});
 
@@ -212,13 +213,12 @@ class OnboardingStepSlot extends StatelessWidget {
 
 /// The body for [step].
 ///
-/// **One arm per screen, and that is the handoff.** The five screens are one
-/// task each — T9 (screen 3, cycle, built), T10 (4, baseline, built), T11 (5,
-/// goals, built), T12 (6, hormones, built), T13 (7, notifications) — and each
-/// of them replaces exactly one arm here, the same one-line shape P4b-T1 left
-/// this task. The
-/// switch is exhaustive over [OnboardingStep] on purpose: adding a sixth step
-/// would fail to compile rather than silently render nothing.
+/// **One arm per screen, and that was the handoff.** The five screens were one
+/// task each — T9 (screen 3, cycle), T10 (4, baseline), T11 (5, goals), T12 (6,
+/// hormones), T13 (7, notifications) — and each replaced exactly one arm here,
+/// the one-line shape P4b-T1 left them. All five are now built. The switch is
+/// exhaustive over [OnboardingStep] on purpose: adding a sixth step would fail
+/// to compile rather than silently render nothing.
 Widget onboardingStepContent(OnboardingStep step) {
   switch (step) {
     case OnboardingStep.cycle: // screen 3 — the one mandatory step (D-02)
@@ -229,49 +229,8 @@ Widget onboardingStepContent(OnboardingStep step) {
       return const GoalsScreen();
     case OnboardingStep.hormones: // screen 6 — full replace with NO minimum
       return const HormonesScreen();
-    case OnboardingStep.notifications: // P4b-T13 — screen 7
-      return const _StepNotBuiltYet();
-  }
-}
-
-/// What a step shows before its own screen exists.
-///
-/// **The copy is inherited, not authored.** These two strings are exactly what
-/// `_OnboardingPlaceholderScreen` shipped on this route from P4b-T1 until this
-/// task replaced it; the mockups and `definitions.md` carry no copy for "this
-/// step is not built yet", and the phase's rule is to use the nearest sourced
-/// string rather than invent one. So the route says the same thing it said
-/// yesterday, inside the real chrome instead of in place of it.
-class _StepNotBuiltYet extends StatelessWidget {
-  const _StepNotBuiltYet();
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Theme.of(context).extension<LumenColors>()!;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // header: true — with no fields or CTA on the step yet, this heading is
-        // the only thing on the body worth jumping to.
-        Semantics(
-          header: true,
-          child: Text(
-            'Set up Lumen',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w500,
-              color: c.ink,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'A few questions about your cycle come next, so Lumen can '
-          'make sense of what you log.',
-          style: TextStyle(fontSize: 14, height: 1.5, color: c.muted),
-        ),
-      ],
-    );
+    // screen 7 — the last step, and the only one that finishes the flow
+    case OnboardingStep.notifications:
+      return const NotificationsScreen();
   }
 }

@@ -29,6 +29,8 @@ import 'package:lumen/api/model/goals_response.dart';
 import 'package:lumen/api/model/hormone_prefs_response.dart';
 import 'package:lumen/api/model/hormone_selection.dart';
 import 'package:lumen/api/model/me_response.dart';
+import 'package:lumen/api/model/notification_category_selection.dart';
+import 'package:lumen/api/model/notification_prefs_response.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
@@ -123,6 +125,7 @@ OnboardingStateResponse onboardingStateFixture({
   DateTime? completedAt,
   Map<String, bool>? goals,
   Map<String, bool>? hormones,
+  Map<String, bool>? notifications,
 }) {
   return OnboardingStateResponse(
     (b) => b
@@ -142,7 +145,12 @@ OnboardingStateResponse onboardingStateFixture({
           : ListBuilder<GoalSelection>(goalSelections(goals))
       ..hormones = hormones == null
           ? null
-          : ListBuilder<HormoneSelection>(hormoneSelections(hormones)),
+          : ListBuilder<HormoneSelection>(hormoneSelections(hormones))
+      ..notifications = notifications == null
+          ? null
+          : ListBuilder<NotificationCategorySelection>(
+              notificationSelections(notifications),
+            ),
   );
 }
 
@@ -247,6 +255,68 @@ HormonePrefsResponse hormonePrefsResponseFixture([
       ..hormones = ListBuilder<HormoneSelection>(
         hormoneSelections(selections ?? kSeededHormones),
       ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Notifications (P4b-T13)
+// ---------------------------------------------------------------------------
+
+/// The four notification category codes in
+/// `HormoneCatalog.NotificationCategories.All` order, each with the onboarding
+/// seed.
+///
+/// This is the list `OnboardingStepsService.ReadNotificationPrefsAsync` answers
+/// for a user who has never answered the step — `daily_checkin` and
+/// `phase_shift` ON, the other two OFF
+/// (`UserNotificationPref.DefaultEnabled`, `UserNotificationPref.cs:40-44`).
+/// It is a FIXTURE, not a client-side source of truth: the screen renders
+/// whatever the response carries, and this map exists so a test can state what
+/// the server would have said.
+///
+/// The keys are the WIRE codes. `phase_shift` is **singular** — screen 7's
+/// plural "Phase shifts" is display drift and the catalogue is the authority
+/// (`HormoneCatalog.cs:85-108`).
+const Map<String, bool> kSeededNotifications = <String, bool>{
+  'daily_checkin': true,
+  'phase_shift': true,
+  'period_prediction': false,
+  'medication_reminders': false,
+};
+
+/// [selections] as wire rows, in the map's insertion order.
+///
+/// Order is load-bearing on this endpoint: the response lists the COMPLETE
+/// vocabulary in **frozen order** and the client renders that order rather than
+/// one of its own, so a test that wants to prove it needs to be able to hand
+/// over an order of its choosing.
+List<NotificationCategorySelection> notificationSelections(
+  Map<String, bool> selections,
+) {
+  return <NotificationCategorySelection>[
+    for (final MapEntry<String, bool> entry in selections.entries)
+      NotificationCategorySelection(
+        (b) => b
+          ..code = entry.key
+          ..enabled = entry.value,
+      ),
+  ];
+}
+
+/// `POST /onboarding/notifications`. The default is the answer a user who has
+/// never answered the step gets back — every code, with the onboarding seed —
+/// and **no device registered**, which is the normal outcome of a request that
+/// carried no push token (`OnboardingContracts.cs:290-293`).
+NotificationPrefsResponse notificationPrefsResponseFixture([
+  Map<String, bool>? selections,
+  bool? deviceRegistered = false,
+]) {
+  return NotificationPrefsResponse(
+    (b) => b
+      ..categories = ListBuilder<NotificationCategorySelection>(
+        notificationSelections(selections ?? kSeededNotifications),
+      )
+      ..deviceRegistered = deviceRegistered,
   );
 }
 

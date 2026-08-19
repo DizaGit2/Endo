@@ -23,12 +23,14 @@ import 'package:lumen/api/model/baseline_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goals_response.dart';
 import 'package:lumen/api/model/hormone_prefs_response.dart';
+import 'package:lumen/api/model/notification_prefs_response.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/api/model/save_baseline_request.dart';
 import 'package:lumen/api/model/save_goals_request.dart';
 import 'package:lumen/api/model/save_hormone_prefs_request.dart';
+import 'package:lumen/api/model/save_notification_prefs_request.dart';
 import 'package:lumen/api/model/save_onboarding_cycle_request.dart';
 import 'package:lumen/api/serializers.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
@@ -117,6 +119,40 @@ SaveHormonePrefsRequest _capturedHormonesRequest(MockLumenApiApi api) {
         ),
       ).captured.last
       as SaveHormonePrefsRequest;
+}
+
+/// The notification request the repository actually put on the wire.
+SaveNotificationPrefsRequest _capturedNotificationsRequest(
+  MockLumenApiApi api,
+) {
+  return verify(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: captureAny(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      ).captured.last
+      as SaveNotificationPrefsRequest;
+}
+
+/// [request] as JSON, through the same [standardSerializers] the generated
+/// client is constructed with.
+///
+/// The distinction it exists for is the same one `POST /onboarding/hormones`
+/// has, plus one this endpoint alone has: `built_value` omits a NULL member, so
+/// an absent `pushToken`/`platform` pair and a supplied one are invisible from
+/// the Dart object and visible only here. Half a pair is a 400
+/// (`pushToken and platform must be provided together`).
+Map<String, Object?> _notificationsWireBody(SaveNotificationPrefsRequest r) {
+  return json.decode(
+        json.encode(
+          standardSerializers.serializeWith(
+            SaveNotificationPrefsRequest.serializer,
+            r,
+          ),
+        ),
+      )
+      as Map<String, Object?>;
 }
 
 /// [request] as JSON, through the same [standardSerializers] the generated
@@ -1168,6 +1204,334 @@ void main() {
 
       await expectLater(
         repo.saveHormones(codes: const <String>['estradiol']),
+        throwsA(isA<ServerFailure>()),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // saveNotifications (P4b-T13) — screen 7's FULL REPLACE, plus the push pair
+  // -------------------------------------------------------------------------
+
+  group('saveNotifications', () {
+    setUpAll(
+      () => registerFallbackValue(
+        SaveNotificationPrefsRequest(
+          (b) => b
+            ..enabledCategories = ListBuilder<String>(<String>[
+              'daily_checkin',
+            ]),
+        ),
+      ),
+    );
+
+    void answerSave([NotificationPrefsResponse? body]) {
+      when(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: any(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      ).thenAnswer(apiSuccess(body ?? notificationPrefsResponseFixture()));
+    }
+
+    test('it sends the codes it was given, in order, untouched', () async {
+      answerSave();
+
+      // FULL REPLACE: this array IS the desired state of
+      // `user_notification_prefs`. The server writes a row for EVERY code in
+      // `HormoneCatalog.NotificationCategories.All` and sets `Enabled` from
+      // membership of this array (`OnboardingStepsService.cs:556-573`,
+      // `StagePreferenceRows` at `:1172-1192`), so a code left out is stored as
+      // deselected. The repository adds nothing and re-orders nothing.
+      await repo.saveNotifications(
+        codes: const <String>['phase_shift', 'daily_checkin'],
+      );
+
+      expect(
+        _capturedNotificationsRequest(api).enabledCategories?.toList(),
+        <String>['phase_shift', 'daily_checkin'],
+      );
+
+      // The control: a DIFFERENT array travels differently. Without it the row
+      // above would pass for a repository that ignored its argument.
+      await repo.saveNotifications(codes: const <String>['period_prediction']);
+      expect(
+        _capturedNotificationsRequest(api).enabledCategories?.toList(),
+        <String>['period_prediction'],
+      );
+    });
+
+    test('an EMPTY array is a valid answer and travels as an empty array, '
+        'never as an absent field', () async {
+      answerSave();
+
+      // Muting everything is a real answer — the server keys `value is
+      // required` on a NULL `enabledCategories` and on nothing else
+      // (`OnboardingStepsService.cs:515-517`), exactly as
+      // `POST /onboarding/hormones` does.
+      //
+      // It is NOT what "Not now" sends. Skipping means not calling this method
+      // at all (D-02); an empty post writes four rows with every flag false and
+      // then SUPPRESSES the completion backfill, whose guard is
+      // `if (!await db.UserNotificationPrefs.AnyAsync(...))`
+      // (`OnboardingStepsService.cs:1091`). See the controller's tests.
+      await repo.saveNotifications(codes: const <String>[]);
+
+      final SaveNotificationPrefsRequest sent = _capturedNotificationsRequest(
+        api,
+      );
+      expect(sent.enabledCategories?.toList(), <String>[]);
+      expect(_notificationsWireBody(sent), <String, Object?>{
+        'enabledCategories': <String>[],
+      });
+
+      // The positive control that gives the line above its meaning: a request
+      // whose builder was never handed a list serialises with no
+      // `enabledCategories` key at all. Absent and empty are two different
+      // answers on this endpoint, and only this pair tells them apart.
+      expect(
+        _notificationsWireBody(SaveNotificationPrefsRequest((b) => b)),
+        isEmpty,
+      );
+    });
+
+    test('with no push token the pair is ABSENT from the wire, which is a '
+        'normal outcome and not a failure', () async {
+      answerSave();
+
+      // R-09: P4b's only `PushTokenSource` returns null, so this is the path
+      // screen 7 actually takes today. `deviceRegistered: false` is documented
+      // as a normal outcome rather than a rejection
+      // (`OnboardingContracts.cs:290-293`).
+      final NotificationPrefsResponse body = await repo.saveNotifications(
+        codes: const <String>['daily_checkin'],
+      );
+
+      final Map<String, Object?> wire = _notificationsWireBody(
+        _capturedNotificationsRequest(api),
+      );
+      expect(wire.containsKey('pushToken'), isFalse);
+      expect(wire.containsKey('platform'), isFalse);
+      // The control: the member that WAS supplied is on the wire, so the two
+      // absences above are about the pair and not about an empty body.
+      expect(wire['enabledCategories'], <String>['daily_checkin']);
+      expect(body.deviceRegistered, isFalse);
+    });
+
+    test('a complete pair travels whole', () async {
+      answerSave(notificationPrefsResponseFixture(null, true));
+
+      await repo.saveNotifications(
+        codes: const <String>['daily_checkin'],
+        pushToken: 'fcm-token-abc',
+        platform: 'android',
+      );
+
+      expect(
+        _notificationsWireBody(_capturedNotificationsRequest(api)),
+        <String, Object?>{
+          'enabledCategories': <String>['daily_checkin'],
+          'platform': 'android',
+          'pushToken': 'fcm-token-abc',
+        },
+      );
+    });
+
+    test('HALF a pair never reaches the wire', () async {
+      answerSave();
+
+      // A token with no platform is a device P9a could never dispatch to, and a
+      // platform with no token is not a registration at all, so one without the
+      // other is a 400 under the reserved `request` key
+      // (`OnboardingStepsService.cs:524-530`). It is knowable on the device, so
+      // the round trip is not spent to be told — the same backstop shape
+      // `saveGoals` and `saveBaseline` already have.
+      await expectLater(
+        repo.saveNotifications(
+          codes: const <String>['daily_checkin'],
+          pushToken: 'fcm-token-abc',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+      await expectLater(
+        repo.saveNotifications(
+          codes: const <String>['daily_checkin'],
+          platform: 'android',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      verifyNever(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: any(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      );
+
+      // The positive control: with BOTH halves the same call goes through, so
+      // the two throws above are about the half-pair rather than about a method
+      // that rejects everything.
+      await repo.saveNotifications(
+        codes: const <String>['daily_checkin'],
+        pushToken: 'fcm-token-abc',
+        platform: 'android',
+      );
+      verify(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: any(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      ).called(1);
+    });
+
+    test('a BLANK token is absent, not half a pair', () async {
+      answerSave();
+
+      // The server trims first and reads blank as absent on both members
+      // (`OnboardingStepsService.cs:521-522`), so a client sending "" for a
+      // token it does not have must get "no device" rather than a 400. Mirrored
+      // here so the guard above cannot reject what the server accepts.
+      await repo.saveNotifications(
+        codes: const <String>['daily_checkin'],
+        pushToken: '   ',
+        platform: '',
+      );
+
+      final Map<String, Object?> wire = _notificationsWireBody(
+        _capturedNotificationsRequest(api),
+      );
+      expect(wire.containsKey('pushToken'), isFalse);
+      expect(wire.containsKey('platform'), isFalse);
+      expect(wire['enabledCategories'], <String>['daily_checkin']);
+    });
+
+    test('a BLANK token beside a REAL platform is half a pair, and is refused '
+        'here rather than on the wire', () async {
+      answerSave();
+
+      // The missing link in I-1's chain, and the reason `PushToken.sendable`
+      // exists at the seam. Blank counts as ABSENT
+      // (`OnboardingStepsService.cs:521-522`), so a blank token beside a real
+      // platform is not "no device" — it is HALF a pair, which is a 400 under
+      // the reserved `request` key. FCM can answer an empty string during a
+      // `deleteToken()` race, so this is the shape a real P9a source produces.
+      //
+      // Through screen 7 the ArgumentError would be swallowed by
+      // `allowAndFinish`'s `catch (_)` and rendered as an UnknownFailure
+      // banner — four preference rows unsaved and onboarding unfinished, over a
+      // messaging fault. That is why the pair is dropped BEFORE it gets here.
+      await expectLater(
+        repo.saveNotifications(
+          codes: const <String>['daily_checkin'],
+          pushToken: '   ',
+          platform: 'android',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+      // …and the mirrored half.
+      await expectLater(
+        repo.saveNotifications(
+          codes: const <String>['daily_checkin'],
+          pushToken: '',
+          platform: 'ios',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      verifyNever(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: any(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      );
+
+      // The positive control: blanking BOTH halves is "no device" and goes
+      // through, so the two throws above are about the half-blank pair and not
+      // about a method that rejects every blank.
+      await repo.saveNotifications(
+        codes: const <String>['daily_checkin'],
+        pushToken: '   ',
+        platform: '  ',
+      );
+      verify(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: any(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      ).called(1);
+    });
+
+    test('it invalidates the onboarding state and nothing else', () async {
+      answerSave();
+
+      await repo.saveNotifications(codes: const <String>['daily_checkin']);
+
+      final keys = verify(() => store.invalidate(captureAny())).captured;
+      // `notificationsProvided` and the notification projection both move.
+      expect(keys, contains(_stateKey));
+      // Not the profile: `MeResponse` carries no notification member, and
+      // nothing here stamps `onboarding_completed_at` — that is the
+      // completion's job, and the completion invalidates the profile itself.
+      expect(keys, isNot(contains(_profileKey)));
+      expect(keys, isNot(contains(_cycleSettingsKey)));
+    });
+
+    test(
+      'a 400 arrives as a ValidationFailure keyed by wire field name',
+      () async {
+        when(
+          () => api.onboardingNotificationsPost(
+            saveNotificationPrefsRequest: any(
+              named: 'saveNotificationPrefsRequest',
+            ),
+          ),
+        ).thenAnswer(
+          apiValidationProblem<NotificationPrefsResponse>(
+            path: '/onboarding/notifications',
+            fields: const <String, List<String>>{
+              'enabledCategories[0]': <String>[
+                'value is not one of the allowed values',
+              ],
+            },
+          ),
+        );
+
+        await expectLater(
+          repo.saveNotifications(codes: const <String>['Phase shifts']),
+          throwsA(
+            isA<ValidationFailure>().having(
+              (ValidationFailure f) => f.messageFor('enabledCategories[0]'),
+              'messageFor(enabledCategories[0])',
+              'value is not one of the allowed values',
+            ),
+          ),
+        );
+        // Nothing was stored, so nothing cached is wrong.
+        verifyNever(() => store.invalidate(any()));
+      },
+    );
+
+    test('an empty 200 body is a typed failure, not a force-unwrap', () async {
+      when(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: any(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      ).thenAnswer(
+        (_) async => Response<NotificationPrefsResponse>(
+          requestOptions: RequestOptions(path: '/onboarding/notifications'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(
+        repo.saveNotifications(codes: const <String>['daily_checkin']),
         throwsA(isA<ServerFailure>()),
       );
     });

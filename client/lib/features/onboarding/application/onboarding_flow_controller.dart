@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goal_selection.dart';
 import 'package:lumen/api/model/hormone_selection.dart';
+import 'package:lumen/api/model/notification_category_selection.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
@@ -247,6 +248,28 @@ class OnboardingFlowController extends Notifier<AsyncValue<OnboardingFlow>> {
     _recordSaved((b) => b..hormones = hormones?.toBuilder());
   }
 
+  /// Records the category set `POST /onboarding/notifications` stored (step 7).
+  ///
+  /// [categories] is the response's list exactly as it arrived, `null`
+  /// included: a null means the wire carried no list, and
+  /// `NotificationsForm.fromWire` reads that the same way whether it comes from
+  /// here or from the resume read.
+  ///
+  /// **A null and an EMPTY list are different answers on this step too**: null
+  /// seeds the ON / ON / OFF / OFF default, while `[]` is a list with no rows
+  /// at all. Both have to survive this method unchanged.
+  ///
+  /// Screen 7 is the last step, so this refresh matters for one path in
+  /// particular: a save whose COMPLETION then fails — a 409, or a network drop
+  /// — leaves the user on a step they have already written, and without this
+  /// their next attempt would full-replace the stored answer with the pre-save
+  /// list.
+  void recordNotificationsSaved(
+    BuiltList<NotificationCategorySelection>? categories,
+  ) {
+    _recordSaved((b) => b..notifications = categories?.toBuilder());
+  }
+
   /// Replaces the flow's copy of `GET /onboarding/state` with [update] applied.
   ///
   /// **Why this exists.** Every step controller is `autoDispose` and the shell
@@ -286,8 +309,10 @@ class OnboardingFlowController extends Notifier<AsyncValue<OnboardingFlow>> {
   ///  * a null value — the resume read has not landed, on the same terms as
   ///    [goTo]: writing one would be a guess the load is about to overwrite.
   ///
-  /// **T13 adds the last method above**, `notifications`, built the same way
-  /// out of its own response's list. `hormones` landed at T12.
+  /// **All four projections the resume read carries are now recorded here**:
+  /// `lastPeriodStart` (T9), `goals` (T11), `hormones` (T12) and
+  /// `notifications` (T13). Screen 4 is the one step with nothing to record —
+  /// see above.
   void _recordSaved(void Function(OnboardingStateResponseBuilder) update) {
     if (!ref.mounted) return;
     final flow = state.value;

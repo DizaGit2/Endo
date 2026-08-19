@@ -8,6 +8,7 @@ import 'package:lumen/api/model/baseline_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goals_response.dart';
 import 'package:lumen/api/model/hormone_prefs_response.dart';
+import 'package:lumen/api/model/notification_prefs_response.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_start_request.dart';
@@ -15,6 +16,7 @@ import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/api/model/save_baseline_request.dart';
 import 'package:lumen/api/model/save_goals_request.dart';
 import 'package:lumen/api/model/save_hormone_prefs_request.dart';
+import 'package:lumen/api/model/save_notification_prefs_request.dart';
 import 'package:lumen/api/model/save_onboarding_cycle_request.dart';
 import 'package:lumen/api/serializers.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
@@ -45,6 +47,9 @@ import 'package:lumen/core/network/api_client.dart';
 ///                       stored as deselected.
 /// - [saveHormones]    — `POST /onboarding/hormones`, screen 6's write. FULL
 ///                       REPLACE too, but with **no minimum** — see below.
+/// - [saveNotifications] — `POST /onboarding/notifications`, screen 7's write.
+///                       FULL REPLACE, and the only step that also carries the
+///                       optional push pair.
 /// - [complete]        — `POST /onboarding/complete`, the end of the flow.
 ///
 /// **What [getState] deliberately does NOT do.** It returns the response whole
@@ -518,6 +523,133 @@ class OnboardingRepository {
     );
 
     return body;
+  }
+
+  // ── saveNotifications ──────────────────────────────────────────────────────
+
+  /// Calls `POST /onboarding/notifications` — screen 7's write.
+  ///
+  /// **FULL REPLACE of the complete row set** (`ARCHITECTURE.md` §C.0.1), the
+  /// same shape as [saveGoals] and [saveHormones]: [codes] is the whole desired
+  /// state of `user_notification_prefs`, not a list of additions. The server
+  /// writes a row for **every** code in
+  /// `HormoneCatalog.NotificationCategories.All` and sets `Enabled` from
+  /// membership of this array (`OnboardingStepsService.cs:556-573`, through
+  /// `StagePreferenceRows` at `:1172-1192`), so a code left out is **stored as
+  /// deselected**.
+  ///
+  /// **[codes] carries WIRE CODES.** `phase_shift` is singular — screen 7's
+  /// plural "Phase shifts" is display drift and `HormoneCatalog
+  /// .NotificationCategories` is the authority (`HormoneCatalog.cs:85-108`). A
+  /// label on this array is an unknown code and a 400 keyed
+  /// `enabledCategories[i]`.
+  ///
+  /// **An empty array is a valid answer and is POSTED, not refused.** Muting
+  /// everything is a real answer: the server keys `value is required` on a
+  /// **null** `enabledCategories` and on nothing else
+  /// (`OnboardingStepsService.cs:515-517`), exactly as
+  /// `POST /onboarding/hormones` does. Passing the list to `ListBuilder`
+  /// unconditionally is what keeps the member non-null, because `built_value`
+  /// omits a null member and an omitted `enabledCategories` IS that null.
+  ///
+  /// **Calling this with an empty array is NOT how a user skips the step**, and
+  /// the difference is the whole of D-02. "Skip" means *not calling this method
+  /// at all*: an empty post stores four rows with every flag `false`, and
+  /// `POST /onboarding/complete` then leaves them alone, because its backfill is
+  /// guarded by `if (!await db.UserNotificationPrefs.AnyAsync(...))`
+  /// (`OnboardingStepsService.cs:1091`). So a "skip" that posted an empty set
+  /// would silence a user who never said anything — the exact opposite of the
+  /// ON / ON / OFF / OFF seed completion would otherwise have materialised
+  /// (`:1093-1104`, `UserNotificationPref.DefaultEnabled`).
+  ///
+  /// **[pushToken] and [platform] are all-or-nothing.** Both are optional and an
+  /// absent pair is a **normal outcome** (`deviceRegistered: false`), not a
+  /// failure (`OnboardingContracts.cs:290-293`). What the server refuses is
+  /// *half* a pair — a token with no platform is a device P9a could never
+  /// dispatch to, and a platform with no token is not a registration at all —
+  /// which is a 400 under the reserved `request` key
+  /// (`OnboardingStepsService.cs:524-530`). That is knowable on the device, so
+  /// an [ArgumentError] names it here rather than spending a round trip; the
+  /// same backstop shape [saveGoals] and [saveBaseline] have.
+  ///
+  /// **Blank counts as absent on both**, the rule the server applies before it
+  /// measures anything (`OnboardingStepsService.cs:521-522`): a client sending
+  /// `""` for a token it does not have gets "no device", not a half-supplied
+  /// pair. Normalising here rather than only server-side is what stops the guard
+  /// above from rejecting a request the server would have accepted.
+  ///
+  /// **What this deliberately does NOT do.** It does not de-duplicate and does
+  /// not fold case (matching is Ordinal, `OnboardingStepsService.cs:1127-1149`),
+  /// and it does not mirror the token's 1–512 character bound
+  /// (`UserDevice.PushTokenMaxLength`): that is the storage column's width, no
+  /// user types a push token, and a client that refused a longer one would be
+  /// refusing what a future provider hands it.
+  ///
+  /// Errors, all as typed [Failure]s:
+  /// - **400** → [ValidationFailure] keyed `enabledCategories`,
+  ///   `enabledCategories[i]`, `platform`, `pushToken`, or the cross-field
+  ///   `request`.
+  /// - **409** → [ConflictFailure] with `code: onboarding_already_completed`.
+  Future<NotificationPrefsResponse> saveNotifications({
+    required List<String> codes,
+    String? pushToken,
+    String? platform,
+  }) async {
+    final String? token = _blankIsAbsent(pushToken);
+    final String? devicePlatform = _blankIsAbsent(platform);
+
+    if ((token == null) != (devicePlatform == null)) {
+      throw ArgumentError(
+        'POST /onboarding/notifications rejects half a device pair (400 '
+        '"pushToken and platform must be provided together"). Send both or '
+        'neither — an absent pair is a normal outcome, reported as '
+        'deviceRegistered: false.',
+      );
+    }
+
+    final request = SaveNotificationPrefsRequest(
+      (b) => b
+        ..enabledCategories = ListBuilder<String>(codes)
+        // Left unset when null: `built_value` omits a null member, and an
+        // absent pair is what the server reads as "no device to register".
+        ..pushToken = token
+        ..platform = devicePlatform,
+    );
+
+    late final NotificationPrefsResponse body;
+
+    await cachedWrite(
+      store: _store,
+      write: () async {
+        final response = await _api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: request,
+        );
+        final data = response.data;
+        if (data == null) {
+          throw const ServerFailure(
+            'The server returned an empty notification response.',
+          );
+        }
+        body = data;
+      },
+      // `GET /onboarding/state` carries both `notificationsProvided` and the
+      // notification projection itself, so this write moves it. NOT the
+      // profile: `MeResponse` has no notification member and nothing here
+      // stamps `onboarding_completed_at` — [complete] does that, and it
+      // invalidates the profile itself.
+      invalidateKeys: const <String>[CacheKeys.onboardingState],
+    );
+
+    return body;
+  }
+
+  /// [value] with the server's own "blank is absent" rule applied.
+  ///
+  /// `OnboardingStepsService.cs:521-522` trims and then treats an empty string
+  /// as absent, on the token and the platform alike.
+  static String? _blankIsAbsent(String? value) {
+    final String? trimmed = value?.trim();
+    return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
   }
 
   // ── complete ───────────────────────────────────────────────────────────────

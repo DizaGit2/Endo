@@ -25,8 +25,16 @@
 //      `onlyPumpAndSettle`, so an indeterminate spinner or a never-resolving
 //      controller hangs the test.
 //   6. `obscureText: true` is on globally (flutter_test_config.dart), so these
-//      images prove layout, geometry and colour — NOT copy. Assert strings in
-//      the semantics/widget test instead.
+//      images prove layout, geometry and colour, and are insensitive to copy
+//      AT EQUAL CHARACTER COUNT. Assert strings in the semantics/widget test
+//      instead — a golden can never tell you WHICH glyphs were drawn.
+//      The qualifier is not pedantry and was measured (P4b-T13/M9): obscuring
+//      replaces each glyph with a block but preserves the RUN LENGTH, and the
+//      test font is fixed-advance, so a copy edit that changes the character
+//      count moves pixels and reddens the pair. Renaming "Phase shift" to
+//      "Phase shifts" reddened both of screen 7's goldens. So a length-changing
+//      copy edit needs `--update-goldens`; an equal-length one does not, and
+//      neither kind is *asserted* by these images.
 
 import 'package:alchemist/alchemist.dart';
 import 'package:flutter/material.dart';

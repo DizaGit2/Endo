@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goal_selection.dart';
 import 'package:lumen/api/model/hormone_selection.dart';
+import 'package:lumen/api/model/notification_category_selection.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
@@ -583,6 +584,96 @@ void main() {
               .value!
               .state
               .hormones,
+          isNull,
+        );
+      },
+    );
+
+    test(
+      'a notification write replaces the notification projection alone',
+      () async {
+        // Screen 7 is the flow's THIRD full-replace step, and the one where a
+        // stale prefill is reachable even without the back affordance: the
+        // COMPLETION can fail after the save landed — a 409, or a network drop —
+        // leaving the user on a step they have already written.
+        stubState(
+          onboardingStateFixture(
+            cycleProvided: true,
+            goals: const <String, bool>{'manage_symptoms': true},
+            notifications: const <String, bool>{
+              'daily_checkin': true,
+              'phase_shift': true,
+            },
+          ),
+        );
+        final container = _container(repo);
+        final before = await _settled(container);
+
+        // Premises, and both assertions below are their opposite.
+        expect(before.step, OnboardingStep.baseline);
+        expect(
+          before.state.notifications!.map(
+            (NotificationCategorySelection n) => n.enabled,
+          ),
+          <bool>[true, true],
+        );
+
+        _notifier(container).recordNotificationsSaved(
+          BuiltList<NotificationCategorySelection>(
+            notificationSelections(const <String, bool>{
+              'daily_checkin': false,
+              'phase_shift': false,
+            }),
+          ),
+        );
+
+        final after = container.read(onboardingFlowControllerProvider).value!;
+        expect(
+          <String, bool>{
+            for (final NotificationCategorySelection n
+                in after.state.notifications!)
+              n.code!: n.enabled!,
+          },
+          <String, bool>{'daily_checkin': false, 'phase_shift': false},
+        );
+
+        // Recording is not navigation, and it is not a write to any other step's
+        // projection: the goals list and the booleans `resumeStepFrom` reads are
+        // untouched. `notificationsProvided` in particular stays the RESUME
+        // read's answer (T8b invariant 1).
+        expect(after.step, OnboardingStep.baseline);
+        expect(after.state.goals!.first.selected, isTrue);
+        expect(after.state.cycleProvided, isTrue);
+        expect(after.state.notificationsProvided, isFalse);
+      },
+    );
+
+    test(
+      'a response that carried no notification list is recorded as no list',
+      () async {
+        // `NotificationsForm.fromWire(null)` falls back to the ON/ON/OFF/OFF
+        // seed, and `fromWire([])` produces a form with NO rows at all — a
+        // screen that draws nothing. So a null must stay a null here; a builder
+        // written the auto-vivifying way would turn it into an empty list.
+        stubState(
+          onboardingStateFixture(
+            cycleProvided: true,
+            notifications: const <String, bool>{'daily_checkin': true},
+          ),
+        );
+        final container = _container(repo);
+        final before = await _settled(container);
+        // Premise: there IS a list to lose.
+        expect(before.state.notifications, isNotNull);
+
+        _notifier(container).recordNotificationsSaved(null);
+
+        expect(
+          container
+              .read(onboardingFlowControllerProvider)
+              .value!
+              .state
+              .notifications,
           isNull,
         );
       },
