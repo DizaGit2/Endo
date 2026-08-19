@@ -24,6 +24,8 @@ import 'package:lumen/api/model/baseline_response.dart';
 import 'package:lumen/api/model/cycle_calendar_response.dart';
 import 'package:lumen/api/model/cycle_settings_response.dart';
 import 'package:lumen/api/model/date.dart';
+import 'package:lumen/api/model/goal_selection.dart';
+import 'package:lumen/api/model/goals_response.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
@@ -117,6 +119,7 @@ OnboardingStateResponse onboardingStateFixture({
   bool? notificationsProvided = false,
   Date? lastPeriodStart,
   DateTime? completedAt,
+  Map<String, bool>? goals,
 }) {
   return OnboardingStateResponse(
     (b) => b
@@ -127,7 +130,61 @@ OnboardingStateResponse onboardingStateFixture({
       ..goalsProvided = goalsProvided
       ..hormonesProvided = hormonesProvided
       ..notificationsProvided = notificationsProvided
-      ..lastPeriodStart = lastPeriodStart,
+      ..lastPeriodStart = lastPeriodStart
+      // Left unset by default, with the other three lists: they are nullable
+      // in the generated client and a screen that force-unwraps one is broken
+      // against the real contract.
+      ..goals = goals == null
+          ? null
+          : ListBuilder<GoalSelection>(goalSelections(goals)),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Goals (P4b-T11)
+// ---------------------------------------------------------------------------
+
+/// The five ratified goal codes in `UserGoal.Codes.All` order, each with the
+/// D-14 seed flag.
+///
+/// This is the list `OnboardingStepsService.ReadGoalsAsync` answers for a user
+/// who has never answered the step — the first two ON, the rest OFF
+/// (`UserGoal.cs:37-38,44-54`). It is a FIXTURE, not a client-side source of
+/// truth: the screen renders whatever the response carries, and this map exists
+/// so a test can state what the server would have said.
+const Map<String, bool> kSeededGoals = <String, bool>{
+  'manage_symptoms': true,
+  'understand_hormones': true,
+  'plan_fertility': false,
+  'prepare_appointments': false,
+  'just_curious': false,
+};
+
+/// [selections] as wire rows, in the map's insertion order.
+///
+/// Order is load-bearing on this endpoint: the response lists the COMPLETE
+/// vocabulary in **frozen order** and the client renders that order rather than
+/// one of its own, so a test that wants to prove it needs to be able to hand
+/// over an order of its choosing.
+List<GoalSelection> goalSelections(Map<String, bool> selections) {
+  return <GoalSelection>[
+    for (final MapEntry<String, bool> entry in selections.entries)
+      GoalSelection(
+        (b) => b
+          ..code = entry.key
+          ..selected = entry.value,
+      ),
+  ];
+}
+
+/// `POST /onboarding/goals`. The default is the answer a user who has never
+/// answered the step gets back — every code, with the D-14 seed.
+GoalsResponse goalsResponseFixture([Map<String, bool>? selections]) {
+  return GoalsResponse(
+    (b) => b
+      ..goals = ListBuilder<GoalSelection>(
+        goalSelections(selections ?? kSeededGoals),
+      ),
   );
 }
 

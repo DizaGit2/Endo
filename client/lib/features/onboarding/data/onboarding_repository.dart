@@ -1,15 +1,18 @@
 import 'dart:convert';
 
+import 'package:built_collection/built_collection.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/api/api/lumen_api_api.dart';
 import 'package:lumen/api/model/baseline_response.dart';
 import 'package:lumen/api/model/date.dart';
+import 'package:lumen/api/model/goals_response.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_start_request.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/api/model/save_baseline_request.dart';
+import 'package:lumen/api/model/save_goals_request.dart';
 import 'package:lumen/api/model/save_onboarding_cycle_request.dart';
 import 'package:lumen/api/serializers.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
@@ -34,6 +37,10 @@ import 'package:lumen/core/network/api_client.dart';
 ///                       screens 3-7 lands behind.
 /// - [saveCycle]       — `POST /onboarding/cycle`, screen 3's write and the one
 ///                       mandatory answer of the flow (D-02).
+/// - [saveBaseline]    — `POST /onboarding/baseline`, screen 4's write (MERGE).
+/// - [saveGoals]       — `POST /onboarding/goals`, screen 5's write. The first
+///                       **FULL REPLACE** of the flow: a code left out is
+///                       stored as deselected.
 /// - [complete]        — `POST /onboarding/complete`, the end of the flow.
 ///
 /// **What [getState] deliberately does NOT do.** It returns the response whole
@@ -344,6 +351,85 @@ class OnboardingRepository {
         CacheKeys.profile,
         CacheKeys.onboardingState,
       ],
+    );
+
+    return body;
+  }
+
+  // ── saveGoals ──────────────────────────────────────────────────────────────
+
+  /// Calls `POST /onboarding/goals` — screen 5's write.
+  ///
+  /// **FULL REPLACE of the complete row set** (`ARCHITECTURE.md` §C.0.1), and
+  /// the first such surface in the flow. [codes] is the whole desired state of
+  /// `user_goals`, not a list of additions: the server writes a row for **every**
+  /// code in `UserGoal.Codes.All` and sets `Selected` from membership of this
+  /// array (`OnboardingStepsService.cs:381-407`, `StagePreferenceRows`). So a
+  /// code left out is **stored as deselected** — deselection is recorded as an
+  /// answer rather than vanishing, which is the whole point of the shape
+  /// (`UserGoal.cs:5-9`). A caller that sends only what changed silently
+  /// discards every goal the user selected on an earlier visit.
+  ///
+  /// **An empty array throws instead of posting.** D-14 is multi-select **min
+  /// 1, no max**, and an empty array is a 400 whose message is `select at least
+  /// one goal` (`OnboardingStepResult.cs:371`, raised at
+  /// `OnboardingStepsService.cs:369-375`) — deliberately **not** the generic
+  /// `value is required`, because the field *was* supplied. The guard here is
+  /// the same shape as [saveBaseline]'s and has the same standing: the guard
+  /// USERS are protected by is the screen's inert Continue, and this is the
+  /// backstop that keeps the body unconstructable if that is ever removed.
+  ///
+  /// **What this deliberately does NOT do**, because the server accepts both
+  /// and a client that rejects what the server stores is a defect:
+  ///
+  ///  * it does not de-duplicate. Duplicates collapse silently server-side
+  ///    (`OnboardingStepsService.cs:1127-1149`, a `HashSet` keyed
+  ///    `StringComparer.Ordinal`);
+  ///  * it does not normalise case, and no caller may. Matching is **Ordinal**,
+  ///    so `Manage_Symptoms` is an unknown code and a 400 keyed `goals[i]` —
+  ///    folding case here would send a value this client believed was valid.
+  ///
+  /// Errors, all as typed [Failure]s:
+  /// - **400** → [ValidationFailure] keyed `goals` for the whole array, or
+  ///   `goals[i]` for one member (`ValidationFailure.path('goals', i)`).
+  /// - **409** → [ConflictFailure] with `code: onboarding_already_completed`.
+  Future<GoalsResponse> saveGoals({required List<String> codes}) async {
+    if (codes.isEmpty) {
+      throw ArgumentError.value(
+        codes,
+        'codes',
+        'POST /onboarding/goals rejects an empty array (400 "select at least '
+            'one goal"). D-14 is min 1, no max — an empty selection is not a '
+            'request this client may issue.',
+      );
+    }
+
+    final request = SaveGoalsRequest(
+      (b) => b..goals = ListBuilder<String>(codes),
+    );
+
+    late final GoalsResponse body;
+
+    await cachedWrite(
+      store: _store,
+      write: () async {
+        final response = await _api.onboardingGoalsPost(
+          saveGoalsRequest: request,
+        );
+        final data = response.data;
+        if (data == null) {
+          throw const ServerFailure(
+            'The server returned an empty goals response.',
+          );
+        }
+        body = data;
+      },
+      // `GET /onboarding/state` carries both `goalsProvided` and the goals
+      // projection itself, so this write moves it. Nothing else: `user_goals`
+      // appears in no other cached read — `MeResponse` has no goals member, and
+      // nothing here stamps `onboarding_completed_at`, so invalidating the
+      // profile would re-read it every time a user changed a chip.
+      invalidateKeys: const <String>[CacheKeys.onboardingState],
     );
 
     return body;

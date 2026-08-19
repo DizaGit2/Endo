@@ -6,6 +6,7 @@ import 'package:lumen/features/onboarding/application/onboarding_flow_controller
 import 'package:lumen/features/onboarding/application/onboarding_step.dart';
 import 'package:lumen/features/onboarding/presentation/baseline_screen.dart';
 import 'package:lumen/features/onboarding/presentation/cycle_setup_screen.dart';
+import 'package:lumen/features/onboarding/presentation/goals_screen.dart';
 import 'package:lumen/shared/widgets/lumen_error_banner.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:lumen/shared/widgets/lumen_step_chrome.dart';
@@ -30,10 +31,10 @@ import 'package:lumen/shared/widgets/lumen_step_dots.dart';
 /// | the resume read and its loading / retry surfaces | |
 /// | `POST /onboarding/complete` and its 409 | |
 ///
-/// The step body is [onboardingStepContent] — an exhaustive switch. Screens 3
-/// and 4 are built ([CycleSetupScreen], [BaselineScreen]); the remaining three
-/// arms answer the same placeholder, and T11-T13 each replace exactly one of
-/// them.
+/// The step body is [onboardingStepContent] — an exhaustive switch. Screens 3,
+/// 4 and 5 are built ([CycleSetupScreen], [BaselineScreen], [GoalsScreen]); the
+/// remaining two arms answer the same placeholder, and T12-T13 each replace
+/// exactly one of them.
 class OnboardingShellScreen extends ConsumerWidget {
   const OnboardingShellScreen({super.key});
 
@@ -212,7 +213,7 @@ class OnboardingStepSlot extends StatelessWidget {
 ///
 /// **One arm per screen, and that is the handoff.** The five screens are one
 /// task each — T9 (screen 3, cycle, built), T10 (4, baseline, built), T11 (5,
-/// goals), T12 (6, hormones), T13 (7, notifications) — and each of them
+/// goals, built), T12 (6, hormones), T13 (7, notifications) — and each of them
 /// replaces exactly one arm here, the same one-line shape P4b-T1 left this
 /// task. The
 /// switch is exhaustive over [OnboardingStep] on purpose: adding a sixth step
@@ -223,7 +224,8 @@ Widget onboardingStepContent(OnboardingStep step) {
       return const CycleSetupScreen();
     case OnboardingStep.baseline: // screen 4 — the first skippable step (D-02)
       return const BaselineScreen();
-    case OnboardingStep.goals: // P4b-T11 — screen 5
+    case OnboardingStep.goals: // screen 5 — the first FULL REPLACE (§C.0.1)
+      return const GoalsScreen();
     case OnboardingStep.hormones: // P4b-T12 — screen 6
     case OnboardingStep.notifications: // P4b-T13 — screen 7
       return const _StepNotBuiltYet();

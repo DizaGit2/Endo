@@ -14,14 +14,17 @@
 //     owes an answer. Those must arrive as a typed `ConflictFailure` — no
 //     caller may read `DioException.response.data`.
 
+import 'package:built_collection/built_collection.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/baseline_response.dart';
 import 'package:lumen/api/model/date.dart';
+import 'package:lumen/api/model/goals_response.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/api/model/save_baseline_request.dart';
+import 'package:lumen/api/model/save_goals_request.dart';
 import 'package:lumen/api/model/save_onboarding_cycle_request.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
 import 'package:lumen/core/cache/cached_query.dart';
@@ -79,6 +82,16 @@ SaveOnboardingCycleRequest _capturedCycleRequest(MockLumenApiApi api) {
         ),
       ).captured.last
       as SaveOnboardingCycleRequest;
+}
+
+/// The goals request the repository actually put on the wire.
+SaveGoalsRequest _capturedGoalsRequest(MockLumenApiApi api) {
+  return verify(
+        () => api.onboardingGoalsPost(
+          saveGoalsRequest: captureAny(named: 'saveGoalsRequest'),
+        ),
+      ).captured.last
+      as SaveGoalsRequest;
 }
 
 /// The baseline request the repository actually put on the wire.
@@ -802,6 +815,158 @@ void main() {
 
       await expectLater(
         repo.saveBaseline(heightCm: 165),
+        throwsA(isA<ServerFailure>()),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /onboarding/goals (P4b-T11)
+  // -------------------------------------------------------------------------
+
+  group('saveGoals', () {
+    setUpAll(
+      () => registerFallbackValue(
+        SaveGoalsRequest((b) => b..goals = ListBuilder<String>(<String>['x'])),
+      ),
+    );
+
+    void answerSave([GoalsResponse? body]) {
+      when(
+        () => api.onboardingGoalsPost(
+          saveGoalsRequest: any(named: 'saveGoalsRequest'),
+        ),
+      ).thenAnswer(apiSuccess(body ?? goalsResponseFixture()));
+    }
+
+    test('it sends the codes it was given, in order, untouched', () async {
+      answerSave();
+
+      // FULL REPLACE: this array IS the desired state of `user_goals`. The
+      // repository adds nothing, drops nothing and re-orders nothing — the
+      // three things that would each turn a selection into a different answer.
+      await repo.saveGoals(
+        codes: const <String>['just_curious', 'manage_symptoms'],
+      );
+
+      expect(_capturedGoalsRequest(api).goals?.toList(), <String>[
+        'just_curious',
+        'manage_symptoms',
+      ]);
+
+      // The control: a DIFFERENT array travels differently. Without it the row
+      // above would pass for a repository that ignored its argument and sent a
+      // hard-coded pair.
+      await repo.saveGoals(codes: const <String>['plan_fertility']);
+      expect(_capturedGoalsRequest(api).goals?.toList(), <String>[
+        'plan_fertility',
+      ]);
+    });
+
+    test('it neither de-duplicates nor folds case — the server accepts both', () async {
+      answerSave();
+
+      // A client that rejects (or "corrects") what the server stores is a
+      // defect. Duplicates collapse silently server-side
+      // (`OnboardingStepsService.cs:1127-1149`), and matching is Ordinal — so
+      // case is the caller's business and mangling it here would send a code
+      // this client believed was valid.
+      await repo.saveGoals(
+        codes: const <String>['just_curious', 'just_curious'],
+      );
+      expect(_capturedGoalsRequest(api).goals?.toList(), <String>[
+        'just_curious',
+        'just_curious',
+      ]);
+
+      await repo.saveGoals(codes: const <String>['Manage_Symptoms']);
+      expect(_capturedGoalsRequest(api).goals?.toList(), <String>[
+        'Manage_Symptoms',
+      ]);
+    });
+
+    test('an empty array never reaches the wire', () async {
+      answerSave();
+
+      // D-14 is min 1, no max. An empty array is a 400 whose message is
+      // `select at least one goal` (`OnboardingStepResult.cs:371`) — NOT the
+      // generic `value is required`, because the field WAS supplied.
+      expect(
+        () => repo.saveGoals(codes: const <String>[]),
+        throwsA(isA<ArgumentError>()),
+      );
+      verifyNever(
+        () => api.onboardingGoalsPost(
+          saveGoalsRequest: any(named: 'saveGoalsRequest'),
+        ),
+      );
+
+      // The control, and the accepting boundary: ONE code is enough, and the
+      // same call then posts.
+      await repo.saveGoals(codes: const <String>['just_curious']);
+      verify(
+        () => api.onboardingGoalsPost(
+          saveGoalsRequest: any(named: 'saveGoalsRequest'),
+        ),
+      ).called(1);
+    });
+
+    test('it invalidates the onboarding state and nothing else', () async {
+      answerSave();
+
+      await repo.saveGoals(codes: const <String>['manage_symptoms']);
+
+      final keys = verify(() => store.invalidate(captureAny())).captured;
+      // `goalsProvided` and the goals projection both move.
+      expect(keys, contains(_stateKey));
+      // Not the profile: `MeResponse` carries no goals member, and nothing here
+      // stamps `onboarding_completed_at`.
+      expect(keys, isNot(contains(_profileKey)));
+      expect(keys, isNot(contains(_cycleSettingsKey)));
+    });
+
+    test('a 400 arrives as a ValidationFailure keyed by wire field name', () async {
+      when(
+        () => api.onboardingGoalsPost(
+          saveGoalsRequest: any(named: 'saveGoalsRequest'),
+        ),
+      ).thenAnswer(
+        apiValidationProblem<GoalsResponse>(
+          path: '/onboarding/goals',
+          fields: const <String, List<String>>{
+            'goals': <String>['select at least one goal'],
+          },
+        ),
+      );
+
+      await expectLater(
+        repo.saveGoals(codes: const <String>['manage_symptoms']),
+        throwsA(
+          isA<ValidationFailure>().having(
+            (ValidationFailure f) => f.messageFor('goals'),
+            'messageFor(goals)',
+            'select at least one goal',
+          ),
+        ),
+      );
+      // Nothing was stored, so nothing cached is wrong.
+      verifyNever(() => store.invalidate(any()));
+    });
+
+    test('an empty 200 body is a typed failure, not a force-unwrap', () async {
+      when(
+        () => api.onboardingGoalsPost(
+          saveGoalsRequest: any(named: 'saveGoalsRequest'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<GoalsResponse>(
+          requestOptions: RequestOptions(path: '/onboarding/goals'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(
+        repo.saveGoals(codes: const <String>['manage_symptoms']),
         throwsA(isA<ServerFailure>()),
       );
     });
