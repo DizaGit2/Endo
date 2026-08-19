@@ -44,12 +44,14 @@ abstract final class Routes {
 
   /// Home tab (screen 8, the dashboard) — branch 0.
   ///
-  /// P4b-T15 replaces its placeholder with the real dashboard.
+  /// P4b-T17 replaces its placeholder with the real dashboard.
   static const home = '/home';
 
   /// Cycle tab (screens 10/11/14) — branch 1.
   ///
-  /// P4b-T16/T17 replace its placeholder with the calendar and day detail.
+  /// Screen 10 (calendar) shipped at P4b-T15. P4b-T16 adds screen 11 (day
+  /// detail) as a child route (`/cycle/day/:date`); P4b-T23 adds screen 14
+  /// (phase correction) — see `lumen-build.md:1132` for the ledger.
   static const cycle = '/cycle';
 
   /// Hormones tab (screens 15–21) — branch 2. Not built in P4b.

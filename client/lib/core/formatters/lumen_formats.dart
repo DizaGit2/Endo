@@ -130,6 +130,38 @@ abstract final class LumenFormats {
     return DateFormat.yM(locale).format(d);
   }
 
+  /// Returns `"April 2026"` — an English month name plus the year — for [d].
+  ///
+  /// **No [locale] parameter, on purpose.** Screen 10 (the cycle calendar) is
+  /// the one screen whose title needs a month NAME rather than [monthYear]'s
+  /// numeric form — a numeric `"4/2026"` is right for `diagnosedOn`, which this
+  /// formatter is not for. Naming the month is exactly the move [monthYear]'s
+  /// own dartdoc rules out for a translated word (R-04: every string in P4b
+  /// stays English), so this formatter cannot honestly take a locale — there is
+  /// nothing for one to select between. That is the same split T6 already made
+  /// for [orderedWeekdays]: the **locale** decides the week's *order* (D-05),
+  /// the **app** owns the *words*. A screen wanting locale-ordered digits still
+  /// has [monthYear]; this is for the one screen that needs the name instead.
+  static String monthName(DateTime d) =>
+      '${_englishMonths[d.month - 1]} ${d.year}';
+
+  /// English month names, indexed by `DateTime.month - 1`. Not translated, and
+  /// not meant to be — see [monthName].
+  static const List<String> _englishMonths = <String>[
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
   // -------------------------------------------------------------------------
   // Time
   // -------------------------------------------------------------------------
@@ -153,11 +185,7 @@ abstract final class LumenFormats {
   ///
   /// - `es_ES` → comma separator: `"1,5"`
   /// - `en_US` → period separator: `"1.5"`
-  static String decimal(
-    num value,
-    String locale, {
-    int decimalDigits = 1,
-  }) =>
+  static String decimal(num value, String locale, {int decimalDigits = 1}) =>
       _numberFmt(value, locale, decimalDigits);
 
   // -------------------------------------------------------------------------

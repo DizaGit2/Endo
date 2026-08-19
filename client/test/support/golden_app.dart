@@ -25,9 +25,10 @@
 //      `onlyPumpAndSettle`, so an indeterminate spinner or a never-resolving
 //      controller hangs the test.
 //   6. `obscureText: true` is on globally (flutter_test_config.dart), so these
-//      images prove layout, geometry and colour, and are insensitive to copy
-//      AT EQUAL CHARACTER COUNT. Assert strings in the semantics/widget test
-//      instead — a golden can never tell you WHICH glyphs were drawn.
+//      images prove layout, geometry and NON-TEXT colour (backgrounds,
+//      borders, decorations), and are insensitive to copy AT EQUAL CHARACTER
+//      COUNT. Assert strings in the semantics/widget test instead — a golden
+//      can never tell you WHICH glyphs were drawn.
 //      The qualifier is not pedantry and was measured (P4b-T13/M9): obscuring
 //      replaces each glyph with a block but preserves the RUN LENGTH, and the
 //      test font is fixed-advance, so a copy edit that changes the character
@@ -35,6 +36,22 @@
 //      "Phase shifts" reddened both of screen 7's goldens. So a length-changing
 //      copy edit needs `--update-goldens`; an equal-length one does not, and
 //      neither kind is *asserted* by these images.
+//   7. **TEXT OPACITY IS INVISIBLE TO A BLOCKED-TEXT GOLDEN — this is the
+//      second false self-description this file has carried** (P4b-T13 found
+//      the copy-insensitivity one above; P4b-T15/fix-round-1 found this one).
+//      `alchemist`'s `BlockedTextPaintingContext.paintChild` (0.14.0) draws a
+//      `RenderParagraph`'s block using `child.text.style?.color` DIRECTLY,
+//      bypassing the render tree's paint-time opacity compositing an
+//      `Opacity` ancestor would normally apply. Measured on a real shipped
+//      artifact: every day number in `cycle_calendar_screen_light.png`
+//      — including the ones P4b-T15 draws inside `Opacity(opacity: 0.3, …)`
+//      for an adjacent-month day — samples as the exact same full-strength
+//      `#3B2A20`, dimmed or not. So "these images prove … colour" in rule 6
+//      is true of a widget's OWN paint colour and false of opacity applied
+//      to TEXT above it in the tree: a golden cannot distinguish a dimmed
+//      text node from a full-strength one. Assert `Opacity.opacity` directly
+//      in a widget test instead (`cycle_calendar_screen_semantics_test.dart`,
+//      "an adjacent-month cell is drawn at 0.3 opacity…").
 
 import 'package:alchemist/alchemist.dart';
 import 'package:flutter/material.dart';

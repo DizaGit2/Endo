@@ -31,11 +31,15 @@ import 'package:lumen/core/network/api_client.dart';
 /// **`POST /cycle/day/{date}` (the day-log MERGE write) and
 /// `POST /cycle/phase-override` are deliberately NOT here.** T14's brief
 /// enumerates exactly the four operations above; the day-log write belongs to
-/// whichever of T15/T16 needs it first, and the phase-override write is T17's
-/// (screen 14) — `ARCHITECTURE.md` §C.0.1 calls it *"the most dangerous field
-/// on the P4a surface"*, on a par with [logEvent], and giving it a home before
-/// the screen that owns it exists would be guessing at a shape nobody has
-/// designed against yet.
+/// whichever of T15/T16 needs it first. Screen 14 (phase correction) is
+/// T23's, not T17's — `lumen-build.md` is the authority (`:1132`) — but this
+/// class still would not host the phase-override write even once T23 lands:
+/// R-08 defers the actual write to P6 entirely, so T23 ships screen 14 as the
+/// documented unavailable state and writes nothing in P4b.
+/// `ARCHITECTURE.md` §C.0.1 calls `POST /cycle/phase-override` *"the most
+/// dangerous field on the P4a surface"*, on a par with [logEvent], and giving
+/// it a home before the screen that owns it exists (in a phase where it does
+/// not even write) would be guessing at a shape nobody has designed against.
 ///
 /// **No clinical inference lives here.** `flowIntensity` is passed through as
 /// the raw `1..4` scale the wire defines (§2.11) — this class renders no

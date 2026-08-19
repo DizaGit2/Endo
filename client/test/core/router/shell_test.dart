@@ -13,10 +13,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lumen/api/model/cycle_calendar_day.dart';
+import 'package:lumen/api/model/date.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/app_router.dart';
 import 'package:lumen/core/router/routes.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lumen/features/cycle/application/cycle_calendar_controller.dart';
+import 'package:lumen/features/cycle/presentation/cycle_calendar_screen.dart';
 import 'package:lumen/features/onboarding/application/cycle_setup_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
@@ -60,6 +64,11 @@ Future<void> _pumpShell(
       // the same reason: an unresolved read leaves an indeterminate spinner on
       // screen and `pumpAndSettle` never returns.
       cycleSetupControllerProvider.overrideWith(_SettledCycleSetup.new),
+      // …and since P4b-T15 the Cycle TAB itself (branch root, not a step)
+      // renders screen 10, which reads `GET /cycle/calendar` three times on
+      // mount. Pinned settled for the same reason as the two controllers
+      // above.
+      cycleCalendarControllerProvider.overrideWith(_SettledCalendar.new),
     ],
   );
 }
@@ -84,19 +93,55 @@ class _SettledCycleSetup extends CycleSetupController {
   );
 }
 
+/// Screen 10, pinned to a settled (empty) month. `CycleCalendarController`'s
+/// OWN `build()` is declared `Future<CycleCalendarView> Function()` (a real
+/// await, not the bare `FutureOr<T>` its `AsyncNotifier` base allows) — an
+/// override has to match the signature actually declared on its immediate
+/// superclass, so this stays `async` even though it never really awaits
+/// anything.
+class _SettledCalendar extends CycleCalendarController {
+  @override
+  Future<CycleCalendarView> build() async => CycleCalendarView(
+    visibleMonth: DateTime(2026, 4),
+    today: Date(2026, 4, 20),
+    phase: null,
+    dayByDate: const <Date, CycleCalendarDay>{},
+  );
+}
+
 int _selectedIndex(WidgetTester tester) =>
     tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex;
 
-/// (bottom-nav label, the heading the tab's destination renders).
-///
-/// The headings are written out as literals on purpose: reading them back from
-/// the production widget would make the copy assertions tautological.
-const _tabs = <(String, String)>[
+/// The five bottom-nav labels, in CLAUDE.md order — written out as literals
+/// on purpose: reading them back from the production widget would make the
+/// "all five destinations" assertion tautological.
+const _allLabels = <String>['Home', 'Cycle', 'Hormones', 'Body', 'More'];
+
+/// (bottom-nav label, the heading the tab's destination renders) for the
+/// tabs that are STILL a bare [TabPlaceholderScreen]. Cycle is deliberately
+/// absent since P4b-T15: it renders [CycleCalendarScreen] now, which has no
+/// heading string to compare against — see [_tabContent].
+const _placeholderTabs = <(String, String)>[
   ('Home', 'Home isn\'t here yet'),
-  ('Cycle', 'Cycle isn\'t here yet'),
   ('Hormones', 'Hormones aren\'t here yet'),
   ('Body', 'Body tracking isn\'t here yet'),
   ('More', 'More isn\'t here yet'),
+];
+
+/// (bottom-nav label, a [Finder] that matches ONLY when that tab's real
+/// content is on screen), for every one of the five tabs.
+///
+/// Four still render [TabPlaceholderScreen] and are found by their heading
+/// text, same as [_placeholderTabs]. Cycle (P4b-T15) is found by its own
+/// screen TYPE instead — [CycleCalendarScreen] no longer has a placeholder
+/// heading to compare against, and finding it by TYPE is also what proves the
+/// route table's builder was actually replaced, not merely relabelled.
+List<(String label, Finder content)> _tabContent() => <(String, Finder)>[
+  ('Home', find.text('Home isn\'t here yet')),
+  ('Cycle', find.byType(CycleCalendarScreen)),
+  ('Hormones', find.text('Hormones aren\'t here yet')),
+  ('Body', find.text('Body tracking isn\'t here yet')),
+  ('More', find.text('More isn\'t here yet')),
 ];
 
 void main() {
@@ -122,7 +167,7 @@ void main() {
 
       final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
       expect(bar.destinations.length, 5);
-      for (final (label, _) in _tabs) {
+      for (final label in _allLabels) {
         expect(find.text(label), findsOneWidget);
       }
     });
@@ -132,9 +177,10 @@ void main() {
       'follows',
       (tester) async {
         await _pumpShell(tester);
+        final tabs = _tabContent();
 
-        for (var index = 0; index < _tabs.length; index++) {
-          final (label, heading) = _tabs[index];
+        for (var index = 0; index < tabs.length; index++) {
+          final (label, content) = tabs[index];
 
           await tester.tap(find.text(label));
           await tester.pumpAndSettle();
@@ -145,15 +191,15 @@ void main() {
             reason: 'tapping "$label" should select index $index',
           );
           expect(
-            find.text(heading),
+            content,
             findsOneWidget,
-            reason: 'tapping "$label" should show "$heading"',
+            reason: 'tapping "$label" should show its content',
           );
           // Only the active branch is on stage: go_router wraps the inactive
           // branch Navigators in Offstage, which the default finder skips.
-          for (final (otherLabel, otherHeading) in _tabs) {
+          for (final (otherLabel, otherContent) in tabs) {
             if (otherLabel == label) continue;
-            expect(find.text(otherHeading), findsNothing);
+            expect(otherContent, findsNothing);
           }
         }
       },
@@ -163,7 +209,7 @@ void main() {
       tester,
     ) async {
       await _pumpShell(tester, initialLocation: Routes.cycle);
-      expect(find.text('Cycle isn\'t here yet'), findsOneWidget);
+      expect(find.byType(CycleCalendarScreen), findsOneWidget);
 
       await tester.tap(find.text('Home'));
       await tester.pumpAndSettle();
@@ -172,9 +218,9 @@ void main() {
       // branch's navigation stack survivable across a tab switch. A shell that
       // threw the branch away and rebuilt it would fail the skipOffstage:false
       // half of this pair.
-      expect(find.text('Cycle isn\'t here yet'), findsNothing);
+      expect(find.byType(CycleCalendarScreen), findsNothing);
       expect(
-        find.text('Cycle isn\'t here yet', skipOffstage: false),
+        find.byType(CycleCalendarScreen, skipOffstage: false),
         findsOneWidget,
       );
 
@@ -195,7 +241,9 @@ void main() {
   // -------------------------------------------------------------------------
 
   group('unimplemented tabs state plainly that the feature is not here', () {
-    for (final (label, heading) in _tabs.sublist(2)) {
+    // Home excluded (T17 still owes it its real screen); Cycle excluded
+    // entirely from _placeholderTabs since P4b-T15 gave it a real one.
+    for (final (label, heading) in _placeholderTabs.sublist(1)) {
       testWidgets('the $label tab renders the exact placeholder copy', (
         tester,
       ) async {

@@ -21,19 +21,28 @@ void main() {
     test('es_ES: day appears before month', () {
       final result = LumenFormats.date(d, 'es_ES');
       // The formatted string starts with "7" for the day
-      expect(result.startsWith('7'), isTrue,
-          reason: 'es_ES short date should begin with day "7", got "$result"');
+      expect(
+        result.startsWith('7'),
+        isTrue,
+        reason: 'es_ES short date should begin with day "7", got "$result"',
+      );
     });
 
     test('en_US: month appears before day', () {
       final result = LumenFormats.date(d, 'en_US');
       // The formatted string starts with "3" for the month
-      expect(result.startsWith('3'), isTrue,
-          reason: 'en_US short date should begin with month "3", got "$result"');
+      expect(
+        result.startsWith('3'),
+        isTrue,
+        reason: 'en_US short date should begin with month "3", got "$result"',
+      );
     });
 
     test('es_ES and en_US produce different strings', () {
-      expect(LumenFormats.date(d, 'es_ES'), isNot(LumenFormats.date(d, 'en_US')));
+      expect(
+        LumenFormats.date(d, 'es_ES'),
+        isNot(LumenFormats.date(d, 'en_US')),
+      );
     });
   });
 
@@ -46,18 +55,30 @@ void main() {
 
     test('es_ES: no AM/PM marker, contains "16"', () {
       final result = LumenFormats.time(t, 'es_ES');
-      expect(result.contains('AM'), isFalse,
-          reason: 'es_ES time should not contain AM, got "$result"');
-      expect(result.contains('PM'), isFalse,
-          reason: 'es_ES time should not contain PM, got "$result"');
-      expect(result.contains('16'), isTrue,
-          reason: 'es_ES time should use 24-hour format "16", got "$result"');
+      expect(
+        result.contains('AM'),
+        isFalse,
+        reason: 'es_ES time should not contain AM, got "$result"',
+      );
+      expect(
+        result.contains('PM'),
+        isFalse,
+        reason: 'es_ES time should not contain PM, got "$result"',
+      );
+      expect(
+        result.contains('16'),
+        isTrue,
+        reason: 'es_ES time should use 24-hour format "16", got "$result"',
+      );
     });
 
     test('en_US: contains "PM" for 16:30', () {
       final result = LumenFormats.time(t, 'en_US');
-      expect(result.contains('PM'), isTrue,
-          reason: 'en_US time should contain "PM" for 16:30, got "$result"');
+      expect(
+        result.contains('PM'),
+        isTrue,
+        reason: 'en_US time should contain "PM" for 16:30, got "$result"',
+      );
     });
   });
 
@@ -67,25 +88,41 @@ void main() {
   group('LumenFormats.decimal', () {
     test('es_ES: comma as decimal separator', () {
       final result = LumenFormats.decimal(1.5, 'es_ES');
-      expect(result.contains(','), isTrue,
-          reason: 'es_ES decimal should use comma separator, got "$result"');
-      expect(result.contains('.'), isFalse,
-          reason: 'es_ES decimal should NOT use period, got "$result"');
+      expect(
+        result.contains(','),
+        isTrue,
+        reason: 'es_ES decimal should use comma separator, got "$result"',
+      );
+      expect(
+        result.contains('.'),
+        isFalse,
+        reason: 'es_ES decimal should NOT use period, got "$result"',
+      );
     });
 
     test('en_US: period as decimal separator', () {
       final result = LumenFormats.decimal(1.5, 'en_US');
-      expect(result.contains('.'), isTrue,
-          reason: 'en_US decimal should use period separator, got "$result"');
-      expect(result.contains(','), isFalse,
-          reason: 'en_US decimal should NOT use comma, got "$result"');
+      expect(
+        result.contains('.'),
+        isTrue,
+        reason: 'en_US decimal should use period separator, got "$result"',
+      );
+      expect(
+        result.contains(','),
+        isFalse,
+        reason: 'en_US decimal should NOT use comma, got "$result"',
+      );
     });
 
     test('decimalDigits=0 rounds to integer', () {
       final result = LumenFormats.decimal(1.9, 'en_US', decimalDigits: 0);
       // With 0 decimal digits, no decimal point expected
-      expect(result.contains('.'), isFalse,
-          reason: 'decimalDigits=0 should produce no decimal point, got "$result"');
+      expect(
+        result.contains('.'),
+        isFalse,
+        reason:
+            'decimalDigits=0 should produce no decimal point, got "$result"',
+      );
     });
 
     test('decimalDigits=2 shows two decimal places', () {
@@ -132,7 +169,10 @@ void main() {
   // ---------------------------------------------------------------------------
   group('UnitSystem', () {
     test('has metric and imperial values', () {
-      expect(UnitSystem.values, containsAll([UnitSystem.metric, UnitSystem.imperial]));
+      expect(
+        UnitSystem.values,
+        containsAll([UnitSystem.metric, UnitSystem.imperial]),
+      );
     });
 
     test('default is metric', () {
@@ -147,18 +187,30 @@ void main() {
   group('LumenFormats.mass', () {
     test('es_ES: comma decimal + " kg" suffix', () {
       final result = LumenFormats.mass(60.4, 'es_ES');
-      expect(result.contains(','), isTrue,
-          reason: 'es_ES mass should use comma, got "$result"');
-      expect(result.endsWith(' kg'), isTrue,
-          reason: 'mass should end with " kg", got "$result"');
+      expect(
+        result.contains(','),
+        isTrue,
+        reason: 'es_ES mass should use comma, got "$result"',
+      );
+      expect(
+        result.endsWith(' kg'),
+        isTrue,
+        reason: 'mass should end with " kg", got "$result"',
+      );
     });
 
     test('en_US: period decimal + " kg" suffix', () {
       final result = LumenFormats.mass(60.4, 'en_US');
-      expect(result.contains('.'), isTrue,
-          reason: 'en_US mass should use period, got "$result"');
-      expect(result.endsWith(' kg'), isTrue,
-          reason: 'mass should end with " kg", got "$result"');
+      expect(
+        result.contains('.'),
+        isTrue,
+        reason: 'en_US mass should use period, got "$result"',
+      );
+      expect(
+        result.endsWith(' kg'),
+        isTrue,
+        reason: 'mass should end with " kg", got "$result"',
+      );
     });
 
     test('imperial throws UnimplementedError', () {
@@ -175,13 +227,22 @@ void main() {
   group('LumenFormats.length', () {
     test('es_ES: 0 decimals + " cm" suffix', () {
       final result = LumenFormats.length(165.0, 'es_ES');
-      expect(result.endsWith(' cm'), isTrue,
-          reason: 'length should end with " cm", got "$result"');
+      expect(
+        result.endsWith(' cm'),
+        isTrue,
+        reason: 'length should end with " cm", got "$result"',
+      );
       // 0 decimal digits — no decimal separator in output
-      expect(result.contains(','), isFalse,
-          reason: 'length(0 decimals) should have no comma, got "$result"');
-      expect(result.contains('.'), isFalse,
-          reason: 'length(0 decimals) should have no period, got "$result"');
+      expect(
+        result.contains(','),
+        isFalse,
+        reason: 'length(0 decimals) should have no comma, got "$result"',
+      );
+      expect(
+        result.contains('.'),
+        isFalse,
+        reason: 'length(0 decimals) should have no period, got "$result"',
+      );
     });
 
     test('en_US: "165 cm"', () {
@@ -203,18 +264,30 @@ void main() {
   group('LumenFormats.percent', () {
     test('es_ES: comma decimal + " %" suffix', () {
       final result = LumenFormats.percent(23.5, 'es_ES');
-      expect(result.contains(','), isTrue,
-          reason: 'es_ES percent should use comma, got "$result"');
-      expect(result.endsWith(' %'), isTrue,
-          reason: 'percent should end with " %", got "$result"');
+      expect(
+        result.contains(','),
+        isTrue,
+        reason: 'es_ES percent should use comma, got "$result"',
+      );
+      expect(
+        result.endsWith(' %'),
+        isTrue,
+        reason: 'percent should end with " %", got "$result"',
+      );
     });
 
     test('en_US: period decimal + " %" suffix', () {
       final result = LumenFormats.percent(23.5, 'en_US');
-      expect(result.contains('.'), isTrue,
-          reason: 'en_US percent should use period, got "$result"');
-      expect(result.endsWith(' %'), isTrue,
-          reason: 'percent should end with " %", got "$result"');
+      expect(
+        result.contains('.'),
+        isTrue,
+        reason: 'en_US percent should use period, got "$result"',
+      );
+      expect(
+        result.endsWith(' %'),
+        isTrue,
+        reason: 'percent should end with " %", got "$result"',
+      );
     });
   });
 
@@ -227,13 +300,27 @@ void main() {
   // order this returns, so the grid rotates without any string being translated.
   group('LumenFormats.orderedWeekdays', () {
     test('es_ES starts on Monday', () {
-      expect(LumenFormats.orderedWeekdays('es_ES'),
-          [1, 2, 3, 4, 5, 6, DateTime.sunday]);
+      expect(LumenFormats.orderedWeekdays('es_ES'), [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        DateTime.sunday,
+      ]);
     });
 
     test('en_US starts on Sunday', () {
-      expect(LumenFormats.orderedWeekdays('en_US'),
-          [DateTime.sunday, 1, 2, 3, 4, 5, 6]);
+      expect(LumenFormats.orderedWeekdays('en_US'), [
+        DateTime.sunday,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+      ]);
     });
 
     test('every locale yields each weekday exactly once, STARTING where it '
@@ -298,11 +385,18 @@ void main() {
           'en_US': sundayFirst,
         }.entries) {
           final blanks = LumenFormats.leadingBlankDays(first, entry.key);
-          expect(blanks, inInclusiveRange(0, 6),
-              reason: '${entry.key} month $month');
-          expect(blanks, entry.value[month - 1],
-              reason: '${entry.key} 2026-$month starts on weekday '
-                  '${first.weekday}');
+          expect(
+            blanks,
+            inInclusiveRange(0, 6),
+            reason: '${entry.key} month $month',
+          );
+          expect(
+            blanks,
+            entry.value[month - 1],
+            reason:
+                '${entry.key} 2026-$month starts on weekday '
+                '${first.weekday}',
+          );
         }
       }
     });
@@ -332,6 +426,36 @@ void main() {
     test('is numeric, so no month NAME is translated into the UI (R-04)', () {
       expect(LumenFormats.monthYear(august, 'es_ES'), isNot(contains('ago')));
       expect(LumenFormats.monthYear(august, 'en_US'), isNot(contains('Aug')));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // monthName() — the ENGLISH month-name title screen 10 needs (P4b-T15).
+  // No [locale] parameter — see the formatter's own dartdoc for why.
+  // ---------------------------------------------------------------------------
+  group('LumenFormats.monthName', () {
+    test('renders the English month name plus the year', () {
+      expect(LumenFormats.monthName(DateTime(2026, 4, 1)), 'April 2026');
+    });
+
+    test('ignores the day component it is handed', () {
+      expect(LumenFormats.monthName(DateTime(2026, 4, 15)), 'April 2026');
+    });
+
+    test("January and December — the month array's own two boundaries", () {
+      expect(LumenFormats.monthName(DateTime(2026, 1, 1)), 'January 2026');
+      expect(LumenFormats.monthName(DateTime(2026, 12, 1)), 'December 2026');
+    });
+
+    // fix-round-1, M-4: retitled. The ORIGINAL title claimed this proves
+    // monthName "takes no locale" — it cannot: that is a compile-time fact
+    // the function's own signature enforces (there is no parameter to pass
+    // one to), and no runtime assertion can exercise a fact the compiler
+    // already guarantees. What this body actually checks is a month that is
+    // neither array boundary (January/December, covered above) nor the
+    // April fixture used everywhere else in this file.
+    test('a non-boundary month (August) renders correctly too', () {
+      expect(LumenFormats.monthName(DateTime(2026, 8, 1)), 'August 2026');
     });
   });
 
@@ -385,10 +509,14 @@ void main() {
     test('it reads back what the same locale wrote', () {
       // The round trip is the property worth having: screen 4 prefills a
       // stored weight through `decimal` and parses the edited text back.
-      expect(LumenFormats.parseDecimal(LumenFormats.decimal(60.4, 'es_ES'),
-          'es_ES'), 60.4);
-      expect(LumenFormats.parseDecimal(LumenFormats.decimal(60.4, 'en_US'),
-          'en_US'), 60.4);
+      expect(
+        LumenFormats.parseDecimal(LumenFormats.decimal(60.4, 'es_ES'), 'es_ES'),
+        60.4,
+      );
+      expect(
+        LumenFormats.parseDecimal(LumenFormats.decimal(60.4, 'en_US'), 'en_US'),
+        60.4,
+      );
     });
 
     test('the separator is the LOCALE\'s, not a fixed period', () {

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/routes.dart';
+import 'package:lumen/features/cycle/presentation/cycle_calendar_screen.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
 import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.dart';
@@ -179,7 +180,7 @@ class _RouterRefreshNotifier extends ChangeNotifier {
 ///   (rather than a plain [ShellRoute] over an [IndexedStack] of tab roots)
 ///   gives every branch its own [Navigator], so a tab remembers how deep the
 ///   user had gone into it when they come back. That matters as soon as the
-///   Cycle tab has `/cycle/day/:date` under it (P4b-T16/T17): without it,
+///   Cycle tab has `/cycle/day/:date` under it (P4b-T16): without it,
 ///   glancing at Home would silently throw the open day away.
 ///
 /// Routes belonging to a tab must be registered as CHILDREN of that tab's root
@@ -210,7 +211,7 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
     builder: (_, _, navigationShell) =>
         _TabShell(navigationShell: navigationShell),
     branches: <StatefulShellBranch>[
-      // 0 — Home. P4b-T15 replaces the builder with screen 8 (dashboard).
+      // 0 — Home. P4b-T17 replaces the builder with screen 8 (dashboard).
       StatefulShellBranch(
         routes: <RouteBase>[
           GoRoute(
@@ -220,13 +221,14 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
           ),
         ],
       ),
-      // 1 — Cycle. P4b-T16/T17 replace the builder with screens 10 and 11.
+      // 1 — Cycle. Screen 10 (calendar) ships here — P4b-T15. P4b-T16 adds
+      // screen 11 (day detail) as a CHILD route under this one
+      // (`/cycle/day/:date`), together with the day-cell tap that reaches it.
       StatefulShellBranch(
         routes: <RouteBase>[
           GoRoute(
             path: Routes.cycle,
-            builder: (_, _) =>
-                const TabPlaceholderScreen(heading: 'Cycle isn\'t here yet'),
+            builder: (_, _) => const CycleCalendarScreen(),
           ),
         ],
       ),
@@ -236,8 +238,9 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
         routes: <RouteBase>[
           GoRoute(
             path: Routes.hormones,
-            builder: (_, _) =>
-                const TabPlaceholderScreen(heading: 'Hormones aren\'t here yet'),
+            builder: (_, _) => const TabPlaceholderScreen(
+              heading: 'Hormones aren\'t here yet',
+            ),
           ),
         ],
       ),
