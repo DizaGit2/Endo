@@ -484,6 +484,43 @@ void main() {
   );
 
   // -------------------------------------------------------------------------
+  // expectLabeledField's contract
+  // -------------------------------------------------------------------------
+
+  testWidgetsWithSemantics(
+    'a plain Material field still appends its placeholder',
+    (tester) async {
+      // Why [expectLabeledField] asks for a PREFIX rather than an equality.
+      // `LumenInputField` stopped appending its placeholder at P4b-T5d, so this
+      // fixture is a bare Material field — the shape the matcher must still
+      // accept, and the only remaining reason its contract is `startsWith`.
+      await pumpApp(
+        tester,
+        home: Scaffold(
+          body: Semantics(
+            label: 'Name',
+            child: const TextField(
+              decoration: InputDecoration(hintText: 'Maya'),
+            ),
+          ),
+        ),
+      );
+
+      // The premise, stated so the matcher below is not the only thing that
+      // knows it: Flutter really does put the placeholder in the name here.
+      expect(
+        tester
+            .getSemantics(find.byType(EditableText))
+            .getSemanticsData()
+            .label,
+        'Name\nMaya',
+      );
+
+      expectLabeledField(tester, find.byType(TextField), 'Name');
+    },
+  );
+
+  // -------------------------------------------------------------------------
   // What a finder means to these matchers
   // -------------------------------------------------------------------------
 
@@ -503,6 +540,11 @@ void main() {
       // …and it is also the trap the dartdocs warn about: this passes, and the
       // text it names is not the button. One assertion per ROW, stating the
       // whole announced name — never one per line.
+      //
+      // Only the id comparison above is framework-only. THIS line is ordinary
+      // repo-dependent code and is killable: reverting `expectLabeledButton` to
+      // read the node's own flags (mutation M1) reddens it with
+      // `Expected a node flagged as a button for "Add"`.
       expectLabeledButton(tester, find.text('Sleep quality'), 'Add');
     },
   );

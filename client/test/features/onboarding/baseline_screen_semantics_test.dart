@@ -299,12 +299,18 @@ void main() {
     // The three labels whose CONTROL already carries the same name are drawn
     // and not announced — one node each, not two. A second, unassociated
     // "Date of birth" immediately before the box that is called Date of birth
-    // is noise in the reading order. (The two fields announce "Height\ncm"
-    // while they are empty — Flutter appends the placeholder — hence the
-    // anchored patterns rather than equality.)
+    // is noise in the reading order.
+    //
+    // Equalities, since P4b-T5d. These were anchored patterns under a comment
+    // saying the fields announce "Height\ncm" because "Flutter appends the
+    // placeholder" — wrong on both counts, and wrong before T5d too: these two
+    // fields pass `hint: ''`, so nothing was ever appended to them, and a
+    // `suffixText` gets a semantics node of its own beside the field rather
+    // than joining its name (`input_decorator.dart:1830-1834`). Measured on
+    // both sides of the change.
     expect(find.bySemanticsLabel('Date of birth'), findsOneWidget);
-    expect(find.bySemanticsLabel(RegExp('^Height')), findsOneWidget);
-    expect(find.bySemanticsLabel(RegExp('^Weight')), findsOneWidget);
+    expect(find.bySemanticsLabel('Height'), findsOneWidget);
+    expect(find.bySemanticsLabel('Weight'), findsOneWidget);
   });
 
   testWidgetsWithSemantics('the two measurements are named fields, not bare '

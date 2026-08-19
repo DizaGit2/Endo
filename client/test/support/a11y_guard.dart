@@ -47,10 +47,21 @@
 //
 // `SemanticsNode.label` and `SemanticsNode.flagsCollection` are a node's OWN
 // annotation. What assistive tech receives is `getSemanticsData()`, which on a
-// merging node folds in every descendant that owns a node — a nested button, a
-// text field, an explicit `Semantics(container: true)`. The two differ exactly
-// where a row has an inline control, which is the shape half the remaining
-// screens have.
+// merging node folds in every descendant that KEPT a node of its own. Two
+// separate mechanisms decide that, and they are worth telling apart:
+//
+//   * a descendant's configuration CONFLICTS with its ancestor's, so the two
+//     cannot be folded — intersecting action bits, conflicting flags, both
+//     carrying a non-empty value, an explicit role
+//     (`SemanticsConfiguration.isCompatibleWith`, `semantics.dart:6684-6725`);
+//   * or the descendant declares itself a boundary outright — `MergeSemantics`,
+//     a `Semantics(container: true)`, an `identifier` — which sets
+//     `config.isSemanticBoundary` (`object.dart:4929`) and never consults
+//     `isCompatibleWith` at all.
+//
+// A nested button or text field is the first kind; an explicit container is the
+// second. Either way the two views differ, which is the shape half the
+// remaining screens have.
 //
 // Three matchers read the own fields, and one of them failed SILENTLY:
 // [expectNotAButton] passed a row whose `button: true` sat on a merged
@@ -333,17 +344,27 @@ void expectLabeledButton(
 /// Asserts the node at [finder] is a text field whose accessible name STARTS
 /// with [label].
 ///
-/// "Starts with", not "equals": Flutter appends the placeholder to a field's
-/// accessible name while the field is empty, so an empty `LumenInputField`
-/// labelled `Name` with the hint `Maya` announces `"Name\nMaya"` and the same
-/// field with text in it announces `"Name"` with the text as its *value*.
-/// Both are correct; what must never happen is the placeholder arriving FIRST,
-/// which is what a field with no label of its own does — it announces the hint
-/// and the visible label beside it is never associated with anything.
+/// What must never happen is the placeholder arriving FIRST, which is what a
+/// field with no label of its own does — it announces the hint, and the visible
+/// label beside it is never associated with anything. (P4b-T5b.
+/// `LumenInputField` shipped that way, promoted verbatim from
+/// `account_screen.dart`'s private `_InputField`.)
 ///
-/// (P4b-T5b. `LumenInputField` shipped that way, promoted verbatim from
-/// `account_screen.dart`'s private `_InputField`, and thirteen screens are
-/// about to take free text.)
+/// **"Starts with", not "equals" — and the reason changed at P4b-T5d.** A plain
+/// Material `TextField` appends its `hintText` to its accessible name while it
+/// is empty, so `label` genuinely is a prefix there; that is pinned by
+/// `test/shared/a11y_guard_test.dart`'s
+/// `a plain Material field still appends its placeholder`.
+/// **[LumenInputField] no longer does** — it draws its placeholder through
+/// `ExcludeSemantics`, so its name is exactly its label — and a test about THAT
+/// widget should assert the equality directly rather than leaning on this
+/// matcher's looser contract (see `lumen_input_field_semantics_test.dart`).
+///
+/// One thing that never merged, recorded because the repo believed otherwise:
+/// a `suffixText` does NOT join the field's name. `_AffixText` gives it a
+/// `Semantics` node of its own beside the field
+/// (`input_decorator.dart:1830-1834`), so screen 4's height field announces
+/// `"Height"` and never `"Height\ncm"` — measured on both sides of T5d.
 void expectLabeledField(WidgetTester tester, Finder finder, String label) {
   final data = tester.getSemantics(_fieldNode(finder)).getSemanticsData();
   expect(

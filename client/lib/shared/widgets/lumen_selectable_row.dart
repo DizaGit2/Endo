@@ -41,12 +41,17 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 /// The `onTap` below is on BOTH the `Semantics` and the `GestureDetector`, and
 /// that is deliberate twice over. It states the activatable action as an
 /// annotation rather than leaving it to whatever gesture widget happens to be
-/// the child; and because two configurations carrying the same action bit
-/// cannot be folded into one node (`SemanticsConfiguration.isCompatibleWith`,
+/// the child; and because two configurations whose action bits intersect cannot
+/// be folded into one node (`SemanticsConfiguration.isCompatibleWith`,
 /// `semantics.dart:6697-6699`), the child keeps a node of its own. So this
 /// row's node has an EMPTY own label and carries its name only in
 /// `getSemanticsData()` — which is exactly why `a11y_guard.dart`'s matchers had
 /// to be fixed before this widget could exist.
+///
+/// (That is the CONFLICT mechanism. A descendant can also keep its own node by
+/// declaring itself a boundary — `MergeSemantics`, `Semantics(container: true)`
+/// — which sets `config.isSemanticBoundary` (`object.dart:4929`) and never
+/// reaches `isCompatibleWith`. Two mechanisms, one observable effect.)
 ///
 /// ## Geometry belongs to the caller
 ///
