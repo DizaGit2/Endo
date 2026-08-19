@@ -997,6 +997,42 @@ fix alone cannot move a CTA that has no flex child to spend the height on.
   was never durable; pinning anything else guarantees at least one more move.
 - [ ] **T10 — Screen 4 baseline.** `POST /onboarding/baseline` (MERGE; **empty body is a 400 — unique to this endpoint**; `weightKg` rounded to one decimal *before* serialising; `diagnosedOn` hand-parsed as `yyyy-MM`; DOB picker, no age gate; rASRM I–IV, never "extensive", no "higher stage = worse" copy).
 - [ ] **T11 — Screen 5 goals.** FULL REPLACE; min 1 (`select at least one goal`); render the complete returned vocabulary in frozen order, never re-derived.
+- [ ] **T8b — Refresh the flow state after a step write (NEW, from T11's review; a LIVE data-loss path).**
+  `OnboardingFlow.state` is never re-read after a step write, and the shell renders a **back affordance on
+  every step past the first** (`onboarding_shell_screen.dart:100,126`, itself tested). So: deselect both
+  default goals, pick `just_curious`, Continue (server stores `just_curious` only) → step 6 → **Back** →
+  the chips re-seed ON/ON/off/off/off from the pre-save `flow.state` → Continue → and because
+  `POST /onboarding/goals` is **FULL REPLACE**, the reverted set is written and the user's real answer is
+  recorded as deselected. `autoDispose` **causes** this rather than preventing it: leaving the step
+  disposes the controller, and returning re-seeds from stale state. **Pre-existing and shared** — screens
+  3 and 4 re-seed identically; full replace is what turns a stale prefill into a destructive *write*, so
+  screen 5 is where it first loses data and screens 6 and 7 (also full replace) inherit it. Fix in the
+  flow controller so a written step's state is refreshed, and pin it with a back-navigation test per
+  affected screen. **Before T12.**
+- [ ] **T5d — Fix the a11y guard and promote the selectable row (NEW, from T11's review). Before T12.**
+  Three defects in shared test infrastructure that eight more screens inherit:
+  **(1)** `expectLabeledButton` reads `SemanticsNode.label` — a node's *own* label — so a `MergeSemantics`
+  two-line chip reads as an **unnamed button**; it is also internally inconsistent, reading own label and
+  own flags but *merged* `hasAction`, while `expectLabeledField` correctly uses `getSemanticsData()`
+  throughout. **(2)** `expectNotAButton` has the **silent** form of the same bug: it reads own flags, so a
+  row whose `button: true` sits on a merged descendant **passes** the "this is not a button" guard while a
+  screen reader announces a button — exactly what that matcher exists to catch. Fix all three
+  (`expectLabeledButton`, `expectNotAButton`, `expectLiveRegionAt`) to read `getSemanticsData()`, which is
+  what assistive tech receives; non-merging nodes are unaffected, so existing call sites should be
+  behaviour-preserving — prove that by running the suite.
+  **(3)** `kBannedGlyphs` is a three-item blocklist (`✦ ✓ ›`) covering **3 of 31** distinct non-ASCII
+  codepoints across the mockups, and it has the **wrong chevron** — the mockups use `‹` (U+2039) 33 times
+  while the list holds `›` (U+203A). Screens 6 and 7 would catch **none** of theirs. Invert it: fail on any
+  codepoint > U+007F in a rendered `Text` unless allowlisted. **The allowlist must include `·` (U+00B7) or
+  the rule reddens every existing screen** — `lumen_step_chrome.dart:82,85` draws it in all seven step
+  eyebrows — plus es-ES letters and marks (`á é í ó ú ü ñ Á É Í Ó Ú Ü Ñ ¿ ¡`), typographic punctuation
+  (`’ ‘ “ ” — – …`), and the units later phases need (`µ`/`μ`, `°`, `±`, `×`, `≤`, `≥`). Print the failing
+  codepoint as `U+XXXX`. **The matcher's name, its dartdoc and the registry gate that mandates it all claim
+  a general rule the body does not enforce** — this is the phase's own claim-precision defect, inside the
+  guard built to catch defects.
+  Also promote **one shared selectable row**: `goals_screen.dart`'s `_GoalTile` reproduces
+  `baseline_screen.dart`'s `_StatusOption`, and T12's seven hormone chips plus T13's four reminder toggles
+  would make it four copies — of a widget whose current shape exists *because* of defect (1).
 - [ ] **T12 — Screen 6 hormones.** FULL REPLACE; all 7 default ON; empty selection is valid; labels "Estrogen"/"GLP-1" over codes `estradiol`/`glp1`; categories Sex/Pituitary/Androgen/Stress/Metabolic.
 - [ ] **T13 — Screen 7 notifications + push seam.** FULL REPLACE of the four categories (seed ON/ON/OFF/OFF); token+platform all-or-nothing; "Not now" calls `POST /onboarding/complete` and writes no preference row; the R-09 `PushTokenSource` seam and the **every-app-start** `POST /me/devices` registration.
 
