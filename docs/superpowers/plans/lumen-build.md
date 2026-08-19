@@ -913,12 +913,12 @@ docker compose -f deploy/docker-compose.yml ps                          # stack 
 **Tasks**
 
 *Shared foundation — all of these precede screen work.*
-- [ ] **T1 — Route table as single source of truth.** Derive `_knownPaths` from the GoRouter route table (parameterised paths included); register `/onboarding`; implement the onboarding gate off `MeResponse.onboardingCompleted`. Tests: the unauth / authed-not-onboarded / authed-onboarded redirect matrix, a parameterised path, and a test that a newly registered route needs no hand edit. Commit `feat(client): derive known paths from the route table + onboarding gate`.
-- [ ] **T2 — Tab shell.** `StatefulShellRoute.indexedStack`, five branches, `LumenBottomNav` wired, one shared placeholder for Hormones/Body/More. Goldens light+dark. Commit `feat(client): bottom-nav shell`.
-- [ ] **T3 — Test support + falsifiable a11y guard.** `test/support/` (`pumpApp`, container builder, fake `LumenApiApi` archetypes, DTO fixture builders, retry-trap helper); `a11y_guard.dart`; the screen-registry test of R-07. Commit `test(client): shared harness + screen a11y registry`.
-- [ ] **T4 — Cache + error plumbing.** `cachedRead` in-flight de-duplication (r13 deferral); the R-05 key policy and its per-write invalidation map; consume `ValidationFailure.fields` for per-field binding; lift `code` + `missingSteps` onto `ConflictFailure`; fix the PII interceptor's path logging (plan:508 — `dio_provider.dart` around :70/:84/:97, where `onError` carries **no sensitivity check at all**); confirm whether `error_mapper.dart` still carries a 422 branch (P3b's text says 422; P4a ships one shared **400**) and delete it if it is dead. Commit `fix(client): cache de-dup, typed field errors, PII-safe paths`.
-- [ ] **T5 — Shared widgets.** Promote `_InputField`, `_StepDot`, `_ErrorBanner`, `_RetryButton` to `shared/widgets/`; add `LumenBottomSheet` (screen 9's 32×3 handle, 18/22/26 padding), `LumenIntensityScale` (0–10, "None"/"Worst" anchors, `Semantics`), `LumenPhaseUnavailable`. **No `AlertDialog` + `TextField(labelText:)`** — it crashes the widget-test harness (`TODO(P4b)`, profile_screen.dart:510); bottom sheets everywhere. Commit `refactor(client): promote shared widgets`.
-- [ ] **T5b — Extend the screen registry to shared widgets (NEW, from T5's review).** T3's registry globs
+- [x] **T1 — Route table as single source of truth.** Derive `_knownPaths` from the GoRouter route table (parameterised paths included); register `/onboarding`; implement the onboarding gate off `MeResponse.onboardingCompleted`. Tests: the unauth / authed-not-onboarded / authed-onboarded redirect matrix, a parameterised path, and a test that a newly registered route needs no hand edit. Commit `feat(client): derive known paths from the route table + onboarding gate`.
+- [x] **T2 — Tab shell.** `StatefulShellRoute.indexedStack`, five branches, `LumenBottomNav` wired, one shared placeholder for Hormones/Body/More. Goldens light+dark. Commit `feat(client): bottom-nav shell`.
+- [x] **T3 — Test support + falsifiable a11y guard.** `test/support/` (`pumpApp`, container builder, fake `LumenApiApi` archetypes, DTO fixture builders, retry-trap helper); `a11y_guard.dart`; the screen-registry test of R-07. Commit `test(client): shared harness + screen a11y registry`.
+- [x] **T4 — Cache + error plumbing.** `cachedRead` in-flight de-duplication (r13 deferral); the R-05 key policy and its per-write invalidation map; consume `ValidationFailure.fields` for per-field binding; lift `code` + `missingSteps` onto `ConflictFailure`; fix the PII interceptor's path logging (plan:508 — `dio_provider.dart` around :70/:84/:97, where `onError` carries **no sensitivity check at all**); confirm whether `error_mapper.dart` still carries a 422 branch (P3b's text says 422; P4a ships one shared **400**) and delete it if it is dead. Commit `fix(client): cache de-dup, typed field errors, PII-safe paths`.
+- [x] **T5 — Shared widgets.** Promote `_InputField`, `_StepDot`, `_ErrorBanner`, `_RetryButton` to `shared/widgets/`; add `LumenBottomSheet` (screen 9's 32×3 handle, 18/22/26 padding), `LumenIntensityScale` (0–10, "None"/"Worst" anchors, `Semantics`), `LumenPhaseUnavailable`. **No `AlertDialog` + `TextField(labelText:)`** — it crashes the widget-test harness (`TODO(P4b)`, profile_screen.dart:510); bottom sheets everywhere. Commit `refactor(client): promote shared widgets`.
+- [x] **T5b — Extend the screen registry to shared widgets (NEW, from T5's review).** T3's registry globs
   `lib/features/**/presentation/*_screen.dart`, so the eight widgets T5 promoted — the ones all thirteen
   screens depend on — sit outside the gate R-07 established, and T5 had to follow the convention by hand.
   This is **not** a glob change: `discoverScreenFiles` requires `lib/features/**` *and* `/presentation/`
@@ -930,8 +930,8 @@ docker compose -f deploy/docker-compose.yml ps                          # stack 
   it is not associated) — a verbatim promotion, not a T5 defect, but it is the input thirteen screens are
   about to use. `kScreenCoverageExemptions` is deliberately empty and fails on stale entries, so there is
   no parking spot: the backfill is the task.
-- [ ] **T6 — Locale awareness.** `localeProvider` from `MeResponse.locale` with device fallback; route every date/number through `LumenFormats` (which today has zero production callers); first-day-of-week derived, never stored. Commit `feat(client): locale-aware formatting`.
-- [ ] **T7 — Screen-2 client-side validation** (r13 deferral). While in that file, correct the stale `// D-01: social login deferred to phase 2` comment — D-01 was **reopened**: social login is in v1, as phase **P4c**. Commit `fix(client): screen 2 client-side validation`.
+- [x] **T6 — Locale awareness.** `localeProvider` from `MeResponse.locale` with device fallback; route every date/number through `LumenFormats` (which today has zero production callers); first-day-of-week derived, never stored. Commit `feat(client): locale-aware formatting`.
+- [x] **T7 — Screen-2 client-side validation** (r13 deferral). While in that file, correct the stale `// D-01: social login deferred to phase 2` comment — D-01 was **reopened**: social login is in v1, as phase **P4c**. Commit `fix(client): screen 2 client-side validation`.
 
 **The client test contract, from T3 — every screen task below obeys it.** A screen at
 `client/lib/features/<area>/presentation/<name>_screen.dart` is discovered by a real filesystem glob in
@@ -962,6 +962,8 @@ So: before mutating, record the aimed test's own per-test result line as GREEN t
 - **When a round adds pinning tests to a shared matcher, re-run every earlier mutation aimed at that matcher.** New tests change what those mutations kill. T5d re-ran only four of its mutations at HEAD, and the three it skipped were precisely the ones that would have contradicted a claim it shipped — a reviewer later applied one of them and reddened a test the report had called unkillable.
 
 **(6) Measure a mechanism claim before writing it down — including one handed to you by a reviewer or by this plan.** T5d had **three** plausible mechanism claims fail measurement in one task: "the own/merged split appears where the row is a live control" (its own fixture disproved it), "an explicit container is an `isCompatibleWith` case" (it is `isSemanticBoundary`, a separate mechanism), and "a `suffixText` merges into a field's accessible name" — the last **relayed to it by a reviewer through me**, and false: `_AffixText` gives the suffix its own node, so only the hint ever appended, and the test comment asserting otherwise had been wrong since before the task began. A mechanism claim in shared infrastructure is load-bearing for every task that reads it, and this phase's evidence is that plausibility is not predictive. Probe it, paste the probe, and treat an inherited claim exactly like your own.
+
+**(7) A fix round must mutate the code the fix ADDED, not only revert the defects it repaired (added at T13).** Reverting each review-found defect is a valid regression gate — it proves those specific defects are now caught — but it is strictly narrower than round 1's standard, because the fix's *own* new logic then ships with no evidence its tests can fail. T13's round 2 reverted two defects and never mutated `PushToken.sendable`'s internals (`||`→`&&`, checking one half only, the empty-string vs whitespace-only boundary) or the merge-fallback construction that replaced the reverted seed. Budget a round's mutations across both: the reverts **and** at least one aimed at the new code's discriminating branch. Where the new code is a guard, the mutation that matters is the one that widens it, not the one that deletes it.
 
 **Predict which tests should redden, and check that exactly those did.** A mutation whose *pattern* of reds matches the prediction is far stronger evidence than one that merely produces reds — T10's strongest proof was that deleting a flag reddened the empty-state assertions and the shell goldens while leaving the prefilled assertions and baseline goldens green, which is what identified the discriminating assertion and simultaneously showed an earlier mutation had never vouched for it.
 
@@ -994,9 +996,9 @@ screen is in scope** even where a brief says you are changing a container rather
 fix alone cannot move a CTA that has no flex child to spend the height on.
 
 *Onboarding (screens 3–7).*
-- [ ] **T8 — Onboarding shell + repository.** Step chrome ("Step N of 7"), `GET /onboarding/state` resume, `POST /onboarding/complete`, and the 409 `onboarding_incomplete` / `missingSteps` path. Screen 3 also reads `GET /settings/cycle` — `OnboardingStateResponse` returns `lastPeriodStart` but not the other three answers.
-- [ ] **T9 — Screen 3 cycle_setup.** `POST /onboarding/cycle` (MERGE; `lastPeriodStart` required every time; backdate floor; sanity warnings render as a non-blocking note after a successful save).
-- [ ] **T5c — Promote `_FieldLabel` / `_FieldMessage` (NEW, from T10's review; do it BEFORE T11).**
+- [x] **T8 — Onboarding shell + repository.** Step chrome ("Step N of 7"), `GET /onboarding/state` resume, `POST /onboarding/complete`, and the 409 `onboarding_incomplete` / `missingSteps` path. Screen 3 also reads `GET /settings/cycle` — `OnboardingStateResponse` returns `lastPeriodStart` but not the other three answers.
+- [x] **T9 — Screen 3 cycle_setup.** `POST /onboarding/cycle` (MERGE; `lastPeriodStart` required every time; backdate floor; sanity warnings render as a non-blocking note after a successful save).
+- [x] **T5c — Promote `_FieldLabel` / `_FieldMessage` (NEW, from T10's review; do it BEFORE T11).**
   `_FieldMessage` is byte-identical across `cycle_setup_screen.dart` and `baseline_screen.dart`, and
   **`_FieldLabel` has already diverged** — T10 added an `announce` variant — so two screens now render the
   same token-bearing element from two classes with different semantics behaviour. That is divergence
@@ -1010,9 +1012,9 @@ fix alone cannot move a CTA that has no flex child to spend the height on.
   today, because it is built (therefore frozen; T11–T13 do not touch it) and shows back affordance,
   eyebrow and mid-row dot at once. After T13 no placeholder arm exists at all, so "pin an unbuilt arm"
   was never durable; pinning anything else guarantees at least one more move.
-- [ ] **T10 — Screen 4 baseline.** `POST /onboarding/baseline` (MERGE; **empty body is a 400 — unique to this endpoint**; `weightKg` rounded to one decimal *before* serialising; `diagnosedOn` hand-parsed as `yyyy-MM`; DOB picker, no age gate; rASRM I–IV, never "extensive", no "higher stage = worse" copy).
-- [ ] **T11 — Screen 5 goals.** FULL REPLACE; min 1 (`select at least one goal`); render the complete returned vocabulary in frozen order, never re-derived.
-- [ ] **T8b — Refresh the flow state after a step write (NEW, from T11's review; a LIVE data-loss path).**
+- [x] **T10 — Screen 4 baseline.** `POST /onboarding/baseline` (MERGE; **empty body is a 400 — unique to this endpoint**; `weightKg` rounded to one decimal *before* serialising; `diagnosedOn` hand-parsed as `yyyy-MM`; DOB picker, no age gate; rASRM I–IV, never "extensive", no "higher stage = worse" copy).
+- [x] **T11 — Screen 5 goals.** FULL REPLACE; min 1 (`select at least one goal`); render the complete returned vocabulary in frozen order, never re-derived.
+- [x] **T8b — Refresh the flow state after a step write (NEW, from T11's review; a LIVE data-loss path).**
   `OnboardingFlow.state` is never re-read after a step write, and the shell renders a **back affordance on
   every step past the first** (`onboarding_shell_screen.dart:100,126`, itself tested). So: deselect both
   default goals, pick `just_curious`, Continue (server stores `just_curious` only) → step 6 → **Back** →
@@ -1024,7 +1026,7 @@ fix alone cannot move a CTA that has no flex child to spend the height on.
   screen 5 is where it first loses data and screens 6 and 7 (also full replace) inherit it. Fix in the
   flow controller so a written step's state is refreshed, and pin it with a back-navigation test per
   affected screen. **Before T12.**
-- [ ] **T5d — Fix the a11y guard and promote the selectable row (NEW, from T11's review). Before T12.**
+- [x] **T5d — Fix the a11y guard and promote the selectable row (NEW, from T11's review). Before T12.**
   Three defects in shared test infrastructure that eight more screens inherit:
   **(1)** `expectLabeledButton` reads `SemanticsNode.label` — a node's *own* label — so a `MergeSemantics`
   two-line chip reads as an **unnamed button**; it is also internally inconsistent, reading own label and
@@ -1059,11 +1061,11 @@ value. The user sees a banner so it is not silent, but it is the same class of l
 — hold the flow reference before the await, record before the step's own mounted gate, and let
 `_recordSaved` gate on the **flow's** lifetime — not merely its shape.
 
-- [ ] **T12 — Screen 6 hormones.** FULL REPLACE; all 7 default ON; empty selection is valid; labels "Estrogen"/"GLP-1" over codes `estradiol`/`glp1`; categories Sex/Pituitary/Androgen/Stress/Metabolic.
-- [ ] **T13 — Screen 7 notifications + push seam.** FULL REPLACE of the four categories (seed ON/ON/OFF/OFF); token+platform all-or-nothing; "Not now" calls `POST /onboarding/complete` and writes no preference row; the R-09 `PushTokenSource` seam and the **every-app-start** `POST /me/devices` registration.
+- [x] **T12 — Screen 6 hormones.** FULL REPLACE; all 7 default ON; empty selection is valid; labels "Estrogen"/"GLP-1" over codes `estradiol`/`glp1`; categories Sex/Pituitary/Androgen/Stress/Metabolic.
+- [x] **T13 — Screen 7 notifications + push seam.** FULL REPLACE of the four categories (seed ON/ON/OFF/OFF); token+platform all-or-nothing; "Not now" calls `POST /onboarding/complete` and writes no preference row; the R-09 `PushTokenSource` seam and the **every-app-start** `POST /me/devices` registration.
 
 *Cycle + logging (screens 8–11).*
-- [ ] **T9b — Pin the onboarding CTA to the bottom of the shell (NEW, from T9's review).** T8's shell puts
+- [x] **T9b — Pin the onboarding CTA to the bottom of the shell (NEW, from T9's review).** T8's shell puts
   the step body in `Expanded(SingleChildScrollView(...))` — an unbounded height constraint — so the
   mockup's `margin-top:auto` has nothing to push against and Continue floats mid-screen with ~300px of
   dead space beneath it. The fix is the pattern **screens 1 and 2 already ship**: `LayoutBuilder` →
@@ -1117,7 +1119,7 @@ docker compose -f deploy/docker-compose.yml up vault-init      # idempotent re-p
 ```
 
 **STATUS**
-- **State:** IN_PROGRESS · **Branch:** `phase/04b-logging-client` (from `bc73237`) · **Tasks:** 0/26
+- **State:** IN_PROGRESS · **Branch:** `phase/04b-logging-client` (from `bc73237`) · **Tasks:** 18/31 (T1–T13 + the five review-born inserts T5b/T5c/T5d/T8b/T9b; five screens shipped — 3, 4, 5, 6, 7 — and onboarding is complete end to end)
 - Phase-entry survey + rulings recorded (r20). Verification output lands here at T25.
 
 ---
