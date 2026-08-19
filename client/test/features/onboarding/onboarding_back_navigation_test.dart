@@ -292,14 +292,13 @@ class _World {
   }
 
   Future<void> pump(WidgetTester tester) async {
-    // The phase's logical surface. The default 800x600 is WIDER and much
-    // SHORTER than any phone: screen 3's calendar then pushes the CTA past the
-    // bottom of `OnboardingStepSlot`'s scroll viewport, where it is clipped and
-    // `tester.tap` misses it — a failure inside the tap, which is exactly the
-    // shape that cannot be told apart from a broken assertion.
-    await tester.binding.setSurfaceSize(const Size(390, 844));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
+    // The surface this mounts at is `kTestSurfaceSize`, which `pumpApp` now
+    // sets for every test (P4b-T5d). It matters here more than anywhere: under
+    // `flutter_test`'s 800x600 default — WIDER and much SHORTER than any phone
+    // — screen 3's calendar pushes the CTA past the bottom of
+    // `OnboardingStepSlot`'s scroll viewport, where it is clipped and
+    // `tester.tap` misses it. That is a failure INSIDE the tap, which is
+    // exactly the shape that cannot be told apart from a broken assertion.
     container = await pumpApp(
       tester,
       home: const OnboardingShellScreen(),

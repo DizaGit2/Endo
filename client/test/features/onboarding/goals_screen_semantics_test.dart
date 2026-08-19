@@ -212,8 +212,11 @@ void main() {
         .getSemantics(_tile('manage_symptoms'))
         .getSemanticsData()
         .label;
-    expect(label, contains('Manage symptoms'));
-    expect(label, contains('Find pain & flare patterns'));
+    // An equality, not two containments: byte-identical to the string this row
+    // authored by hand before P4b-T5d promoted it to `LumenSelectableRow` —
+    // title, one line break, sub-description, and nothing else. A containment
+    // pair would not notice the glyph starting to announce itself.
+    expect(label, 'Manage symptoms\nFind pain & flare patterns');
   });
 
   testWidgetsWithSemantics('the heading is a header', (tester) async {

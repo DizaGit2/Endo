@@ -5,6 +5,7 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/onboarding/application/goals_controller.dart';
 import 'package:lumen/shared/widgets/lumen_error_banner.dart';
 import 'package:lumen/shared/widgets/lumen_field_message.dart';
+import 'package:lumen/shared/widgets/lumen_selectable_row.dart';
 
 // ---------------------------------------------------------------------------
 // Constants the tests and the screen share
@@ -241,15 +242,16 @@ String? _bannerMessage(Failure? failure) {
 ///
 /// Announced as ONE node carrying both strings and its selected state. The two
 /// are joined with a newline and nothing else — that is the separator
-/// `MergeSemantics` itself uses when it folds sibling labels together
-/// (`SemanticsNode` joins sibling labels with a line break), so the reading
+/// `MergeSemantics` uses when it folds sibling labels together, so the reading
 /// order is the framework's own and no punctuation is invented between two
 /// pieces of mockup copy.
 ///
-/// An explicit label rather than a [MergeSemantics] wrapper because
-/// `SemanticsNode.label` — what `expectLabeledButton` reads — is a node's OWN
-/// label, and a merging node's own label is empty: the shipped matcher would
-/// see an unnamed button. Same shape as screen 4's `_StatusOption`.
+/// The box, the selected styling and the button semantics are
+/// [LumenSelectableRow]'s (P4b-T5d); this class is the goal-specific content
+/// inside it. It authored its own `Semantics(label:)` under
+/// `excludeSemantics: true` until then — a workaround for a defect in
+/// `expectLabeledButton`, which read a node's own label and so could not see a
+/// merged one. The announced string is unchanged.
 class _GoalTile extends StatelessWidget {
   const _GoalTile({
     required this.option,
@@ -272,72 +274,52 @@ class _GoalTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
 
-    return Semantics(
-      button: true,
-      enabled: enabled,
+    return LumenSelectableRow(
       selected: selected,
-      label: '${option.title}\n${option.description}',
-      excludeSemantics: true,
-      // excludeSemantics drops the child GestureDetector's tap action from the
-      // tree, so this Semantics needs its own onTap wired to the SAME callback:
-      // a screen reader's "activate" gesture invokes the node's action, not the
-      // pointer handler.
-      onTap: enabled ? onTap : null,
-      child: GestureDetector(
-        onTap: enabled ? onTap : null,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: selected ? c.accentSoft : c.input,
-            border: Border.all(color: selected ? c.accent : c.border),
-            borderRadius: BorderRadius.circular(12),
+      enabled: enabled,
+      onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected ? c.accent : c.surface,
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              _glyph(option),
+              size: 16,
+              // No `semanticLabel`: the mockup's `✦ ◐ ♡ ↗ ✿` are decoration,
+              // and an Icon without one contributes no node at all — so the
+              // row announces its title and sub-description rather than a
+              // shape.
+              color: selected ? c.surface : c.accent,
+            ),
           ),
-          child: Row(
-            children: <Widget>[
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: selected ? c.accent : c.surface,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  option.title,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: selected ? c.accent : c.ink,
+                  ),
                 ),
-                alignment: Alignment.center,
-                child: Icon(
-                  _glyph(option),
-                  size: 16,
-                  // No `semanticLabel`: the mockup's `✦ ◐ ♡ ↗ ✿` are
-                  // decoration, and an Icon without one contributes no node
-                  // at all — so the row announces its title and
-                  // sub-description rather than a shape.
-                  color: selected ? c.surface : c.accent,
+                const SizedBox(height: 1),
+                Text(
+                  option.description,
+                  style: TextStyle(fontSize: 11, color: c.muted),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      option.title,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: selected ? c.accent : c.ink,
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      option.description,
-                      style: TextStyle(fontSize: 11, color: c.muted),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

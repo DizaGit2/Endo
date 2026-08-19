@@ -55,14 +55,46 @@ SemanticsData _fieldSemantics(WidgetTester tester) =>
     tester.getSemantics(find.byType(TextField)).getSemanticsData();
 
 void main() {
-  testWidgetsWithSemantics('an empty field announces its LABEL first, then '
-      'the placeholder', (tester) async {
+  testWidgetsWithSemantics('an empty field announces its LABEL, and ONLY its '
+      'label', (tester) async {
     await _pumpField(tester);
 
     expectLabeledField(tester, find.byType(TextField), 'Name');
-    // Both halves, in order: the placeholder is still useful ("what goes in
-    // here"), it just must not BE the name.
-    expect(_fieldSemantics(tester).label, 'Name\nMaya');
+    // An equality. Until P4b-T5d the placeholder merged into the name and this
+    // field announced `"Name\nMaya"`; a placeholder is drawn text, not part
+    // of what the control is called, and on screen 2 it is eight bullets.
+    expect(_fieldSemantics(tester).label, 'Name');
+  });
+
+  testWidgetsWithSemantics('the placeholder is drawn but never announced', (
+    tester,
+  ) async {
+    await _pumpField(tester);
+
+    // Premise / control: the placeholder IS on screen, laid out with a real
+    // width. What follows is a fact about the semantics tree, not about a hint
+    // that failed to render.
+    expect(find.text('Maya'), findsOneWidget);
+    expect(tester.getSize(find.text('Maya')).width, greaterThan(0));
+
+    expect(_fieldSemantics(tester).label, isNot(contains('Maya')));
+    // …and nowhere else in the tree either: a placeholder that merely moved
+    // out of the field's name into a node of its own is still announced.
+    expect(find.bySemanticsLabel('Maya'), findsNothing);
+  });
+
+  testWidgetsWithSemantics('a password placeholder is not spelled out', (
+    tester,
+  ) async {
+    // The reason this matters, in the one place it is worst: screen 2's
+    // password field draws eight U+2022 bullets as its placeholder
+    // (`account_screen.dart:173`). Merged into the name, a screen reader
+    // announced "Password, bullet bullet bullet bullet bullet bullet bullet
+    // bullet, secure text field" on an empty field.
+    await _pumpField(tester, label: 'Password', hint: '••••••••');
+
+    expect(find.text('••••••••'), findsOneWidget);
+    expect(_fieldSemantics(tester).label, 'Password');
   });
 
   testWidgetsWithSemantics('a filled field announces its label with the text '

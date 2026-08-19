@@ -179,13 +179,12 @@ void main() {
 
   testWidgets("screen 3's Continue sits on the bottom edge of the shell's "
       'step slot', (tester) async {
-    // The surface the goldens use. The default 800x600 is wider and much
-    // shorter than a phone, and this assertion is about a step body that fits
-    // inside its slot with room to spare.
-    tester.view.physicalSize = const Size(kGoldenWidth, kGoldenHeight);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
-
+    // This assertion is about a step body that fits inside its slot with room
+    // to spare, so it needs a phone-shaped surface. `pumpApp` now mounts every
+    // widget test at `kTestSurfaceSize` — the goldens' 390x844 — and its
+    // `setSurfaceSize` overrides a `tester.view.physicalSize` set here, so the
+    // three lines this test used to set are gone rather than left as a no-op
+    // (P4b-T5d).
     await pumpApp(
       tester,
       home: const OnboardingShellScreen(),

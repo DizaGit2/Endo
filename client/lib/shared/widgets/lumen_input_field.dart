@@ -34,17 +34,40 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 /// of that; a field nobody can name is not.
 ///
 /// Implemented as a bare `Semantics(label:)`, which MERGES into the field's own
-/// node (name first, placeholder after: `"Name\nMaya"`). Do not "improve" it to
-/// `Semantics(label:, textField: true)` — that makes the annotation a semantics
-/// boundary and produces TWO nodes, an empty text-field container wrapping the
-/// real field, which still announces the hint.
+/// node. Do not "improve" it to `Semantics(label:, textField: true)` — that
+/// makes the annotation a semantics boundary and produces TWO nodes, an empty
+/// text-field container wrapping the real field.
+///
+/// **The placeholder is drawn, never announced (P4b-T5d).** It used to merge
+/// into the name as well, so an empty field announced `"Name\nMaya"` — and
+/// screen 2's password field, whose placeholder is eight U+2022 bullets
+/// (`account_screen.dart:173`), announced *"Password, bullet bullet bullet
+/// bullet bullet bullet bullet bullet, secure text field"*. A placeholder is a
+/// hint about what goes in the box; it is not what the control is called.
+///
+/// The fix costs no pixels: `InputDecorator` prefers `decoration.hint` over the
+/// `Text` it would build from `decoration.hintText`
+/// (`input_decorator.dart:2333-2335`), so the same string is drawn by an
+/// [ExcludeSemantics]-wrapped [Text] of this widget's own. The catch is that a
+/// supplied `hint` gets **no** style applied — `hintStyle` only ever reaches the
+/// `Text` the decorator builds itself — so the style is composed here exactly
+/// as `_getInlineHintStyle` (`:2199-2210`) composes it: the M3 text theme's
+/// `bodyLarge`, merged with the field's own `style` (the decorator's
+/// `baseStyle`), merged with what `hintStyle` used to carry. The one term left
+/// out is `_InputDecoratorDefaultsM3.hintStyle` (`:5956-5961`), which sets a
+/// colour and nothing else, and that colour is overridden either way.
+///
+/// The proof that it costs no pixels is the committed golden pair, which draws
+/// this field's placeholder in both themes; a mutation to the hint's font size
+/// reddens both, so they are watching it.
 ///
 /// Props:
 /// - [controller] — the caller owns it, and must dispose it.
 /// - [label] — the field's accessible name; pass the same string the screen
 ///   renders above the field.
-/// - [hint] — placeholder text; there is no floating label by design (the
-///   design system puts the label above the field, see `_FieldLabel`).
+/// - [hint] — placeholder text, drawn but not announced; there is no floating
+///   label by design (the design system puts the label above the field, see
+///   `LumenFieldLabel`).
 /// - [obscure] — password entry.
 /// - [errorText] — the rejection to draw under the field; `null` when clean.
 /// - [keyboardType] — e.g. [TextInputType.emailAddress].
@@ -74,6 +97,9 @@ class LumenInputField extends StatelessWidget {
   final String label;
 
   /// Placeholder shown while the field is empty.
+  ///
+  /// Drawn, never announced — it is not part of the field's accessible name.
+  /// See the class doc.
   final String hint;
 
   /// Whether to obscure the entered characters (password entry).
@@ -152,6 +178,13 @@ class LumenInputField extends StatelessWidget {
       borderSide: BorderSide(color: color),
     );
 
+    final inputStyle = TextStyle(fontSize: 14, color: c.ink);
+    final hintStyle = TextStyle(
+      color: c.muted.withValues(alpha: 0.6),
+      fontSize: 14,
+      fontWeight: FontWeight.w400,
+    );
+
     return Semantics(
       label: label,
       child: TextField(
@@ -161,20 +194,27 @@ class LumenInputField extends StatelessWidget {
         enabled: enabled,
         inputFormatters: inputFormatters,
         onChanged: onChanged,
-        style: TextStyle(fontSize: 14, color: c.ink),
+        style: inputStyle,
         decoration: InputDecoration(
-          hintText: hint,
+          // A `hint` WIDGET, not `hintText` — see the class doc. The two cannot
+          // both be given (`InputDecoration`'s own assert), and the style has
+          // to be composed here because `InputDecorator` applies `hintStyle`
+          // only to the `Text` it builds itself.
+          hint: ExcludeSemantics(
+            child: Text(
+              hint,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge!.merge(inputStyle).merge(hintStyle),
+              textAlign: TextAlign.start,
+            ),
+          ),
           suffixText: suffixText,
           suffixStyle: TextStyle(fontSize: 10, color: c.muted),
           // Load-bearing for [suffixText] and inert for everything else — see
           // its doc. Without it the unit is painted at opacity 0 until the
           // field is focused or typed into.
           floatingLabelBehavior: FloatingLabelBehavior.always,
-          hintStyle: TextStyle(
-            color: c.muted.withValues(alpha: 0.6),
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-          ),
           filled: true,
           fillColor: c.input,
           contentPadding: const EdgeInsets.symmetric(

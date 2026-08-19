@@ -83,6 +83,19 @@ TextField _field(WidgetTester tester) =>
 
 InputDecoration _decoration(WidgetTester tester) => _field(tester).decoration!;
 
+/// The style the placeholder is actually PAINTED with.
+///
+/// The hint is a `Text` this widget builds (P4b-T5d), so this is the whole
+/// truth about it — there is no `hintStyle` left for the decorator to merge.
+TextStyle _hintStyle(WidgetTester tester) => tester
+    .widget<Text>(
+      find.descendant(
+        of: find.byType(LumenInputField),
+        matching: find.byType(Text),
+      ),
+    )
+    .style!;
+
 /// The single [BorderSide] of an [OutlineInputBorder], plus its radius.
 ({Color color, double radius}) _border(InputBorder? border) {
   final outline = border! as OutlineInputBorder;
@@ -114,9 +127,14 @@ void main() {
       await _pumpField(tester, hint: 'Maya');
 
       expect(find.text('Maya'), findsOneWidget);
-      expect(_decoration(tester).hintText, 'Maya');
+      // The placeholder arrives as a `hint` WIDGET rather than `hintText`
+      // (P4b-T5d, so it can be excluded from the field's accessible name), and
+      // `InputDecoration` asserts the two are never both given — so what is
+      // pinned is the drawn Text, not the string handed to the decorator.
+      expect(_decoration(tester).hintText, isNull);
+      expect(_decoration(tester).hint, isNotNull);
       // The design system puts the field's label ABOVE the field (see
-      // `_FieldLabel` on screen 2), so a Material floating label would be a
+      // `LumenFieldLabel` on screen 2), so a Material floating label would be a
       // second, duplicate label — and `labelText` is also the exact ingredient
       // in the AlertDialog teardown crash this task fixes elsewhere.
       expect(_decoration(tester).labelText, isNull);
@@ -291,12 +309,34 @@ void main() {
 
     testWidgets('the hint is muted at 60% alpha, 14/w400', (tester) async {
       await _pumpField(tester);
-      final hint = _decoration(tester).hintStyle!;
+      // Read off the PAINTED Text, not off `decoration.hintStyle`. Since
+      // P4b-T5d the placeholder is a `hint` widget this file builds, and
+      // `hintStyle` would not reach it — a decoration property nothing renders
+      // is exactly the assertion that keeps passing after the pixels move.
+      final hint = _hintStyle(tester);
 
       expect(hint.color, lumenLight.muted.withValues(alpha: 0.6));
       expect(hint.fontSize, 14);
       expect(hint.fontWeight, FontWeight.w400);
     });
+
+    testWidgets('the hint still inherits the text theme it used to inherit', (
+      tester,
+    ) async {
+      // `InputDecorator` composes a hint's style from `bodyLarge` and applies
+      // it only to the `Text` it builds itself (`_getInlineHintStyle`,
+      // `input_decorator.dart:2199-2210`), so a hand-built `hint` widget that
+      // forgot that base would draw the same string at a different tracking and
+      // line height — a pixel move with no failing token assertion. These two
+      // numbers come from `bodyLarge` and from nothing this widget sets.
+      await _pumpField(tester);
+      final hint = _hintStyle(tester);
+
+      expect(hint.letterSpacing, 0.5);
+      expect(hint.height, 1.5);
+      expect(hint.fontFamily, 'Roboto');
+    });
+
 
     testWidgets('the entered text is ink at 14', (tester) async {
       await _pumpField(tester);
@@ -361,6 +401,12 @@ void main() {
       expect(_border(decoration.enabledBorder).color, lumenDark.border);
       expect(_border(decoration.focusedBorder).color, lumenDark.accent);
       expect(_field(tester).style!.color, lumenDark.ink);
+    });
+
+    testWidgets('the hint takes the dark palette too', (tester) async {
+      await _pumpField(tester, brightness: Brightness.dark);
+
+      expect(_hintStyle(tester).color, lumenDark.muted.withValues(alpha: 0.6));
     });
   });
 }

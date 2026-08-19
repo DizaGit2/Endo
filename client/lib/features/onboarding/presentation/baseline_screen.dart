@@ -12,6 +12,7 @@ import 'package:lumen/shared/widgets/lumen_error_banner.dart';
 import 'package:lumen/shared/widgets/lumen_field_label.dart';
 import 'package:lumen/shared/widgets/lumen_field_message.dart';
 import 'package:lumen/shared/widgets/lumen_input_field.dart';
+import 'package:lumen/shared/widgets/lumen_selectable_row.dart';
 
 // ---------------------------------------------------------------------------
 // The date-of-birth range
@@ -561,6 +562,12 @@ class _DobField extends StatelessWidget {
 /// There is no "none of these" and no way to un-choose: the endpoint merges, so
 /// a cleared status could not clear the stored one, and `not_applicable` is
 /// already the real answer for a user the question does not apply to.
+///
+/// The box, the selected styling and the button semantics are
+/// [LumenSelectableRow]'s (P4b-T5d); the radio dot and the label are this
+/// screen's. The announced string is the label, unchanged — it used to be
+/// authored under `excludeSemantics: true` and is now the merge of what the row
+/// draws, which is the same string.
 class _StatusOption extends StatelessWidget {
   const _StatusOption({
     required this.status,
@@ -576,49 +583,38 @@ class _StatusOption extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
 
-    return Semantics(
-      button: true,
+    return LumenSelectableRow(
       selected: selected,
-      label: status.label,
-      excludeSemantics: true,
       onTap: onTap,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-          decoration: BoxDecoration(
-            color: selected ? c.accentSoft : c.input,
-            border: Border.all(color: selected ? c.accent : c.border),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: <Widget>[
-              Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: selected ? c.accent : null,
-                  border: Border.all(
-                    color: selected ? c.accent : c.border,
-                    width: 1.5,
-                  ),
-                ),
+      // The mockup's `.opt` row is tighter than screen 5's `.g` row, so both
+      // numbers travel with the call site rather than being averaged into the
+      // shared widget.
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      borderRadius: 10,
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 14,
+            height: 14,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected ? c.accent : null,
+              border: Border.all(
+                color: selected ? c.accent : c.border,
+                width: 1.5,
               ),
-              const SizedBox(width: 10),
-              Text(
-                status.label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-                  color: selected ? c.accent : c.ink,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(width: 10),
+          Text(
+            status.label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+              color: selected ? c.accent : c.ink,
+            ),
+          ),
+        ],
       ),
     );
   }

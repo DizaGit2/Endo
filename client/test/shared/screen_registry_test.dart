@@ -7,8 +7,14 @@
 //
 // Every `lib/features/**/presentation/*_screen.dart` file discovered at TEST
 // TIME must have a golden test, its two committed golden PNGs, and a semantics
-// test that runs the no-dingbat check. Nothing is hand-listed: the screens come
+// test that runs the glyph check. Nothing is hand-listed: the screens come
 // from a filesystem walk, so shipping a screen and testing it are the same act.
+//
+// "The glyph check" is `expectNoDingbats`, and since P4b-T5d that name is
+// shorthand for a rule wider than it: any codepoint above U+007F in a rendered
+// `Text` fails unless it is on `kAllowedNonAsciiGlyphs`. It was a three-item
+// blocklist holding the wrong chevron, so this gate mandated a check that could
+// not catch what it was named for.
 //
 // ## The naming convention — 13 P4b screen tasks depend on this
 //
@@ -154,7 +160,7 @@
 // The PNGs prove the golden actually ran and was committed; the
 // `expectNoDingbats` call is what replaced `test/shared/no_dingbats_test.dart`,
 // whose screen list was hand-maintained — exactly the second registry this one
-// exists to abolish. The dingbat rule now travels with each screen's semantics
+// exists to abolish. The glyph rule now travels with each screen's semantics
 // test, and this file is what makes sure it travels.
 //
 // ## Why this rule and not the other gates

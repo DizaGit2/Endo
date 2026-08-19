@@ -12,7 +12,11 @@
 //   [expectNoDingbats]      Decorative glyphs are `Icon`s, not text. A screen
 //                           reader announces "✦" as punctuation noise, and
 //                           CLAUDE.md's no-emoji rule extends to them in
-//                           spirit.
+//                           spirit. The rule is a CLOSED one — every codepoint
+//                           above U+007F fails unless it is on
+//                           [kAllowedNonAsciiGlyphs] — because the blocklist it
+//                           replaced held three glyphs out of the 31 the
+//                           mockups draw, and the wrong chevron among them.
 //   [expectLabeledButton]   Anything that announces itself as a button must
 //                           have BOTH an accessible name and a tap action.
 //                           `Semantics(excludeSemantics: true)` silently drops
@@ -37,6 +41,23 @@
 // Every matcher that inspects semantics needs the semantics tree switched on.
 // Declare such a test with [testWidgetsWithSemantics] and it is handled — and
 // handled correctly on failure, which the hand-written bracket was not.
+//
+// ## Every matcher reads `getSemanticsData()`, never the node's own fields
+// (P4b-T5d)
+//
+// `SemanticsNode.label` and `SemanticsNode.flagsCollection` are a node's OWN
+// annotation. What assistive tech receives is `getSemanticsData()`, which on a
+// merging node folds in every descendant that owns a node — a nested button, a
+// text field, an explicit `Semantics(container: true)`. The two differ exactly
+// where a row has an inline control, which is the shape half the remaining
+// screens have.
+//
+// Three matchers read the own fields, and one of them failed SILENTLY:
+// [expectNotAButton] passed a row whose `button: true` sat on a merged
+// descendant, which is precisely the case it exists to catch. All three now
+// read `getSemanticsData()`. Non-merging nodes are unaffected — for them
+// `getSemanticsData()` returns the node's own data — so this changed no call
+// site (`test/shared/a11y_guard_test.dart` pins both halves).
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -82,17 +103,111 @@ void testWidgetsWithSemantics(
 // Dingbats
 // ---------------------------------------------------------------------------
 
-/// Glyphs that must never appear inside a [Text] widget's rendered content.
-const kBannedGlyphs = <String>['✦', '✓', '›'];
+/// The codepoints above U+007F a rendered [Text] may legitimately contain.
+///
+/// The rule [expectNoDingbats] enforces is the INVERSE of a blocklist: anything
+/// above U+007F fails unless it is here. It was a blocklist — `✦ ✓ ›`, three of
+/// the 31 distinct non-ASCII codepoints across the 38 mockups — and it held the
+/// wrong chevron: the mockups draw `‹` (U+2039) 33 times and `›` (U+203A) not
+/// once, so screens 6 and 7 would have caught none of theirs.
+///
+/// Every entry is here because a real string needs it. The first two are
+/// load-bearing today — without them the rule reddens screens that ship:
+///
+///  * `·` U+00B7 — `lib/shared/widgets/lumen_step_chrome.dart:82,85` draws it
+///    in all seven onboarding eyebrows, and
+///    `lib/features/settings/presentation/help_about_screen.dart:83` prints
+///    `Version 1.0 · build 142`.
+///  * `•` U+2022 — the password placeholder
+///    `lib/features/onboarding/presentation/account_screen.dart:173` hands
+///    `LumenInputField`. `InputDecorator` renders `hintText` as a real [Text],
+///    so it is inside this rule's reach (`test/widgets/
+///    lumen_input_field_semantics_test.dart:97` draws the same string).
+///  * `—` U+2014 — `profile_screen.dart:151,156,158,279` uses a lone em dash
+///    as the "not set" value, and `cycle_setup_controller.dart:74,77` uses one
+///    mid-sentence.
+///
+/// The rest are admitted so that legitimate copy the next screens will carry
+/// does not have to argue with the guard: the es-ES letters and marks (R-04
+/// permits English strings today; `localeProvider` already resolves es-ES),
+/// typographic punctuation, and the measure signs the hormone and body screens
+/// need.
+///
+/// **This is the narrowing, stated rather than left to the matcher's name.**
+/// An entry admits a codepoint EVERYWHERE, so a screen may legally print `·`
+/// anywhere. What the rule still guarantees is that no glyph outside this set
+/// reaches a [Text] — including every dingbat, arrow and emoji.
+///
+/// **Precomposed forms only.** Each entry is one codepoint (`glyph.runes.single`
+/// asserts that), so `ñ` here is U+00F1 and NOT `n` + U+0303. Decomposed (NFD)
+/// text therefore fails, naming the combining mark — and the message's advice
+/// to "add it to kAllowedNonAsciiGlyphs" would be the wrong fix: admitting bare
+/// combining marks would let any accented glyph through. **Normalise the copy
+/// to NFC instead.** Nothing in the app normalises today, so a localisation
+/// pass that pastes NFD Spanish is where this would first be seen.
+const kAllowedNonAsciiGlyphs = <String>{
+  // ── Load-bearing in shipped copy ──────────────────────────────────────────
+  '·', // U+00B7 MIDDLE DOT — the step eyebrows, the about screen's build line
+  '•', // U+2022 BULLET — screen 2's password placeholder
+  // ── es-ES letters and marks ───────────────────────────────────────────────
+  'á', 'é', 'í', 'ó', 'ú', 'ü', 'ñ',
+  'Á', 'É', 'Í', 'Ó', 'Ú', 'Ü', 'Ñ',
+  '¿', '¡',
+  // ── Typographic punctuation ───────────────────────────────────────────────
+  '’', '‘', '“', '”', // U+2019 U+2018 U+201C U+201D
+  '—', '–', // U+2014 EM DASH, U+2013 EN DASH
+  '…', // U+2026 HORIZONTAL ELLIPSIS
+  // ── Units and measure signs ───────────────────────────────────────────────
+  'µ', // U+00B5 MICRO SIGN — what a keyboard types
+  'μ', // U+03BC GREEK SMALL LETTER MU — what a lab report pastes
+  '°', '±', '×', // U+00B0 U+00B1 U+00D7
+  '≤', '≥', // U+2264 U+2265
+};
 
-/// The effective plain-text content of a [Text], covering both the plain
-/// `data` constructor and the rich `Text.rich` (`textSpan`) form.
+/// [kAllowedNonAsciiGlyphs] as the codepoints [expectNoDingbats] compares
+/// against.
+final Set<int> _allowedCodepoints = <int>{
+  for (final String glyph in kAllowedNonAsciiGlyphs) glyph.runes.single,
+};
+
+/// `U+00B7` for 0xB7 — four hex digits minimum, more when the codepoint needs
+/// them, which is the notation the Unicode standard uses.
+String _codepointName(int rune) =>
+    'U+${rune.toRadixString(16).toUpperCase().padLeft(4, '0')}';
+
+/// The DRAWN plain-text content of a [Text], covering both the plain `data`
+/// constructor and the rich `Text.rich` (`textSpan`) form.
+///
+/// Two of `toPlainText`'s defaults are wrong for this job and both were caught
+/// by real screens:
+///
+///  * `includePlaceholders` substitutes U+FFFC (OBJECT REPLACEMENT CHARACTER)
+///    for every `WidgetSpan`. Screens 36 and 37 inline an `Icon` that way, so
+///    the default reports a codepoint that is not drawn and belongs to no
+///    glyph.
+///  * `includeSemanticsLabels` substitutes a span's `semanticsLabel` for its
+///    text — the opposite of what a rule about what is DRAWN wants to read.
 String effectiveText(Text widget) {
   if (widget.data != null) return widget.data!;
-  return widget.textSpan?.toPlainText() ?? '';
+  return widget.textSpan?.toPlainText(
+        includeSemanticsLabels: false,
+        includePlaceholders: false,
+      ) ??
+      '';
 }
 
-/// Asserts no live [Text] renders any of [kBannedGlyphs].
+/// Asserts no live [Text] renders a codepoint above U+007F that is not on
+/// [kAllowedNonAsciiGlyphs].
+///
+/// The name is shorthand; the body is the general rule, and it fails CLOSED —
+/// a glyph nobody thought of is a failure, not a pass. That is the whole reason
+/// it replaced a blocklist: the blocklist covered 3 of the 31 non-ASCII
+/// codepoints in the mockups, so it could only ever catch what someone had
+/// already noticed. See [kAllowedNonAsciiGlyphs] for what is admitted and why.
+///
+/// The failure names the codepoint as `U+XXXX`, because half the glyphs this
+/// catches are indistinguishable on a terminal from the one that is allowed —
+/// `·` (U+00B7) against `•` (U+2022), `‹` (U+2039) against `<`.
 ///
 /// Also fails when the tree contains no [Text] at all — that means the harness
 /// never mounted the screen, and a guard that passes on an empty tree is the
@@ -109,14 +224,34 @@ void expectNoDingbats(WidgetTester tester, {String screen = 'The screen'}) {
   );
   for (final widget in texts) {
     final text = effectiveText(widget);
-    for (final glyph in kBannedGlyphs) {
-      expect(
-        text.contains(glyph),
-        isFalse,
-        reason: '$screen renders banned dingbat "$glyph" in Text: "$text"',
-      );
-    }
+    final int? offender = _firstDisallowedRune(text);
+    // An `expect` rather than a `fail`, and the codepoint is the value under
+    // test rather than a sentence: a bare `fail` prints no `Expected:`/
+    // `Actual:` block, and that block is what the phase's mutation rule uses to
+    // tell a failed expectation from a tap that missed. Three mutations aimed
+    // at this matcher reported INVALID_RUN until it reported this way.
+    expect(
+      offender,
+      isNull,
+      reason: offender == null
+          ? null
+          : '$screen renders ${_codepointName(offender)} '
+                '("${String.fromCharCode(offender)}") in Text: "$text". A '
+                'decorative glyph belongs in an Icon — a screen reader '
+                'announces it as punctuation noise. If it is legitimate copy, '
+                'add it to kAllowedNonAsciiGlyphs with the string that needs '
+                'it.',
+    );
   }
+}
+
+/// The first codepoint in [text] above U+007F that is not allowlisted, or null.
+int? _firstDisallowedRune(String text) {
+  for (final int rune in text.runes) {
+    if (rune <= 0x7F || _allowedCodepoints.contains(rune)) continue;
+    return rune;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +272,24 @@ void expectNoDingbats(WidgetTester tester, {String screen = 'The screen'}) {
 ///
 /// [requireTapAction] exists only for the rare control whose activation is not
 /// a tap; leaving it on is the rule.
+///
+/// Everything here is read from `getSemanticsData()` — the merged view. Before
+/// P4b-T5d the flags and the name came from the node's OWN annotation while
+/// only `hasAction` was merged, so a row whose button flag or name arrived from
+/// a nested control read as an unnamed non-button and this matcher rejected a
+/// perfectly good control.
+///
+/// **[finder] names a widget; the assertion is about the NODE it resolves
+/// into.** `tester.getSemantics` walks up past every `isMergedIntoParent`
+/// ancestor, so inside a merging row every descendant resolves to the SAME
+/// node — the row's. That is right, because that node is what a screen reader
+/// announces, but it means
+/// `expectLabeledButton(tester, find.text('Sleep quality'), 'Sleep quality')`
+/// passes against a row whose only button is a nested `Add`: the text is not
+/// the button, and the assertion cannot fail. **Pass the row's own handle**
+/// (its `Key`, or its widget type) and state the whole announced name, one
+/// assertion per row rather than one per line. The same applies to
+/// [expectNotAButton] and [expectLiveRegionAt].
 void expectLabeledButton(
   WidgetTester tester,
   Finder finder,
@@ -144,7 +297,7 @@ void expectLabeledButton(
   bool exactLabel = false,
   bool requireTapAction = true,
 }) {
-  final data = tester.getSemantics(finder);
+  final data = tester.getSemantics(finder).getSemanticsData();
   expect(
     data.flagsCollection.isButton,
     isTrue,
@@ -161,7 +314,7 @@ void expectLabeledButton(
   );
   if (requireTapAction) {
     expect(
-      data.getSemanticsData().hasAction(SemanticsAction.tap),
+      data.hasAction(SemanticsAction.tap),
       isTrue,
       reason:
           'The button-flagged, labeled node "$label" has no tap action — a '
@@ -231,12 +384,24 @@ Finder _fieldNode(Finder finder) {
 ///
 /// The house rule for an informational row: `MergeSemantics`, not
 /// `Semantics(button: true)`.
+///
+/// Read from `getSemanticsData()`, and that is the point of the matcher rather
+/// than a detail of it. Reading the node's OWN flags — which is what this did
+/// before P4b-T5d — meant a row containing a nested button passed: the flag
+/// sits on the descendant, the merge puts it on what the user hears, and the
+/// guard looked at neither. It is the one failure in this file that was
+/// silent, so nothing about the suite's colour ever hinted at it.
+///
+/// **[finder] names a widget; the assertion is about the NODE it resolves
+/// into** — see [expectLabeledButton]. Inside a merging row every descendant
+/// resolves to the row's node, so passing one line of a row asserts about the
+/// whole row and not about that line. Pass the row's own handle.
 void expectNotAButton(
   WidgetTester tester,
   Finder finder, {
   List<String> merged = const <String>[],
 }) {
-  final data = tester.getSemantics(finder);
+  final data = tester.getSemantics(finder).getSemanticsData();
   expect(
     data.flagsCollection.isButton,
     isFalse,
@@ -281,12 +446,16 @@ void expectLiveRegion(WidgetTester tester, String message) {
 }
 
 /// [expectLiveRegion] for a banner that cannot be located by its exact string.
+///
+/// Reads `getSemanticsData()`: a banner nested inside a merging row carries its
+/// live-region flag on the descendant, and the merged node is what announces
+/// itself.
 void expectLiveRegionAt(
   WidgetTester tester,
   Finder finder, {
   String describedAs = 'this node',
 }) {
-  final data = tester.getSemantics(finder);
+  final data = tester.getSemantics(finder).getSemanticsData();
   expect(
     data.flagsCollection.isLiveRegion,
     isTrue,

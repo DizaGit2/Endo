@@ -29,6 +29,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/app.dart';
 import 'package:lumen/core/theme/lumen_theme.dart';
 
+import 'golden_app.dart';
+
+// ---------------------------------------------------------------------------
+// The surface
+// ---------------------------------------------------------------------------
+
+/// The logical surface every entry point here mounts against, and the same one
+/// every golden is drawn at (P4b-T5d).
+///
+/// `flutter_test`'s default is 800x600 — a landscape desktop window. Under it
+/// the shell's CTA sits below the fold, so a test that taps "Continue" taps
+/// nothing and a `RenderFlex` that is fine on a phone can overflow; before this
+/// existed each whole-shell test had to call `setSurfaceSize` itself, and
+/// exactly one file in the repo did.
+///
+/// Built from [kGoldenWidth] and [kGoldenHeight] rather than repeating their
+/// numbers, so "the widget tests run at the golden surface" is a fact the
+/// compiler keeps rather than a comment that can rot.
+const Size kTestSurfaceSize = Size(kGoldenWidth, kGoldenHeight);
+
 // ---------------------------------------------------------------------------
 // Entry points
 // ---------------------------------------------------------------------------
@@ -39,6 +59,10 @@ import 'package:lumen/core/theme/lumen_theme.dart';
 /// [settle] pumps until no frames are scheduled. Pass `settle: false` for any
 /// tree containing an indeterminate `CircularProgressIndicator` (it animates
 /// forever, so "settle" never arrives) and drive the frames yourself.
+///
+/// [surfaceSize] defaults to [kTestSurfaceSize] and is restored in a tearDown;
+/// pass another only for a test whose subject IS the layout at some other
+/// size.
 Future<ProviderContainer> pumpApp(
   WidgetTester tester, {
   required Widget home,
@@ -46,6 +70,7 @@ Future<ProviderContainer> pumpApp(
   List<Override> overrides = const <Override>[],
   ProviderContainer? container,
   bool settle = true,
+  Size surfaceSize = kTestSurfaceSize,
 }) {
   return _pumpScoped(
     tester,
@@ -57,6 +82,7 @@ Future<ProviderContainer> pumpApp(
     overrides: overrides,
     container: container,
     settle: settle,
+    surfaceSize: surfaceSize,
   );
 }
 
@@ -71,6 +97,7 @@ Future<ProviderContainer> pumpRouterApp(
   List<Override> overrides = const <Override>[],
   ProviderContainer? container,
   bool settle = true,
+  Size surfaceSize = kTestSurfaceSize,
 }) {
   return _pumpScoped(
     tester,
@@ -82,6 +109,7 @@ Future<ProviderContainer> pumpRouterApp(
     overrides: overrides,
     container: container,
     settle: settle,
+    surfaceSize: surfaceSize,
   );
 }
 
@@ -95,6 +123,7 @@ Future<ProviderContainer> pumpLumenApp(
   List<Override> overrides = const <Override>[],
   ProviderContainer? container,
   bool settle = true,
+  Size surfaceSize = kTestSurfaceSize,
 }) {
   return _pumpScoped(
     tester,
@@ -102,6 +131,7 @@ Future<ProviderContainer> pumpLumenApp(
     overrides: overrides,
     container: container,
     settle: settle,
+    surfaceSize: surfaceSize,
   );
 }
 
@@ -115,12 +145,18 @@ Future<ProviderContainer> pumpLumenApp(
 /// owned by a `ProviderScope`, which is what lets every entry point return it.
 /// A container created here is disposed by an `addTearDown`; a container passed
 /// in belongs to the caller, who must dispose it.
+///
+/// The surface is set BEFORE the first pump — setting it afterwards lays the
+/// tree out twice and hides an overflow that only the first layout would have
+/// reported — and restored by a tearDown, because the binding is shared across
+/// the tests in a file.
 Future<ProviderContainer> _pumpScoped(
   WidgetTester tester,
   Widget app, {
   required List<Override> overrides,
   required ProviderContainer? container,
   required bool settle,
+  required Size surfaceSize,
 }) async {
   if (container != null && overrides.isNotEmpty) {
     throw ArgumentError(
@@ -134,6 +170,9 @@ Future<ProviderContainer> _pumpScoped(
   if (container == null) {
     addTearDown(scope.dispose);
   }
+
+  await tester.binding.setSurfaceSize(surfaceSize);
+  addTearDown(() => tester.binding.setSurfaceSize(null));
 
   await tester.pumpWidget(
     UncontrolledProviderScope(container: scope, child: app),
