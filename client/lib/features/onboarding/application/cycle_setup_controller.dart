@@ -367,10 +367,15 @@ class CycleSetupController extends Notifier<AsyncValue<CycleSetupForm>> {
 
   /// `GET /cycle/calendar`'s `today`, with its failure captured rather than
   /// thrown.
+  ///
+  /// Reads through [sessionTodayProvider] (P4b-T14 fix round 1 / M-1) rather
+  /// than calling [ServerTodayRepository.today] directly, so this screen
+  /// shares its one round trip with every other dated screen in the same
+  /// session instead of re-issuing `GET /cycle/calendar` on every mount.
   Future<({Date? today, Failure? failure})> _readToday() async {
     try {
       return (
-        today: await ref.read(serverTodayRepositoryProvider).today(),
+        today: await ref.read(sessionTodayProvider.future),
         failure: null,
       );
     } on Failure catch (failure) {

@@ -21,7 +21,12 @@
 
 import 'package:built_collection/built_collection.dart';
 import 'package:lumen/api/model/baseline_response.dart';
+import 'package:lumen/api/model/cycle_calendar_day.dart';
 import 'package:lumen/api/model/cycle_calendar_response.dart';
+import 'package:lumen/api/model/cycle_day_log_response.dart';
+import 'package:lumen/api/model/cycle_day_response.dart';
+import 'package:lumen/api/model/cycle_event_response.dart';
+import 'package:lumen/api/model/cycle_phase_availability_response.dart';
 import 'package:lumen/api/model/cycle_settings_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goal_selection.dart';
@@ -34,6 +39,7 @@ import 'package:lumen/api/model/notification_prefs_response.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
+import 'package:lumen/api/model/phase_override_boundary.dart';
 
 /// `GET /me`. The shipped default is a fully-onboarded Spanish-locale user.
 ///
@@ -391,16 +397,112 @@ OnboardingCycleResponse onboardingCycleFixture({
   );
 }
 
-/// `GET /cycle/calendar`. Only `today` is ever read by P4b-T9 — the screen-3
-/// month anchor — so the day list is left unset, which is also the shape a
-/// brand-new account gets back.
+/// `GET /cycle/calendar`. P4b-T9 only ever reads `today` — the screen-3 month
+/// anchor — so [days]/[from]/[to]/[phase] default to unset, which is also the
+/// shape a brand-new account gets back. P4b-T14's windowed calendar read
+/// (`CycleRepository.getCalendarMonth`) is what exercises the rest.
 CycleCalendarResponse cycleCalendarFixture({
   Date? today,
   String? timezone = 'Europe/Madrid',
+  Date? from,
+  Date? to,
+  List<CycleCalendarDay>? days,
+  CyclePhaseAvailabilityResponse? phase,
 }) {
-  return CycleCalendarResponse(
-    (b) => b
+  return CycleCalendarResponse((b) {
+    b
       ..today = today ?? Date(2026, 4, 20)
-      ..timezone = timezone,
+      ..timezone = timezone
+      ..from = from
+      ..to = to;
+    if (days != null) b.days.replace(days);
+    if (phase != null) b.phase.replace(phase);
+  });
+}
+
+/// One sparse row of `GET /cycle/calendar`'s `days` list
+/// (`survey/decisions-and-vocabularies.md:450` and `survey/backend-
+/// endpoints.md:517` — a day with nothing on it is absent from the list
+/// entirely, never a zero-valued row; this fixture is for the days that DO
+/// appear).
+CycleCalendarDay cycleCalendarDayFixture({
+  Date? date,
+  int? pain,
+  int? mood,
+  bool? hasNotes = false,
+  int? eventCount = 0,
+  int? symptomCount = 0,
+}) {
+  return CycleCalendarDay(
+    (b) => b
+      ..date = date ?? Date(2026, 4, 20)
+      ..pain = pain
+      ..mood = mood
+      ..hasNotes = hasNotes
+      ..eventCount = eventCount
+      ..symptomCount = symptomCount,
+  );
+}
+
+/// `GET /cycle/day/{date}`. Defaults to an EMPTY day — `log: null`, `events`
+/// and `phaseOverrides` unset — the 200 P4a returns for a day nobody has
+/// logged anything on (never a 404, `survey/decisions-and-vocabularies.md:451`
+/// and `survey/backend-endpoints.md:245`).
+CycleDayResponse cycleDayFixture({
+  Date? date,
+  CycleDayLogResponse? log,
+  List<CycleEventResponse>? events,
+  List<PhaseOverrideBoundary>? phaseOverrides,
+}) {
+  return CycleDayResponse((b) {
+    b.date = date ?? Date(2026, 4, 20);
+    if (log != null) b.log.replace(log);
+    if (events != null) b.events.replace(events);
+    if (phaseOverrides != null) b.phaseOverrides.replace(phaseOverrides);
+  });
+}
+
+/// One `cycle_day_logs` row, as `GET /cycle/day/{date}`'s `log` echoes it.
+CycleDayLogResponse cycleDayLogFixture({
+  Date? day,
+  int? pain = 3,
+  int? mood = 3,
+  String? notes,
+  DateTime? createdAt,
+  DateTime? updatedAt,
+}) {
+  return CycleDayLogResponse(
+    (b) => b
+      ..day = day ?? Date(2026, 4, 20)
+      ..pain = pain
+      ..mood = mood
+      ..notes = notes
+      ..createdAt = createdAt ?? DateTime.utc(2026, 4, 20, 8)
+      ..updatedAt = updatedAt ?? DateTime.utc(2026, 4, 20, 8),
+  );
+}
+
+/// `POST /cycle/events`'s response, and one `cycle_events` row wherever else
+/// one is needed (e.g. inside `CycleDayResponse.events`).
+CycleEventResponse cycleEventFixture({
+  String? id = 'event-abc123',
+  String? kind = 'period_start',
+  Date? occurredOn,
+  int? flowIntensity,
+  String? notes,
+  String? source = 'user',
+  DateTime? createdAt,
+  DateTime? updatedAt,
+}) {
+  return CycleEventResponse(
+    (b) => b
+      ..id = id
+      ..kind = kind
+      ..occurredOn = occurredOn ?? Date(2026, 4, 20)
+      ..flowIntensity = flowIntensity
+      ..notes = notes
+      ..source_ = source
+      ..createdAt = createdAt ?? DateTime.utc(2026, 4, 20, 8)
+      ..updatedAt = updatedAt ?? DateTime.utc(2026, 4, 20, 8),
   );
 }

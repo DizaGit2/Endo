@@ -74,9 +74,9 @@ class _World {
         meRepo.getMe,
       ).thenAnswer((_) async => NetworkRequired<MeResponse>(profileFailure));
     } else {
-      when(
-        meRepo.getMe,
-      ).thenAnswer((_) async => Fresh<MeResponse>(profile ?? meResponseFixture()));
+      when(meRepo.getMe).thenAnswer(
+        (_) async => Fresh<MeResponse>(profile ?? meResponseFixture()),
+      );
     }
 
     if (todayFailure != null) {
@@ -198,7 +198,10 @@ void main() {
       // The server compares with StringComparer.Ordinal and answers 400 for
       // anything else, so a client that normalised case would send a value it
       // believed was valid.
-      expect(EndoStatus.fromWireName('not_applicable'), EndoStatus.notApplicable);
+      expect(
+        EndoStatus.fromWireName('not_applicable'),
+        EndoStatus.notApplicable,
+      );
       expect(EndoStatus.fromWireName('Not_Applicable'), isNull);
       expect(EndoStatus.fromWireName('notApplicable'), isNull);
       expect(EndoStatus.fromWireName(null), isNull);
@@ -258,40 +261,44 @@ void main() {
       expect(world.state.hasError, isFalse);
     });
 
-    test('an unanswered status stays null — and not_applicable is an ANSWER',
-        () async {
-      final blank = _World();
-      await blank.settle();
-      expect(
-        blank.form.answers.endoStatus,
-        isNull,
-        reason: 'there is no default: an unanswered question stays null',
-      );
+    test(
+      'an unanswered status stays null — and not_applicable is an ANSWER',
+      () async {
+        final blank = _World();
+        await blank.settle();
+        expect(
+          blank.form.answers.endoStatus,
+          isNull,
+          reason: 'there is no default: an unanswered question stays null',
+        );
 
-      // The control that makes the null above mean something: the same
-      // controller reading a stored `not_applicable` shows a real answer, not
-      // an absence.
-      final answered = _World(
-        profile: meResponseFixture(endoStatus: 'not_applicable'),
-      );
-      await answered.settle();
-      expect(answered.form.answers.endoStatus, EndoStatus.notApplicable);
-    });
+        // The control that makes the null above mean something: the same
+        // controller reading a stored `not_applicable` shows a real answer, not
+        // an absence.
+        final answered = _World(
+          profile: meResponseFixture(endoStatus: 'not_applicable'),
+        );
+        await answered.settle();
+        expect(answered.form.answers.endoStatus, EndoStatus.notApplicable);
+      },
+    );
 
-    test('a failed profile read leaves every answer unknown, and says so',
-        () async {
-      final world = _World(profileFailure: const NetworkFailure());
-      await world.settle();
+    test(
+      'a failed profile read leaves every answer unknown, and says so',
+      () async {
+        final world = _World(profileFailure: const NetworkFailure());
+        await world.settle();
 
-      // Nothing is invented. Drawing a default here is exactly what would
-      // overwrite a stored answer on the next save.
-      expect(world.form.answers.heightCm, isNull);
-      expect(world.form.answers.weightKg, isNull);
-      expect(world.form.answers.endoStatus, isNull);
-      expect(world.form.failure, isA<NetworkFailure>());
-      // …and the step is still usable, because skipping it must work offline.
-      expect(world.state.hasError, isFalse);
-    });
+        // Nothing is invented. Drawing a default here is exactly what would
+        // overwrite a stored answer on the next save.
+        expect(world.form.answers.heightCm, isNull);
+        expect(world.form.answers.weightKg, isNull);
+        expect(world.form.answers.endoStatus, isNull);
+        expect(world.form.failure, isA<NetworkFailure>());
+        // …and the step is still usable, because skipping it must work offline.
+        expect(world.state.hasError, isFalse);
+      },
+    );
 
     test('a stale profile is used exactly as a fresh one', () async {
       final world = _World();
@@ -325,22 +332,24 @@ void main() {
       expect(world.form.answers.dob, Date(2026, 4, 20));
     });
 
-    test('there is no lower bound of any kind — C-12 forbids an age gate',
-        () async {
-      final world = _World(today: Date(2026, 4, 20));
-      await world.settle();
+    test(
+      'there is no lower bound of any kind — C-12 forbids an age gate',
+      () async {
+        final world = _World(today: Date(2026, 4, 20));
+        await world.settle();
 
-      // A date of birth that would make the user sixteen days old, and one
-      // that would make her a hundred and twenty. Neither is refused here, and
-      // neither is refused by the server: the population is a DESIGN TARGET,
-      // not a data-entry gate, and a "born before 19xx" floor would be an age
-      // gate under another name.
-      world.notifier.chooseDob(Date(2026, 4, 4));
-      expect(world.form.answers.dob, Date(2026, 4, 4));
+        // A date of birth that would make the user sixteen days old, and one
+        // that would make her a hundred and twenty. Neither is refused here, and
+        // neither is refused by the server: the population is a DESIGN TARGET,
+        // not a data-entry gate, and a "born before 19xx" floor would be an age
+        // gate under another name.
+        world.notifier.chooseDob(Date(2026, 4, 4));
+        expect(world.form.answers.dob, Date(2026, 4, 4));
 
-      world.notifier.chooseDob(Date(1906, 1, 1));
-      expect(world.form.answers.dob, Date(1906, 1, 1));
-    });
+        world.notifier.chooseDob(Date(1906, 1, 1));
+        expect(world.form.answers.dob, Date(1906, 1, 1));
+      },
+    );
 
     test('with no today there is no picker, and no guess', () async {
       final world = _World(todayFailure: const NetworkFailure());
@@ -356,6 +365,34 @@ void main() {
       final ok = _World(today: Date(2026, 4, 20));
       await ok.settle();
       expect(ok.form.canPickDob, isTrue);
+    });
+
+    test('shares its "today" round trip with another dated screen on the same '
+        'session, via sessionTodayProvider — fix round 1 / M-1: the '
+        'regression this controller would silently reintroduce by going back '
+        'to calling ServerTodayRepository directly', () async {
+      final world = _World(today: Date(2026, 4, 20));
+      await world.settle();
+      expect(
+        world.form.today,
+        Date(2026, 4, 20),
+        reason: 'premise: the controller\'s own resume read succeeded',
+      );
+
+      // A DIFFERENT dated screen on the SAME container reads
+      // sessionTodayProvider directly. If this controller still called
+      // ServerTodayRepository.today() directly (bypassing the shared
+      // provider), sessionTodayProvider would never have been built yet —
+      // this read would be ITS first, and `todayRepo.today` would show TWO
+      // calls total. Routed through the shared provider as intended, the
+      // controller's own read already pinned the value, so this is a
+      // cache hit: the total stays at one.
+      final sharedRead = await world.container.read(
+        sessionTodayProvider.future,
+      );
+
+      expect(sharedRead, Date(2026, 4, 20));
+      verify(world.todayRepo.today).called(1);
     });
   });
 
@@ -377,84 +414,97 @@ void main() {
       expect(world.step, OnboardingStep.goals);
     });
 
-    test('with one answer it DOES post — the control for the skip path',
-        () async {
-      final world = _World()..answerSave();
-      await world.settle();
+    test(
+      'with one answer it DOES post — the control for the skip path',
+      () async {
+        final world = _World()..answerSave();
+        await world.settle();
 
-      world.notifier.chooseEndoStatus(EndoStatus.notApplicable);
-      await world.notifier.submit();
+        world.notifier.chooseEndoStatus(EndoStatus.notApplicable);
+        await world.notifier.submit();
 
-      final captured = world.verifySaves()..called(1);
-      expect(captured.captured, <Object?>[null, null, null, 'not_applicable']);
-      expect(world.step, OnboardingStep.goals);
-    });
+        final captured = world.verifySaves()..called(1);
+        expect(captured.captured, <Object?>[
+          null,
+          null,
+          null,
+          'not_applicable',
+        ]);
+        expect(world.step, OnboardingStep.goals);
+      },
+    );
 
-    test('a resume the user did not touch walks on without re-posting',
-        () async {
-      final world = _World(
-        profile: meResponseFixture(heightCm: 165, endoStatus: 'diagnosed'),
-      )..answerSave();
-      await world.settle();
+    test(
+      'a resume the user did not touch walks on without re-posting',
+      () async {
+        final world = _World(
+          profile: meResponseFixture(heightCm: 165, endoStatus: 'diagnosed'),
+        )..answerSave();
+        await world.settle();
 
-      await world.notifier.submit();
+        await world.notifier.submit();
 
-      // Re-asserting a READ as a WRITE is the failure mode `saved` exists to
-      // prevent — the profile read is stale-while-revalidate, so the 165 on
-      // screen can be a cache entry served after a failed refresh while screen
-      // 31 on another device set 170.
-      world.verifyNoSave();
-      expect(world.step, OnboardingStep.goals);
-    });
+        // Re-asserting a READ as a WRITE is the failure mode `saved` exists to
+        // prevent — the profile read is stale-while-revalidate, so the 165 on
+        // screen can be a cache entry served after a failed refresh while screen
+        // 31 on another device set 170.
+        world.verifyNoSave();
+        expect(world.step, OnboardingStep.goals);
+      },
+    );
 
-    test('it sends the fields that CHANGED and omits the ones that did not',
-        () async {
-      final world = _World(
-        profile: meResponseFixture(
-          heightCm: 165,
-          latestWeightKg: 62.4,
-          endoStatus: 'diagnosed',
-        ),
-      )..answerSave();
-      await world.settle();
+    test(
+      'it sends the fields that CHANGED and omits the ones that did not',
+      () async {
+        final world = _World(
+          profile: meResponseFixture(
+            heightCm: 165,
+            latestWeightKg: 62.4,
+            endoStatus: 'diagnosed',
+          ),
+        )..answerSave();
+        await world.settle();
 
-      world.notifier.setWeightKg(63.1);
-      await world.notifier.submit();
+        world.notifier.setWeightKg(63.1);
+        await world.notifier.submit();
 
-      final captured = world.verifySaves()..called(1);
-      // The weight, and nothing else. An omitted field is left unchanged by the
-      // endpoint's MERGE; echoing the unchanged 165 back would re-assert as a
-      // write something this device only ever observed as a read.
-      expect(captured.captured, <Object?>[null, null, 63.1, null]);
-    });
+        final captured = world.verifySaves()..called(1);
+        // The weight, and nothing else. An omitted field is left unchanged by the
+        // endpoint's MERGE; echoing the unchanged 165 back would re-assert as a
+        // write something this device only ever observed as a read.
+        expect(captured.captured, <Object?>[null, null, 63.1, null]);
+      },
+    );
 
-    test('clearing a field sends nothing for it — a merge cannot clear',
-        () async {
-      final world = _World(profile: meResponseFixture(heightCm: 165))
-        ..answerSave();
-      await world.settle();
+    test(
+      'clearing a field sends nothing for it — a merge cannot clear',
+      () async {
+        final world = _World(profile: meResponseFixture(heightCm: 165))
+          ..answerSave();
+        await world.settle();
 
-      world.notifier.setHeightCm(null);
-      expect(world.form.answers.heightCm, isNull);
+        world.notifier.setHeightCm(null);
+        expect(world.form.answers.heightCm, isNull);
 
-      await world.notifier.submit();
+        await world.notifier.submit();
 
-      // §C.0.1's accepted cost: `int?` cannot distinguish absent from
-      // explicit-null under System.Text.Json and `built_value` omits nulls, so
-      // there is no way to CLEAR a stored baseline field from this client. The
-      // honest behaviour is to send nothing rather than to post an empty body
-      // that would 400.
-      world.verifyNoSave();
-      expect(world.step, OnboardingStep.goals);
+        // §C.0.1's accepted cost: `int?` cannot distinguish absent from
+        // explicit-null under System.Text.Json and `built_value` omits nulls, so
+        // there is no way to CLEAR a stored baseline field from this client. The
+        // honest behaviour is to send nothing rather than to post an empty body
+        // that would 400.
+        world.verifyNoSave();
+        expect(world.step, OnboardingStep.goals);
 
-      // The control: a field CHANGED rather than cleared does travel.
-      final changed = _World(profile: meResponseFixture(heightCm: 165))
-        ..answerSave();
-      await changed.settle();
-      changed.notifier.setHeightCm(170);
-      await changed.notifier.submit();
-      expect((changed.verifySaves()..called(1)).captured[1], 170);
-    });
+        // The control: a field CHANGED rather than cleared does travel.
+        final changed = _World(profile: meResponseFixture(heightCm: 165))
+          ..answerSave();
+        await changed.settle();
+        changed.notifier.setHeightCm(170);
+        await changed.notifier.submit();
+        expect((changed.verifySaves()..called(1)).captured[1], 170);
+      },
+    );
 
     test('a rejection keeps the user on the step and reports itself', () async {
       final world = _World()
@@ -480,42 +530,46 @@ void main() {
       );
     });
 
-    test('an untyped error is reported rather than escaping as a dead spinner',
-        () async {
-      // `cachedWrite` invalidates its keys UNGUARDED after a successful write,
-      // so a concurrent logout purge closing the Hive box throws here — after
-      // the answer was stored. Left unhandled it is a spinner that never stops.
-      final world = _World()..rejectSave(StateError('box is closed'));
-      await world.settle();
+    test(
+      'an untyped error is reported rather than escaping as a dead spinner',
+      () async {
+        // `cachedWrite` invalidates its keys UNGUARDED after a successful write,
+        // so a concurrent logout purge closing the Hive box throws here — after
+        // the answer was stored. Left unhandled it is a spinner that never stops.
+        final world = _World()..rejectSave(StateError('box is closed'));
+        await world.settle();
 
-      world.notifier.setHeightCm(165);
-      await world.notifier.submit();
+        world.notifier.setHeightCm(165);
+        await world.notifier.submit();
 
-      expect(world.form.failure, isA<UnknownFailure>());
-      expect(world.form.submitting, isFalse);
-      expect(world.step, OnboardingStep.baseline);
-    });
+        expect(world.form.failure, isA<UnknownFailure>());
+        expect(world.form.submitting, isFalse);
+        expect(world.step, OnboardingStep.baseline);
+      },
+    );
 
-    test('a second press while a save is in flight issues no second request',
-        () async {
-      final release = Completer<BaselineResponse>();
-      final world = _World()..pendSave(release);
-      await world.settle();
+    test(
+      'a second press while a save is in flight issues no second request',
+      () async {
+        final release = Completer<BaselineResponse>();
+        final world = _World()..pendSave(release);
+        await world.settle();
 
-      world.notifier.setHeightCm(165);
-      unawaited(world.notifier.submit());
-      await world.settle();
-      expect(world.form.submitting, isTrue);
+        world.notifier.setHeightCm(165);
+        unawaited(world.notifier.submit());
+        await world.settle();
+        expect(world.form.submitting, isTrue);
 
-      unawaited(world.notifier.submit());
-      await world.settle();
+        unawaited(world.notifier.submit());
+        await world.settle();
 
-      world.verifySaves().called(1);
+        world.verifySaves().called(1);
 
-      release.complete(baselineFixture(heightCm: 165));
-      await world.settle();
-      expect(world.step, OnboardingStep.goals);
-    });
+        release.complete(baselineFixture(heightCm: 165));
+        await world.settle();
+        expect(world.step, OnboardingStep.goals);
+      },
+    );
 
     test('an action on an unsettled controller is a no-op', () async {
       // The controller-shape rule's other half: `build()` is synchronous and

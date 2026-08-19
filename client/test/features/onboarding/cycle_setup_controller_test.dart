@@ -372,6 +372,32 @@ void main() {
     },
   );
 
+  test('shares its "today" round trip with another dated screen on the same '
+      'session, via sessionTodayProvider — fix round 1 / M-1: the regression '
+      'this controller would silently reintroduce by going back to calling '
+      'ServerTodayRepository directly', () async {
+    final world = _World(today: Date(2026, 4, 20));
+    await world.settle();
+    expect(
+      world.form.today,
+      Date(2026, 4, 20),
+      reason: 'premise: the controller\'s own resume read succeeded',
+    );
+
+    // A DIFFERENT dated screen (T15's dashboard, T16's day detail, …) on
+    // the SAME container reads sessionTodayProvider directly. If this
+    // controller still called ServerTodayRepository.today() directly
+    // (bypassing the shared provider), sessionTodayProvider would never
+    // have been built yet — this read would be ITS first, and
+    // `todayRepo.today` would show TWO calls total. Routed through the
+    // shared provider as intended, the controller's own read already
+    // pinned the value, so this is a cache hit: the total stays at one.
+    final sharedRead = await world.container.read(sessionTodayProvider.future);
+
+    expect(sharedRead, Date(2026, 4, 20));
+    verify(world.todayRepo.today).called(1);
+  });
+
   // -------------------------------------------------------------------------
   // Choosing a day — the one server rule the client can mirror
   // -------------------------------------------------------------------------
