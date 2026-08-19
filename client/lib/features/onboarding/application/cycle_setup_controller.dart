@@ -503,6 +503,16 @@ class CycleSetupController extends Notifier<AsyncValue<CycleSetupForm>> {
       form.copyWith(submitting: true, clearFailure: true),
     );
 
+    // Read BEFORE the await, and held across it, FOR THE RECORD ONLY. `ref.read`
+    // on a disposed controller throws, and a step controller can be disposed
+    // while its request is open. [_advance] deliberately keeps reading the
+    // notifier fresh through `ref`: a held reference does NOT resurrect a
+    // provider that has since been disposed, so using one for navigation would
+    // turn a self-healing `ref.read` into a throw.
+    final OnboardingFlowController flowForRecord = ref.read(
+      onboardingFlowControllerProvider.notifier,
+    );
+
     OnboardingCycleSaved? saved;
     Failure? rejected;
     try {
@@ -553,6 +563,24 @@ class CycleSetupController extends Notifier<AsyncValue<CycleSetupForm>> {
       // the answer was stored. Leaving it unhandled would be a spinner that
       // never stops and a banner that never appears.
       rejected = const UnknownFailure();
+    }
+
+    // BEFORE the disposal gate, deliberately, and outside the warning branch
+    // below. The shell's copy of `GET /onboarding/state` still holds the anchor
+    // this save replaced, and this controller is autoDispose: walking off this
+    // step and back would rebuild the form out of that stale value.
+    // `lastPeriodStart` is REQUIRED on every post, so the anchor on screen
+    // rides along with any later save of this step — a stale one is not a stale
+    // view, it is a corrected date dragged back.
+    //
+    // The gate would otherwise leave that loss in a narrower window: Back
+    // during the save disposes this controller and the 200 lands anyway. The
+    // flow outlives the step — it is the SHELL's state — so recording onto it
+    // is valid precisely when this controller is gone. A warned save has stored
+    // just as much as an unwarned one, which is why this sits above `_advance`
+    // rather than inside it.
+    if (rejected == null) {
+      flowForRecord.recordCycleSaved(saved!.answers.lastPeriodStart);
     }
 
     if (!ref.mounted) return;

@@ -14,9 +14,12 @@
 
 import 'dart:async';
 
+import 'package:built_collection/built_collection.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lumen/api/model/date.dart';
+import 'package:lumen/api/model/goal_selection.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
@@ -406,6 +409,140 @@ void main() {
       expect(
         container.read(onboardingFlowControllerProvider).value!.step,
         OnboardingStep.notifications,
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Recording what a step write stored (P4b-T8b)
+  // -------------------------------------------------------------------------
+  //
+  // `OnboardingFlow.state` is what a step controller prefills from when it is
+  // rebuilt, and every step controller is `autoDispose` behind a back
+  // affordance — so a step the user has already written re-seeds from this
+  // value. These tests are about the value; what it costs to get it wrong is in
+  // `onboarding_back_navigation_test.dart`, one test per screen.
+
+  group('recording a step write', () {
+    test(
+      'it replaces that step\'s projection and leaves the flow standing',
+      () async {
+        stubState(
+          onboardingStateFixture(
+            cycleProvided: true,
+            lastPeriodStart: Date(2026, 4, 1),
+            goals: const <String, bool>{
+              'manage_symptoms': true,
+              'just_curious': false,
+            },
+          ),
+        );
+        final container = _container(repo);
+        final before = await _settled(container);
+
+        // Premises: the flow is on a step that is NOT the first, and it holds the
+        // pre-save values. Both assertions below are the opposite of these.
+        expect(before.step, OnboardingStep.baseline);
+        expect(before.state.lastPeriodStart, Date(2026, 4, 1));
+        expect(before.state.goals!.first.selected, isTrue);
+
+        _notifier(container)
+          ..recordCycleSaved(Date(2026, 4, 6))
+          ..recordGoalsSaved(
+            BuiltList<GoalSelection>(
+              goalSelections(const <String, bool>{
+                'manage_symptoms': false,
+                'just_curious': true,
+              }),
+            ),
+          );
+
+        final after = container.read(onboardingFlowControllerProvider).value!;
+        expect(after.state.lastPeriodStart, Date(2026, 4, 6));
+        expect(
+          <String, bool>{
+            for (final GoalSelection g in after.state.goals!)
+              g.code!: g.selected!,
+          },
+          <String, bool>{'manage_symptoms': false, 'just_curious': true},
+        );
+
+        // The step is untouched: recording is not navigation. Recording the
+        // cycle write from step 4 must not send the user back to step 3.
+        expect(after.step, OnboardingStep.baseline);
+        // …and neither write disturbed the other's projection, nor the booleans
+        // `resumeStepFrom` reads.
+        expect(after.state.cycleProvided, isTrue);
+        expect(after.state.goalsProvided, isFalse);
+      },
+    );
+
+    test(
+      'a response that carried no goal list is recorded as no list',
+      () async {
+        // `GoalsForm.fromWire(null)` falls back to the ratified D-14 seed, and
+        // `fromWire([])` produces a form with NO codes at all — a screen that
+        // could never be submitted. So a null must stay a null here; a builder
+        // written the auto-vivifying way (`b.goals.replace(...)`) would turn it
+        // into an empty list.
+        stubState(
+          onboardingStateFixture(
+            cycleProvided: true,
+            goals: const <String, bool>{'manage_symptoms': true},
+          ),
+        );
+        final container = _container(repo);
+        final before = await _settled(container);
+        // Premise: there IS a list to lose.
+        expect(before.state.goals, isNotNull);
+
+        _notifier(container).recordGoalsSaved(null);
+
+        expect(
+          container.read(onboardingFlowControllerProvider).value!.state.goals,
+          isNull,
+        );
+      },
+    );
+
+    test('recording before the resume read lands changes nothing', () async {
+      // The controller-shape rule's other half, the same way `goTo` states it:
+      // an action on an unsettled controller is a no-op, never a write the
+      // load then clobbers.
+      when(repo.getState).thenAnswer((_) async {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        return Fresh(onboardingStateFixture(lastPeriodStart: Date(2026, 4, 1)));
+      });
+      final container = _container(repo);
+
+      container.read(onboardingFlowControllerProvider);
+      _notifier(container).recordCycleSaved(Date(2026, 4, 6));
+      expect(
+        container.read(onboardingFlowControllerProvider),
+        isA<AsyncLoading<OnboardingFlow>>(),
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      // The resume answer wins, and the discarded record did not corrupt it.
+      expect(
+        container
+            .read(onboardingFlowControllerProvider)
+            .value!
+            .state
+            .lastPeriodStart,
+        Date(2026, 4, 1),
+      );
+      // Positive control: the SAME call, once settled, does move it — so the
+      // no-op above is a fact about the gate and not about an unwired method.
+      _notifier(container).recordCycleSaved(Date(2026, 4, 6));
+      expect(
+        container
+            .read(onboardingFlowControllerProvider)
+            .value!
+            .state
+            .lastPeriodStart,
+        Date(2026, 4, 6),
       );
     });
   });

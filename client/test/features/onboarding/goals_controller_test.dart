@@ -24,6 +24,8 @@
 // only as [GoalOption]'s copy and as the seed for the one case the wire cannot
 // answer — a response that carries no list at all.
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,8 +60,16 @@ class _SettledFlow extends OnboardingFlowController {
 
 /// One assembled screen-5 world.
 class _World {
-  _World({Map<String, bool>? goals, bool goalsProvided = false})
-    : repo = _MockOnboardingRepository() {
+  /// [keepFlowAlive] false leaves NOTHING watching the flow, so it is disposed
+  /// again the moment `GoalsController.build()` has read it — which is what a
+  /// screen test that mounts a step body without the shell already does
+  /// (`cycle_setup_screen_semantics_test.dart` via `onboardingStepHost`), and
+  /// what the app does when the shell itself goes.
+  _World({
+    Map<String, bool>? goals,
+    bool goalsProvided = false,
+    bool keepFlowAlive = true,
+  }) : repo = _MockOnboardingRepository() {
     container = ProviderContainer(
       overrides: <Override>[
         onboardingFlowControllerProvider.overrideWith(
@@ -79,7 +89,9 @@ class _World {
     // Both providers are autoDispose. A bare `read` disposes them as it
     // returns; a subscription is what a screen's `ref.watch` does.
     container.listen(goalsControllerProvider, (_, _) {});
-    container.listen(onboardingFlowControllerProvider, (_, _) {});
+    if (keepFlowAlive) {
+      container.listen(onboardingFlowControllerProvider, (_, _) {});
+    }
   }
 
   final _MockOnboardingRepository repo;
@@ -473,6 +485,90 @@ void main() {
       expect(calls, 1);
     },
   );
+
+  test('a save that lands after the FLOW is gone records nothing and throws '
+      'nothing', () async {
+    // The record is taken BEFORE this controller's own disposal gate, because
+    // the flow outlives the step — that is what makes the shell's Back safe
+    // during a save (`onboarding_back_navigation_test.dart`). But the flow is
+    // `autoDispose` too, and it can be the one that goes: here nothing watches
+    // it, which is exactly the shape a screen test using `onboardingStepHost`
+    // has and what the app has once the shell is gone.
+    //
+    // Writing to a disposed notifier throws, and this write sits OUTSIDE
+    // `submit`'s try — so without `_recordSaved`'s own `ref.mounted` gate it
+    // escapes as an unhandled async error. Nothing is lost by declining the
+    // record: the next mount of `/onboarding` re-reads `GET /onboarding/state`,
+    // whose cache the write invalidated.
+    final world = _World(keepFlowAlive: false);
+
+    // The save is held OPEN, because the disposal has to happen inside the
+    // request: `submit` reads the flow notifier before its `await` (which
+    // resurrects the provider), and it is between that read and the response
+    // landing that nothing is watching it.
+    final Completer<GoalsResponse> pendingSave = Completer<GoalsResponse>();
+    when(
+      () => world.repo.saveGoals(codes: any(named: 'codes')),
+    ).thenAnswer((_) => pendingSave.future);
+
+    expect(
+      world.form.selectedCodes,
+      isNotEmpty,
+      reason: 'premise: there is an answer to save',
+    );
+
+    // The error handler is attached IMMEDIATELY, so a throw is captured rather
+    // than escaping to the test zone as an unhandled async error. An escaped
+    // one reddens the test as a raw crash, which under the mutation-harness
+    // rule cannot be told apart from a build-time failure — the assertion has
+    // to be the thing that fails.
+    Object? escaped;
+    final Future<void> pending = world.notifier.submit().catchError((
+      Object error,
+    ) {
+      escaped = error;
+    });
+
+    // autoDispose is not synchronous — it runs on a later turn — so the gap is
+    // what makes the assertion below a fact rather than a race.
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(
+      world.container.exists(onboardingFlowControllerProvider),
+      isFalse,
+      reason:
+          'PREMISE: nothing is watching the flow, so it must be gone by the '
+          'time the response lands — that is the state the gate is for',
+    );
+
+    pendingSave.complete(
+      goalsResponseFixture(const <String, bool>{
+        'manage_symptoms': false,
+        'understand_hormones': false,
+        'plan_fertility': false,
+        'prepare_appointments': false,
+        'just_curious': true,
+      }),
+    );
+
+    await pending;
+
+    // THE CONTROL for the assertion below, and it has to come first: an
+    // `escaped == null` on its own is satisfied by a `submit` that never ran at
+    // all. These three say the continuation ran to the end and did everything
+    // the save does.
+    expect(world.form.selectedCodes, <String>['just_curious']);
+    expect(world.form.submitting, isFalse);
+    expect(world.form.failure, isNull);
+
+    // The record sits OUTSIDE `submit`'s try, so without `_recordSaved`'s own
+    // gate this is where the disposed-notifier `StateError` shows up.
+    expect(
+      escaped,
+      isNull,
+      reason: 'recording onto a flow that has gone must decline, not throw',
+    );
+  });
 
   test('a rejection is dropped as soon as the user answers again', () async {
     final world = _World()..rejectSave(const NetworkFailure());

@@ -1,7 +1,10 @@
 import 'dart:async';
 
+import 'package:built_collection/built_collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lumen/api/model/date.dart';
+import 'package:lumen/api/model/goal_selection.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
@@ -21,6 +24,12 @@ import 'package:lumen/features/onboarding/data/onboarding_repository.dart';
 /// (`lastPeriodStart`, `goals`, `hormones`, `notifications`), so a flow that
 /// carried only the landing step would send each of those five tasks back to
 /// the network for data the shell has already read.
+///
+/// It is the resume read **kept current**: a step write replaces the part of it
+/// that write stored, through [OnboardingFlowController.recordCycleSaved] and
+/// its siblings. Every step controller is `autoDispose` and every step past the
+/// first has a back affordance, so this value is what a returning step prefills
+/// from — see that controller for why it has to move.
 @immutable
 class OnboardingFlow {
   const OnboardingFlow({
@@ -47,13 +56,14 @@ class OnboardingFlow {
 
   OnboardingFlow copyWith({
     OnboardingStep? step,
+    OnboardingStateResponse? state,
     bool? submitting,
     Failure? failure,
     bool clearFailure = false,
   }) {
     return OnboardingFlow(
       step: step ?? this.step,
-      state: state,
+      state: state ?? this.state,
       submitting: submitting ?? this.submitting,
       failure: clearFailure ? null : (failure ?? this.failure),
     );
@@ -199,6 +209,76 @@ class OnboardingFlowController extends Notifier<AsyncValue<OnboardingFlow>> {
   void back() {
     final step = state.value?.step.previous;
     if (step != null) goTo(step);
+  }
+
+  // ── Refreshing what the server holds ──────────────────────────────────────
+
+  /// Records the anchor `POST /onboarding/cycle` stored (step 3).
+  ///
+  /// Called after **every** successful save — a warned one, and one whose step
+  /// the user has already walked away from. See [_recordSaved] for why the
+  /// caller must not put its own disposal gate in front of this.
+  void recordCycleSaved(Date? lastPeriodStart) {
+    _recordSaved((b) => b..lastPeriodStart = lastPeriodStart);
+  }
+
+  /// Records the goal set `POST /onboarding/goals` stored (step 5).
+  ///
+  /// [goals] is the response's list exactly as it arrived, `null` included: a
+  /// null means the wire carried no list, and `GoalsForm.fromWire` reads that
+  /// the same way whether it comes from here or from the resume read.
+  void recordGoalsSaved(BuiltList<GoalSelection>? goals) {
+    _recordSaved((b) => b..goals = goals?.toBuilder());
+  }
+
+  /// Replaces the flow's copy of `GET /onboarding/state` with [update] applied.
+  ///
+  /// **Why this exists.** Every step controller is `autoDispose` and the shell
+  /// draws a back affordance on every step past the first, so leaving a step
+  /// disposes its controller and returning **rebuilds** it — out of
+  /// [OnboardingFlow.state]. Left at the resume read, a step the user had
+  /// already written re-seeded from pre-save data; `autoDispose` causes that
+  /// rather than preventing it.
+  ///
+  /// **Why the write's response and not a re-read.** Each step's 200 is the
+  /// server's own re-read of the stored rows, not an echo of the request, so it
+  /// already answers "what does the server hold now" — including for fields the
+  /// request never sent. A second `GET /onboarding/state` would cost a round
+  /// trip (the write invalidates that cache key, so it could not be served from
+  /// cache) and would add a failure surface *after* a successful save: a failed
+  /// re-read would either leave the state exactly as stale as before or take
+  /// away a step the user has just completed.
+  ///
+  /// **What it deliberately does not touch.**
+  ///  * The `*Provided` booleans. `resumeStepFrom` reads them once, from
+  ///    [_load], and nothing in the app reads them again — so a value written
+  ///    here would be a claim no behaviour could hold. Not writing them also
+  ///    keeps the resume and the router's gate exactly as they were.
+  ///  * Screen 4. `OnboardingStateResponse` carries `baselineProvided` and no
+  ///    baseline projection at all, so there is nothing here for that step to
+  ///    record; it prefills from `GET /me`, which its own write invalidates.
+  ///
+  /// **Two gates, and they guard different lifetimes.** A step controller's
+  /// own `ref.mounted` must NOT gate the call into here: the step is disposed
+  /// the moment the user taps Back, which the shell offers throughout a save,
+  /// and the flow it is recording onto outlives it. So the caller records
+  /// first and gates its own writes afterwards, and the gates here are:
+  ///  * `!ref.mounted` — the SHELL is gone, so there is no flow left to update
+  ///    and `state =` would throw. Nothing is lost by returning: the next mount
+  ///    of `/onboarding` re-reads `GET /onboarding/state`, whose cache the write
+  ///    invalidated.
+  ///  * a null value — the resume read has not landed, on the same terms as
+  ///    [goTo]: writing one would be a guess the load is about to overwrite.
+  ///
+  /// **T12 and T13 each add one method above**, `hormones` and `notifications`,
+  /// built the same way out of their own response's list.
+  void _recordSaved(void Function(OnboardingStateResponseBuilder) update) {
+    if (!ref.mounted) return;
+    final flow = state.value;
+    if (flow == null) return;
+    state = AsyncValue<OnboardingFlow>.data(
+      flow.copyWith(state: flow.state.rebuild(update)),
+    );
   }
 
   // ── Finishing ─────────────────────────────────────────────────────────────

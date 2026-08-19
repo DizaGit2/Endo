@@ -262,9 +262,11 @@ class GoalsForm {
 /// The list is read **once**, with `ref.read` rather than `ref.watch`, and that
 /// is deliberate: re-seeding from a later flow change would discard whatever
 /// the user had toggled — the same rule screen 4 applies to its text
-/// controllers. The flow's `state` member never changes after the resume read
-/// (`OnboardingFlow.copyWith` carries it through), but its step and failure do,
-/// and a watch would rebuild this form on both.
+/// controllers. Every member of the flow moves — the step, the failure, and
+/// since P4b-T8b the `state` this very controller records its own save onto —
+/// and a watch would rebuild this form on all three. The refresh is for the
+/// NEXT build of this controller, after the user has left the step and come
+/// back to it; it must not reach the one that made the save.
 ///
 /// `autoDispose`, because the form holds the user's own answers and the house
 /// rule is that such state must not outlive the screen showing it.
@@ -326,7 +328,21 @@ class GoalsController extends Notifier<GoalsForm> {
     // attempt they are watching has already failed.
     state = form.copyWith(submitting: true, clearFailure: true);
 
+    // Read BEFORE the await, and held across it, FOR THE RECORD ONLY. `ref.read`
+    // on a disposed controller throws, and this one can be disposed while the
+    // request is open: the shell's back affordance is not gated on
+    // `submitting`, so Back mid-save is an ordinary gesture.
+    //
+    // Everything else keeps reading the notifier fresh through `ref` — see
+    // `next()` below. A held reference does NOT resurrect a provider that has
+    // since been disposed, and using one for navigation would turn a
+    // self-healing `ref.read` into a throw.
+    final OnboardingFlowController flowForRecord = ref.read(
+      onboardingFlowControllerProvider.notifier,
+    );
+
     List<GoalChoice>? saved;
+    BuiltList<GoalSelection>? savedOnTheWire;
     Failure? rejected;
     try {
       final response = await ref
@@ -335,7 +351,8 @@ class GoalsController extends Notifier<GoalsForm> {
       // The 200 is the server's RE-READ of the stored rows rather than an echo
       // of the request, so it is the best answer to "what does the server hold
       // now" — including for a code this build cannot draw.
-      saved = GoalsForm.fromWire(response.goals).goals;
+      savedOnTheWire = response.goals;
+      saved = GoalsForm.fromWire(savedOnTheWire).goals;
     } on Failure catch (failure) {
       rejected = failure;
     } catch (_) {
@@ -347,6 +364,22 @@ class GoalsController extends Notifier<GoalsForm> {
       rejected = const UnknownFailure();
     }
 
+    // BEFORE the disposal gate, deliberately. The shell's copy of
+    // `GET /onboarding/state` still holds the set this save replaced, and this
+    // controller is autoDispose: walking on to step 6 and back would rebuild
+    // the form out of that stale list. On a FULL REPLACE endpoint that is not a
+    // stale view — the array IS the next request's body, so the following
+    // Continue would store the answer the user just changed as deselected.
+    //
+    // Putting this behind `!ref.mounted` would leave exactly that loss in a
+    // narrower window: Back during the save disposes this controller, the 200
+    // lands anyway, and the user then walks back through step 5 to reach 6 and
+    // 7 with the pre-save chips on screen. The flow outlives the step — it is
+    // the SHELL's state — so recording onto it is valid precisely when this
+    // controller is gone. `_recordSaved` has the gate that matters, on the
+    // flow's own lifetime.
+    if (rejected == null) flowForRecord.recordGoalsSaved(savedOnTheWire);
+
     if (!ref.mounted) return;
 
     if (rejected != null) {
@@ -356,6 +389,11 @@ class GoalsController extends Notifier<GoalsForm> {
 
     state = state.copyWith(goals: saved, submitting: false, clearFailure: true);
 
+    // Read fresh, not through the held reference above: this line is reached
+    // only with THIS controller still mounted, and a fresh `ref.read` rebuilds
+    // the flow if it has gone in the meantime instead of throwing on a stale
+    // notifier. That is the behaviour this call had before the record existed,
+    // and it is preserved deliberately.
     ref.read(onboardingFlowControllerProvider.notifier).next();
   }
 }
