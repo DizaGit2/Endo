@@ -183,6 +183,42 @@ void main() {
       expect(form.touchedMood, isTrue);
       expect(form.canSubmit, isTrue);
     });
+
+    // Fix round 1, M-2: mood gets the same clear gesture as pain — the
+    // justification for pain's own clear gesture ("a mistaken tap is
+    // permanent, and the endpoint has no clear affordance") applies
+    // verbatim to mood, and the first shipped version missed it.
+    test('setMood(null) — the clear gesture — untouches mood again, the '
+        'mood mirror of the pain clear test above', () {
+      container = buildContainer();
+      notifier(container).setMood(3);
+      expect(state(container).canSubmit, isTrue);
+
+      notifier(container).setMood(null);
+      final cleared = state(container);
+      expect(cleared.mood, isNull);
+      expect(cleared.touchedMood, isFalse);
+      expect(
+        cleared.canSubmit,
+        isFalse,
+        reason:
+            'nothing else was touched — clearing the only touched '
+            'field must disable the CTA again',
+      );
+    });
+
+    test('clearing mood leaves the CTA enabled if pain is still touched', () {
+      container = buildContainer();
+      notifier(container).setMood(2);
+      notifier(container).setPain(5);
+
+      notifier(container).setMood(null);
+
+      final form = state(container);
+      expect(form.touchedMood, isFalse);
+      expect(form.touchedPain, isTrue);
+      expect(form.canSubmit, isTrue);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -566,4 +602,85 @@ void main() {
       verifyNever(() => cycleRepo.getCalendarMonth(any()));
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Fix round 1, I-3 — the `!ref.mounted` guard's own behaviour, pinned
+  // -------------------------------------------------------------------------
+  //
+  // The reviewer's own instruction: do NOT hoist `_refreshDependents()`
+  // ahead of the `!ref.mounted` check — `ref.invalidate` on a disposed ref
+  // throws, so the guard is correct as written and stays exactly where it
+  // is. I-3's real fix is at the WIDGET layer (`PopScope` + `enableDrag:
+  // false`), which prevents the container from EVER being disposed
+  // mid-write through this screen's own UI. This test pins the residual,
+  // unchanged controller behaviour for the case that guard exists to
+  // protect against — a disposed container mid-flight — so a future change
+  // that hoists the invalidation (and reintroduces the throw) reddens here
+  // rather than shipping silently.
+
+  test(
+    'a container disposed mid-write settles without throwing, and '
+    'refreshes nothing — this is the documented limitation the PopScope '
+    'fix prevents from being reachable through the sheet\'s own UI',
+    () async {
+      final localToday = _MockServerTodayRepository();
+      final localCheckin = _MockCheckinRepository();
+      final localMe = _MockMeRepository();
+      final localCycle = _MockCycleRepository();
+      when(localToday.today).thenAnswer((_) async => Date(2026, 4, 20));
+      final release = Completer<QuickCheckinResponse>();
+      when(
+        () => localCheckin.quickCheckin(
+          pain: any(named: 'pain'),
+          mood: any(named: 'mood'),
+          touchedPain: any(named: 'touchedPain'),
+          touchedMood: any(named: 'touchedMood'),
+          fallbackDay: any(named: 'fallbackDay'),
+        ),
+      ).thenAnswer((_) => release.future);
+
+      // A fully independent container — NOT `buildContainer()` — because
+      // this test disposes it itself; `buildContainer()` also registers an
+      // `addTearDown(c.dispose)`, and a second dispose would throw.
+      final localContainer = ProviderContainer(
+        overrides: <Override>[
+          checkinRepositoryProvider.overrideWithValue(localCheckin),
+          serverTodayRepositoryProvider.overrideWithValue(localToday),
+          cycleRepositoryProvider.overrideWithValue(localCycle),
+          meRepositoryProvider.overrideWithValue(localMe),
+        ],
+      );
+      localContainer.listen(quickCheckinControllerProvider, (_, _) {});
+
+      localContainer.read(quickCheckinControllerProvider.notifier).setPain(4);
+      final submitFuture = localContainer
+          .read(quickCheckinControllerProvider.notifier)
+          .submit();
+      await settle();
+
+      // The sheet (and everything scoped to it) tears down mid-write —
+      // the scenario `PopScope` now prevents a real user from reaching
+      // through this screen's own scrim/back/CTA, but which this test
+      // still exercises directly at the container level.
+      localContainer.dispose();
+
+      release.complete(QuickCheckinResponse((b) => b..pain = 4));
+
+      // Capture-then-assert, not `completes`/`fail()` — neither converts a
+      // REJECTION into a `TestFailure` with an `Expected:`/`Actual:` block.
+      Object? thrown;
+      await submitFuture.then<void>((_) {}, onError: (Object e) => thrown = e);
+      expect(
+        thrown,
+        isNull,
+        reason:
+            '`ref.invalidate` on a disposed ref throws — the '
+            '`!ref.mounted` guard exists precisely so this path never '
+            'reaches it',
+      );
+
+      verifyZeroInteractions(localMe);
+      verifyZeroInteractions(localCycle);
+    },
+  );
 }

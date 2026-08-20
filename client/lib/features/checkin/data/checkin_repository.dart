@@ -60,7 +60,7 @@ class CheckinRepository {
   /// omittable) or if the write's outcome is ambiguous (see below).
   ///
   /// **`cachedWrite`'s own `invalidateKeys` is evaluated eagerly, before
-  /// `write` runs** (`cached_query.dart:209`), so it cannot see the
+  /// `write` runs** (`cached_query.dart:210`), so it cannot see the
   /// response's `day` at all — this method invalidates by hand afterward,
   /// the shape `cycle_repository.dart:276-280`'s delete-404 path already
   /// uses for the same reason.

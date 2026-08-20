@@ -574,6 +574,32 @@ void main() {
       expect(find.byType(QuickCheckinScreen), findsOneWidget);
       expect(find.byType(LumenBottomSheet), findsOneWidget);
     });
+
+    // Fix round 1, I-3: drag-to-dismiss cannot be gated per-attempt (see
+    // `showLumenBottomSheet`'s own dartdoc — `BottomSheet`'s `onClosing`
+    // calls `Navigator.pop` directly, bypassing `PopScope`), so this call
+    // site closes it permanently instead. A downward drag on the open
+    // sheet must do nothing.
+    testWidgets('the opened sheet does not respond to a downward drag — '
+        'enableDrag: false at this call site', (tester) async {
+      await _pump(tester, () => _FreshDashboard(_view()));
+
+      await tester.tap(find.text('Mood'));
+      await tester.pumpAndSettle();
+      expect(find.byType(LumenBottomSheet), findsOneWidget);
+
+      await tester.drag(find.byType(LumenBottomSheet), const Offset(0, 400));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byType(LumenBottomSheet),
+        findsOneWidget,
+        reason:
+            'a drag gesture must not dismiss screen 9\'s sheet at '
+            'all — enableDrag: false removes the vertical-drag '
+            'recognizer entirely, regardless of submitting state',
+      );
+    });
   });
 
   // ---------------------------------------------------------------------

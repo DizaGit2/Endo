@@ -26,7 +26,7 @@ late int taps;
 
 Future<void> _pumpRow(
   WidgetTester tester, {
-  bool selected = false,
+  bool? selected = false,
   bool enabled = true,
   EdgeInsetsGeometry? padding,
   double? borderRadius,
@@ -108,6 +108,26 @@ void main() {
     );
   });
 
+  testWidgets(
+    'selected: null paints the SAME unselected fill as selected: false — '
+    'fix round 1, M-3: a launcher with no selection concept must not be '
+    'visually indistinguishable from "unselected", only ANNOUNCED '
+    'differently',
+    (tester) async {
+      await _pumpRow(tester, selected: false);
+      final unselected = _decoration(tester);
+
+      await _pumpRow(tester, selected: null);
+      final nullSelected = _decoration(tester);
+
+      expect(nullSelected.color, unselected.color);
+      expect(
+        (nullSelected.border! as Border).top.color,
+        (unselected.border! as Border).top.color,
+      );
+    },
+  );
+
   testWidgets('takes its colours from the dark palette in dark mode', (
     tester,
   ) async {
@@ -126,10 +146,7 @@ void main() {
       _box(tester).padding,
       const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     );
-    expect(
-      _decoration(tester).borderRadius,
-      BorderRadius.circular(12),
-    );
+    expect(_decoration(tester).borderRadius, BorderRadius.circular(12));
   });
 
   testWidgets('keeps screen 4\'s tighter geometry when it asks for it: 12/11 '

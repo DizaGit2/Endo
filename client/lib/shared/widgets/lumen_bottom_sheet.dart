@@ -36,8 +36,9 @@ Color scrimFor(Brightness brightness) =>
 /// [LumenBottomSheet], which scrolls its content and insets it past the
 /// keyboard so a caller never has to.
 ///
-/// [isDismissible] gates BOTH the scrim tap and the drag, so a caller that
-/// needs a decision cannot be escaped by a swipe instead.
+/// [isDismissible] gates the scrim tap (and, by default, the drag too — see
+/// [enableDrag]), so a caller that needs a decision cannot be escaped by a
+/// tap outside it.
 ///
 /// **`useRootNavigator: true` (P4b-T18).** `screen-mockups.md:354` is
 /// canonical for this screen and says verbatim: *"Bottom nav: belongs to Home
@@ -46,17 +47,35 @@ Color scrimFor(Brightness brightness) =>
 /// tappable and semantically live behind the scrim — a spec deviation, not a
 /// design choice. Mounting on the app's root Navigator instead puts the sheet
 /// above the whole shell, nav included.
+///
+/// **[enableDrag] defaults to mirroring [isDismissible]** (the original,
+/// still-correct behaviour for every caller that does not pass it), but is
+/// its own parameter as of P4b-T18 fix round 1 — a caller with content that
+/// can be mid-WRITE (screen 9's Save) needs the scrim tap gateable
+/// PER-ATTEMPT (via a [PopScope] the caller wraps its own content in —
+/// `Navigator.maybePop`, which the barrier's tap and the system back gesture
+/// both route through, consults `PopScope.canPop` freshly on every attempt)
+/// while drag CANNOT be gated that way: `BottomSheet`'s own `onClosing`
+/// calls `Navigator.pop` directly (`bottom_sheet.dart`'s `_ModalBottomSheet
+/// .build`), which bypasses `popDisposition`/`PopScope` entirely — measured
+/// against the Flutter SDK source, not assumed. `enableDrag` is a plain
+/// `final` field on `ModalBottomSheetRoute`, fixed for the sheet's whole
+/// life once `showModalBottomSheet` constructs it, so there is no supported
+/// way to gate drag PER-ATTEMPT at all; a caller in this situation passes
+/// `enableDrag: false` instead, permanently, and relies on `PopScope` for
+/// the tap/back paths that CAN be gated live.
 Future<T?> showLumenBottomSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool isDismissible = true,
+  bool? enableDrag,
 }) {
   return showModalBottomSheet<T>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
     isDismissible: isDismissible,
-    enableDrag: isDismissible,
+    enableDrag: enableDrag ?? isDismissible,
     useSafeArea: true,
     // The sheet paints its own surface and its own top-only corners, so the
     // route's Material must not paint a second (square-cornered, tinted) one

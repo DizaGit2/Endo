@@ -33,7 +33,7 @@ late int taps;
 /// A two-line row, the shape screen 5 draws: a title over a sub-description.
 Future<void> _pumpRow(
   WidgetTester tester, {
-  bool selected = false,
+  bool? selected = false,
   bool enabled = true,
   List<Widget> extra = const <Widget>[],
 }) {
@@ -98,23 +98,24 @@ void main() {
     },
   );
 
-  testWidgetsWithSemantics('a descendant added later is announced, not dropped', (
-    tester,
-  ) async {
-    // Premise / control: without the badge the row announces two lines.
-    await _pumpRow(tester);
-    expect(_announced(tester).label, isNot(contains('3 logged')));
+  testWidgetsWithSemantics(
+    'a descendant added later is announced, not dropped',
+    (tester) async {
+      // Premise / control: without the badge the row announces two lines.
+      await _pumpRow(tester);
+      expect(_announced(tester).label, isNot(contains('3 logged')));
 
-    await _pumpRow(tester, extra: const <Widget>[Text('3 logged')]);
+      await _pumpRow(tester, extra: const <Widget>[Text('3 logged')]);
 
-    // Under `excludeSemantics: true` this string would be nowhere in the
-    // semantics tree and nothing would have failed. That is the whole reason
-    // the workaround did not survive the matcher fix.
-    expect(
-      _announced(tester).label,
-      'Manage symptoms\nFind pain & flare patterns\n3 logged',
-    );
-  });
+      // Under `excludeSemantics: true` this string would be nowhere in the
+      // semantics tree and nothing would have failed. That is the whole reason
+      // the workaround did not survive the matcher fix.
+      expect(
+        _announced(tester).label,
+        'Manage symptoms\nFind pain & flare patterns\n3 logged',
+      );
+    },
+  );
 
   // -------------------------------------------------------------------------
   // Selected
@@ -129,6 +130,27 @@ void main() {
     await _pumpRow(tester, selected: true);
     expect(_announced(tester).flagsCollection.isSelected, Tristate.isTrue);
   });
+
+  testWidgetsWithSemantics(
+    'selected: null OMITS the selected flag entirely — fix round 1, M-3: a '
+    'pure launcher with no selection concept must not announce "not '
+    'selected" (the bug the dashboard\'s Mood tile shipped with)',
+    (tester) async {
+      await _pumpRow(tester, selected: null);
+
+      expect(
+        _announced(tester).flagsCollection.isSelected,
+        Tristate.none,
+        reason:
+            'Semantics(selected: null) never calls '
+            '`config.isSelected = …` at all (measured against the Flutter '
+            'SDK, rendering/object.dart: `if (_properties.selected != '
+            'null)`), so the flag is not merely false — it is ABSENT, and '
+            'a screen reader says nothing about selection rather than '
+            '"not selected".',
+      );
+    },
+  );
 
   // -------------------------------------------------------------------------
   // Enabled, and the action behind the announcement

@@ -76,11 +76,20 @@ class LumenSelectableRow extends StatelessWidget {
     super.key,
   });
 
-  /// Whether this row is the/an answer currently chosen.
+  /// Whether this row is the/an answer currently chosen — or `null` for a
+  /// row that has no selection concept at all (a pure LAUNCHER, e.g. the
+  /// dashboard's Mood quick-log tile, which opens screen 9 rather than
+  /// toggling any state of its own).
   ///
-  /// Drawn as the accent fill and outline, and announced as
-  /// `SemanticsFlag.isSelected` — the flag a screen reader turns into "selected".
-  final bool selected;
+  /// `true`/`false` draw the accent fill/outline and announce
+  /// `SemanticsFlag.isSelected` — the flag a screen reader turns into
+  /// "selected"/"not selected". `null` draws the SAME unselected fill
+  /// (there is nothing else to draw for a control with no selection state)
+  /// but OMITS the semantics flag entirely, rather than passing `false` and
+  /// having a screen reader announce "not selected" for a button that was
+  /// never selectable in the first place (P4b-T18 fix round 1: this is
+  /// exactly the bug a launcher passing `selected: false` shipped with).
+  final bool? selected;
 
   /// Invoked on tap, and on an assistive technology's "activate" gesture.
   ///
@@ -107,6 +116,12 @@ class LumenSelectableRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
     final VoidCallback? tap = enabled ? onTap : null;
+    // A row with no selection concept (selected: null) paints exactly like
+    // an unselected one — there is nothing else honest to draw — but the
+    // Semantics flag below is passed the RAW nullable value, not this
+    // fallback, so `null` omits the flag entirely rather than announcing
+    // "not selected".
+    final bool isSelectedVisually = selected ?? false;
 
     return MergeSemantics(
       child: Semantics(
@@ -121,8 +136,10 @@ class LumenSelectableRow extends StatelessWidget {
             width: double.infinity,
             padding: padding,
             decoration: BoxDecoration(
-              color: selected ? c.accentSoft : c.input,
-              border: Border.all(color: selected ? c.accent : c.border),
+              color: isSelectedVisually ? c.accentSoft : c.input,
+              border: Border.all(
+                color: isSelectedVisually ? c.accent : c.border,
+              ),
               borderRadius: BorderRadius.circular(borderRadius),
             ),
             child: child,

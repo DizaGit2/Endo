@@ -55,93 +55,108 @@ class QuickCheckinScreen extends ConsumerWidget {
     final controller = ref.read(quickCheckinControllerProvider.notifier);
     final bannerMessage = _bannerMessage(form.failure);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const LumenSectionLabel('Daily check-in'),
-        const SizedBox(height: 4),
-        Text(
-          "How's today?",
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w500,
-            color: c.ink,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '15 seconds. Add detail later.',
-          style: TextStyle(fontSize: 11, color: c.muted),
-        ),
-        const SizedBox(height: 18),
-        // announce: false — LumenIntensityScale carries its OWN
-        // semanticsLabel ('Pain level') on the control below, so an
-        // announced caption here would be a second, duplicate "Pain level"
-        // in the reading order.
-        const LumenFieldLabel('Pain level', announce: false),
-        const SizedBox(height: 8),
-        LumenIntensityScale(
-          value: form.pain,
-          enabled: !form.submitting,
-          semanticsLabel: 'Pain level',
-          onChanged: controller.setPain,
-        ),
-        const SizedBox(height: 18),
-        // announce: true (default) — no single control below carries "Mood"
-        // as its own name; each tile announces its OWN mood word instead.
-        const LumenFieldLabel('Mood'),
-        const SizedBox(height: 8),
-        _MoodGrid(
-          selected: form.mood,
-          enabled: !form.submitting,
-          onSelect: controller.setMood,
-        ),
-        const SizedBox(height: 18),
-        if (bannerMessage != null) ...[
-          LumenErrorBanner(message: bannerMessage),
-          const SizedBox(height: 16),
-        ],
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: (!form.canSubmit || form.submitting)
-                ? null
-                : () async {
-                    final saved = await controller.submit();
-                    if (saved && context.mounted) {
-                      Navigator.of(context).pop();
-                    }
-                  },
-            style: FilledButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              textStyle: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-              elevation: 0,
+    // Fix round 1, I-3. `canPop: !form.submitting` blocks the scrim tap AND
+    // the system/predictive back gesture while a write is in flight — both
+    // route through `Navigator.maybePop`, which consults this freshly on
+    // every attempt (`showLumenBottomSheet`'s own dartdoc has the measured
+    // mechanism). Drag-to-dismiss is closed a DIFFERENT way, at the call
+    // site (`dashboard_screen.dart`'s `enableDrag: false`) — PopScope cannot
+    // reach it; see the same dartdoc for why. Before this fix, dismissing
+    // the sheet mid-submit let the write commit while the dashboard kept
+    // rendering the pre-write pain/mood — including the "↓ vs yesterday"
+    // arithmetic — for the rest of the session, because `submit()`'s own
+    // `!ref.mounted` guard (correctly) returns before `_refreshDependents()`
+    // once the controller is gone.
+    return PopScope(
+      canPop: !form.submitting,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const LumenSectionLabel('Daily check-in'),
+          const SizedBox(height: 4),
+          Text(
+            "How's today?",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+              color: c.ink,
             ),
-            child: form.submitting
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: c.surface,
-                      semanticsLabel: 'Loading',
-                    ),
-                  )
-                : Text(
-                    form.failure != null
-                        ? kQuickCheckinRetryLabel
-                        : 'Save check-in',
-                  ),
           ),
-        ),
-      ],
+          const SizedBox(height: 4),
+          Text(
+            '15 seconds. Add detail later.',
+            style: TextStyle(fontSize: 11, color: c.muted),
+          ),
+          const SizedBox(height: 18),
+          // announce: false — LumenIntensityScale carries its OWN
+          // semanticsLabel ('Pain level') on the control below, so an
+          // announced caption here would be a second, duplicate "Pain level"
+          // in the reading order.
+          const LumenFieldLabel('Pain level', announce: false),
+          const SizedBox(height: 8),
+          LumenIntensityScale(
+            value: form.pain,
+            enabled: !form.submitting,
+            semanticsLabel: 'Pain level',
+            onChanged: controller.setPain,
+          ),
+          const SizedBox(height: 18),
+          // announce: true (default) — no single control below carries "Mood"
+          // as its own name; each tile announces its OWN mood word instead.
+          const LumenFieldLabel('Mood'),
+          const SizedBox(height: 8),
+          _MoodGrid(
+            selected: form.mood,
+            enabled: !form.submitting,
+            onSelect: controller.setMood,
+          ),
+          const SizedBox(height: 18),
+          if (bannerMessage != null) ...[
+            LumenErrorBanner(message: bannerMessage),
+            const SizedBox(height: 16),
+          ],
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: (!form.canSubmit || form.submitting)
+                  ? null
+                  : () async {
+                      final saved = await controller.submit();
+                      if (saved && context.mounted) {
+                        Navigator.of(context).pop();
+                      }
+                    },
+              style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                textStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+                elevation: 0,
+              ),
+              child: form.submitting
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: c.surface,
+                        semanticsLabel: 'Loading',
+                      ),
+                    )
+                  : Text(
+                      form.failure != null
+                          ? kQuickCheckinRetryLabel
+                          : 'Save check-in',
+                    ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -183,11 +198,15 @@ class _MoodGrid extends StatelessWidget {
   final bool enabled;
 
   /// Called with the WIRE ordinal of the tapped tile — `index + 1`, never a
-  /// bare list index. Mood is 1-based on the wire (D-08/D-11); pain is
-  /// 0-based. A grid built on the list index alone writes `low` (ordinal 1)
-  /// when the user tapped `tired` (ordinal 2) — a fabricated value that
-  /// looks completely real, and permanent. The `+ 1` below is the whole fix.
-  final ValueChanged<int> onSelect;
+  /// bare list index — or `null` when the user tapped the ALREADY-selected
+  /// tile, the clear gesture (fix round 1, M-2: mirrors
+  /// [LumenIntensityScale]'s own clear-to-null tap, so a mistaken mood tap
+  /// is reachable, not permanent, the same way a mistaken pain tap is).
+  /// Mood is 1-based on the wire (D-08/D-11); pain is 0-based. A grid built
+  /// on the list index alone writes `low` (ordinal 1) when the user tapped
+  /// `tired` (ordinal 2) — a fabricated value that looks completely real,
+  /// and permanent. The `+ 1` below is the whole fix for THAT hazard.
+  final ValueChanged<int?> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -207,7 +226,10 @@ class _MoodGrid extends StatelessWidget {
                 enabled: enabled,
                 selectedColor: c.accent,
                 unselectedColor: c.muted,
-                onTap: () => onSelect(index + 1),
+                // Tapping the ALREADY-selected tile clears it to `null`
+                // (the one gesture that can produce `null`); every other
+                // tile still reports its own wire ordinal.
+                onTap: () => onSelect(selected == index + 1 ? null : index + 1),
               ),
             ),
           ),
@@ -271,10 +293,23 @@ class _MoodTile extends StatelessWidget {
 /// exhaustive-by-construction mapping over the same 4-member scale
 /// [kMoodLabels] enumerates, so a fifth mood level would need this function
 /// updated deliberately rather than silently falling through.
+///
+/// **Fix round 1, M-4.** Material's `sentiment_*` family is a FIVE-point
+/// valence scale — `very_dissatisfied` / `dissatisfied` / `neutral` /
+/// `satisfied` / `very_satisfied` — and the ratified 4-member vocabulary
+/// `{low, tired, steady, bright}` (`definitions.md`'s 2026-07-08
+/// ratification block) does not make an affect JUDGEMENT about its middle
+/// value: "Steady" names a plateau, not a positive one. The first shipped
+/// version skipped `sentiment_neutral` and used `sentiment_satisfied` for
+/// "Steady" instead, which rendered a value the vocabulary is deliberately
+/// silent on as a positive judgement — the same "naming the middle of a
+/// scale is clinical inference" rule `LumenIntensityScale`'s own dartdoc
+/// states for pain applies here too. `sentiment_satisfied` is skipped
+/// instead, not `sentiment_neutral`.
 IconData _moodGlyph(int ordinal) => switch (ordinal) {
   1 => Icons.sentiment_very_dissatisfied, // Low    — mockup's ◔
   2 => Icons.sentiment_dissatisfied, // Tired  — mockup's ◐
-  3 => Icons.sentiment_satisfied, // Steady — mockup's ◑
+  3 => Icons.sentiment_neutral, // Steady — mockup's ◑
   4 => Icons.sentiment_very_satisfied, // Bright — mockup's ●
   _ => throw ArgumentError.value(ordinal, 'ordinal', 'must be 1..4'),
 };

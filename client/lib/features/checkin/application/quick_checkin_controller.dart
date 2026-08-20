@@ -162,9 +162,22 @@ class QuickCheckinController extends Notifier<QuickCheckinForm> {
   /// because doing so here would hide the exact off-by-one fabrication path
   /// the brief names (a selectable grid built on a bare list index writes
   /// `low` when the user tapped `tired`).
-  void setMood(int value) {
+  ///
+  /// `null` means the clear gesture fired — fix round 1, M-2: a mistaken
+  /// mood tap was permanent for the sheet's life (the only escape was
+  /// dismissing the sheet, which ALSO discarded a touched pain value), and
+  /// the justification for [setPain]'s own clear gesture applies verbatim
+  /// here — the endpoint has no clear affordance either way. Mirrors
+  /// [setPain] exactly, including collapsing "touched, cleared" and "never
+  /// touched" to `touchedMood: false` for the same reason.
+  void setMood(int? value) {
     if (state.submitting) return;
-    state = state.copyWith(mood: value, touchedMood: true, clearFailure: true);
+    state = state.copyWith(
+      mood: value,
+      clearMood: value == null,
+      touchedMood: value != null,
+      clearFailure: true,
+    );
   }
 
   // ── Submitting ────────────────────────────────────────────────────────

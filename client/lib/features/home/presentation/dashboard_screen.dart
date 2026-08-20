@@ -486,12 +486,14 @@ class _MoodCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 /// The mockup's `.q` quick-log tile — reused here as [LumenSelectableRow]
-/// with `selected: false` always: this is a LAUNCHER (it opens screen 9),
-/// never a toggle, so there is no selected state to draw. Reusing the shared
-/// row rather than hand-rolling a fourth token-styled tappable box gives this
-/// tile the same fill/border/`MergeSemantics` shape as every other row in the
-/// app for free, and its unselected colours (`c.input`/`c.border`) already
-/// match the mockup's idle `.q` exactly.
+/// with `selected: null` (fix round 1, M-3): this is a LAUNCHER (it opens
+/// screen 9), never a toggle, so there is no selected state to announce —
+/// `selected: false` shipped first and made a screen reader say "Mood, not
+/// selected, button" for a control that was never selectable to begin with.
+/// Reusing the shared row rather than hand-rolling a fourth token-styled
+/// tappable box gives this tile the same fill/border/`MergeSemantics` shape
+/// as every other row in the app for free, and its unselected colours
+/// (`c.input`/`c.border`) already match the mockup's idle `.q` exactly.
 ///
 /// A bare `Row` with one `Expanded` child in the caller, rather than sizing
 /// this tile itself — T20 adds a Symptom tile beside it, and the row is
@@ -504,11 +506,17 @@ class _MoodQuickLogTile extends StatelessWidget {
     final c = Theme.of(context).extension<LumenColors>()!;
 
     return LumenSelectableRow(
-      selected: false,
+      selected: null,
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
       borderRadius: 10,
       onTap: () => showLumenBottomSheet<void>(
         context: context,
+        // Fix round 1, I-3: drag CANNOT be gated per-attempt (see
+        // showLumenBottomSheet's own dartdoc) — permanently off for screen
+        // 9's sheet, whose Save can be a genuine in-flight write. The
+        // scrim/back paths stay gated live, via the PopScope
+        // QuickCheckinScreen itself wraps its content in while submitting.
+        enableDrag: false,
         builder: (_) => const QuickCheckinScreen(),
       ),
       child: Column(

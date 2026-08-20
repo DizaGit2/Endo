@@ -84,6 +84,72 @@ void main() {
   // -------------------------------------------------------------------------
 
   group('touched-only serialization — asserted on the WIRE PAYLOAD', () {
+    // Fix round 1, I-2. Every OTHER test in this group pairs an untouched
+    // field with a NULL value, which cannot tell "sends what the caller
+    // says was touched" apart from "sends whatever is non-null" — deleting
+    // either `if (touched…)` guard in `checkin_repository.dart` and
+    // replacing it with an unconditional assignment leaves every one of
+    // those tests green, because `b.pain = null` and "never touched b.pain"
+    // produce the IDENTICAL wire shape either way. These two tests pair a
+    // NON-NULL value with `touched…: false`, which is the one shape that
+    // actually distinguishes the two: only the EXPLICIT flag, never the
+    // value's nullness, may decide what is sent.
+    test('pain=7 with touchedPain:false is OMITTED — the wire decision is '
+        'driven by the touched FLAG, never by whether the value is '
+        'non-null', () async {
+      when(
+        () => api.checkinQuickPost(
+          quickCheckinRequest: any(named: 'quickCheckinRequest'),
+        ),
+      ).thenAnswer(apiSuccess(QuickCheckinResponse((b) => b..mood = 2)));
+
+      await repo.quickCheckin(
+        pain: 7,
+        mood: 2,
+        touchedPain: false,
+        touchedMood: true,
+        fallbackDay: DateTime(2026, 4, 20),
+      );
+
+      final wire = _wireMap(_capturedRequest(api));
+      expect(
+        wire.containsKey('pain'),
+        isFalse,
+        reason:
+            'pain=7 was never touched — an unconditional `b.pain = '
+            'pain;` would send it despite this flag, and only THIS test '
+            '(non-null value, untouched flag) can catch that regression',
+      );
+      expect(wire['mood'], 2);
+    });
+
+    test('mood=3 with touchedMood:false is OMITTED — the mood mirror of '
+        'the pain test above', () async {
+      when(
+        () => api.checkinQuickPost(
+          quickCheckinRequest: any(named: 'quickCheckinRequest'),
+        ),
+      ).thenAnswer(apiSuccess(QuickCheckinResponse((b) => b..pain = 5)));
+
+      await repo.quickCheckin(
+        pain: 5,
+        mood: 3,
+        touchedPain: true,
+        touchedMood: false,
+        fallbackDay: DateTime(2026, 4, 20),
+      );
+
+      final wire = _wireMap(_capturedRequest(api));
+      expect(wire['pain'], 5);
+      expect(
+        wire.containsKey('mood'),
+        isFalse,
+        reason:
+            'mood=3 was never touched — an unconditional `b.mood = '
+            'mood;` would send it despite this flag',
+      );
+    });
+
     test('an untouched pain field is ABSENT from the serialised JSON — '
         'touching only mood', () async {
       when(
