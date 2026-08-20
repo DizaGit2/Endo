@@ -275,25 +275,21 @@ void main() {
   // accessibility affordance that had ZERO coverage, because the only route to
   // it was through this dialog.
 
-  testWidgetsWithSemantics(
-    'A failed save announces itself via a live region',
-    (tester) async {
-      await _pump(tester, _SaveFailsProfileController.new);
+  testWidgetsWithSemantics('A failed save announces itself via a live region', (
+    tester,
+  ) async {
+    await _pump(tester, _SaveFailsProfileController.new);
 
-      await tester.tap(find.bySemanticsLabel('Edit'));
-      await tester.pumpAndSettle();
-      expect(find.text('Edit display name'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Edit'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit display name'), findsOneWidget);
 
-      await tester.enterText(find.byType(TextField), 'Maya Nueva');
-      await tester.tap(find.text('Save'));
-      await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Maya Nueva');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
 
-      expectLiveRegion(
-        tester,
-        'Could not save your changes. Please try again.',
-      );
-    },
-  );
+    expectLiveRegion(tester, 'Could not save your changes. Please try again.');
+  });
 
   testWidgets('Saving a new name calls the controller with the trimmed text', (
     tester,
@@ -353,4 +349,15 @@ void main() {
     // User card + Sign out row.
     expect(find.byIcon(Icons.chevron_right), findsNWidgets(2));
   });
+
+  testWidgets(
+    'no decorative back chevron — fix round 1, M6 (P4b-T17): this screen '
+    'is the More branch\'s ROOT since R-19, and a chevron implying "back" '
+    'promises a destination that does not exist for a root',
+    (tester) async {
+      await _pump(tester, _FreshProfileController.new);
+
+      expect(find.byIcon(Icons.chevron_left), findsNothing);
+    },
+  );
 }

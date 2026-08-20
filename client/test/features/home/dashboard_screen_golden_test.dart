@@ -8,6 +8,7 @@ import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/time/greeting_clock.dart';
 import 'package:lumen/features/home/application/dashboard_controller.dart';
 import 'package:lumen/features/home/presentation/dashboard_screen.dart';
+import 'package:lumen/shared/widgets/lumen_phase_unavailable.dart';
 
 import '../../support/harness.dart';
 
@@ -29,6 +30,10 @@ void main() {
     todayPain: 2,
     todayMood: 4,
     yesterdayPain: 3,
+    // The real P4a envelope (every account answers this today), not null —
+    // fix round 1, M5. Renders identically either way (the same neutral
+    // copy), but the fixture should say what production actually sends.
+    phaseUnavailableReason: kPhaseEngineNotImplemented,
   );
 
   goldenTestLightAndDark(

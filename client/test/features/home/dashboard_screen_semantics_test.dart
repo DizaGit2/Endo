@@ -12,7 +12,6 @@
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/date.dart';
@@ -25,6 +24,7 @@ import 'package:lumen/features/cycle/data/cycle_repository.dart';
 import 'package:lumen/features/home/application/dashboard_controller.dart';
 import 'package:lumen/features/home/presentation/dashboard_screen.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
+import 'package:lumen/shared/widgets/lumen_phase_unavailable.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../../support/harness.dart';
@@ -75,6 +75,7 @@ DashboardView _view({
   int? todayPain,
   int? todayMood,
   int? yesterdayPain,
+  String? phaseUnavailableReason,
 }) {
   return DashboardView(
     today: today ?? DateTime(2026, 4, 9),
@@ -82,6 +83,7 @@ DashboardView _view({
     todayPain: todayPain,
     todayMood: todayMood,
     yesterdayPain: yesterdayPain,
+    phaseUnavailableReason: phaseUnavailableReason,
   );
 }
 
@@ -242,6 +244,46 @@ void main() {
   );
 
   // ---------------------------------------------------------------------
+  // The phase-unavailable hero (fix round 1, I1)
+  // ---------------------------------------------------------------------
+  //
+  // Before this fix, the ENTIRE hero card — the screen's own defining
+  // positive requirement (`ARCHITECTURE.md` §C.0.3: render the unavailable
+  // state, do not infer one) — was guarded only by the two goldens.
+  // Deleting `const LumenPhaseUnavailable(reason: null)` from
+  // `dashboard_screen.dart` left 41 of 43 `test/features/home/` tests
+  // green; only the goldens caught it, and `--update-goldens` is run
+  // routinely. Mirrors `cycle_calendar_screen_semantics_test.dart:487`'s
+  // own pattern exactly: `phaseUnavailableCopy` renders the SAME neutral
+  // text for every reason today, so a text assertion alone cannot tell "the
+  // real reason was forwarded" apart from "null was silently substituted"
+  // — only reading the mounted widget's OWN `reason` field can.
+
+  group('the phase-unavailable hero', () {
+    testWidgets(
+      'renders, and carries the response\'s OWN unavailableReason, not a '
+      'hard-coded null',
+      (tester) async {
+        await _pump(
+          tester,
+          () => _FreshDashboard(
+            _view(phaseUnavailableReason: kPhaseEngineNotImplemented),
+          ),
+        );
+
+        expect(find.byType(LumenPhaseUnavailable), findsOneWidget);
+        expect(find.text("Cycle phases aren't available yet"), findsOneWidget);
+        expect(
+          tester
+              .widget<LumenPhaseUnavailable>(find.byType(LumenPhaseUnavailable))
+              .reason,
+          kPhaseEngineNotImplemented,
+        );
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------
   // The greeting
   // ---------------------------------------------------------------------
 
@@ -373,6 +415,19 @@ void main() {
       await _pump(tester, () => _FreshDashboard(_view(todayMood: 4)));
       expect(find.text('Bright'), findsOneWidget);
     });
+
+    testWidgets(
+      'fix round 1, M7: an out-of-range mood (contract-constrained to 1-4, '
+      'so unreachable today, but a malformed value must not be dishonest) '
+      'renders the raw integer, never the word "Mood" — which, beside the '
+      'card\'s own "MOOD" label, would read as the redundant "MOOD / Mood"',
+      (tester) async {
+        await _pump(tester, () => _FreshDashboard(_view(todayMood: 9)));
+
+        expect(find.text('9'), findsOneWidget);
+        expect(find.text('Mood'), findsNothing);
+      },
+    );
   });
 
   // ---------------------------------------------------------------------
@@ -432,12 +487,58 @@ void main() {
 
       expect(find.text('MOOD'), findsOneWidget);
     });
+  });
 
-    testWidgets('no month-link shortcut to the calendar', (tester) async {
-      await _pump(tester, () => _FreshDashboard(_view()));
+  // ---------------------------------------------------------------------
+  // Zero interactive affordances (fix round 1, M2+M3)
+  // ---------------------------------------------------------------------
+  //
+  // The old "no month-link shortcut" test (`find.byIcon(Icons.calendar_
+  // month), findsNothing`) could not fail for the reason it named: nothing
+  // in this screen ever imports that icon, so the assertion passed
+  // vacuously, and it would have missed a TEXT month link just as easily as
+  // an icon one. R-20 means screen 8 ships with NO interactive affordance
+  // at all until T18/T20 add their tiles — so the real guard is a
+  // whole-screen button count, exactly as screens 10 and 11 pin their own
+  // known button counts. A "known positive control" sits alongside it,
+  // proving the harness can actually SEE a button when the screen has one
+  // (the NetworkRequired body's Retry button) — without that, "0 buttons"
+  // could just as easily mean "the semantics harness is broken" as "the
+  // screen is honestly actionless".
 
-      expect(find.byIcon(Icons.calendar_month), findsNothing);
-    });
+  group('zero interactive affordances (R-20)', () {
+    testWidgetsWithSemantics(
+      'the loaded dashboard offers no buttons at all — no tile ships '
+      'without its destination',
+      (tester) async {
+        await _pump(tester, () => _FreshDashboard(_view()));
+
+        expectNoButtons(
+          tester,
+          reason:
+              'screen 8 ships with no quick-log tile until T18/T20 add one '
+              'together with its destination (R-20); any button here today '
+              'would point at nothing',
+        );
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'positive control: the harness DOES detect a button when one exists '
+      '— the NetworkRequired body\'s own Retry button',
+      (tester) async {
+        await _pump(tester, _NetworkRequiredDashboard.new);
+
+        expect(
+          kAnyButtonSemantics,
+          findsNWidgets(1),
+          reason:
+              'if this finds 0, the "no buttons" assertion above is not '
+              'proving anything — this is what makes it a real guard '
+              'rather than a broken harness passing vacuously',
+        );
+      },
+    );
   });
 
   // ---------------------------------------------------------------------

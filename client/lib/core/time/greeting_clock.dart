@@ -50,4 +50,12 @@ String greetingTimeOfDay({DateTime Function()? clock}) {
 /// directly — see the file header for why. `Provider`, not `Provider.
 /// autoDispose`: the greeting carries no PII and no per-user state, so there
 /// is nothing session-scoped to tear down, unlike `sessionTodayProvider`.
+///
+/// **Known, accepted trade-off (fix round 1, M8):** a plain `Provider`
+/// computes its value once and caches it for the life of the container, so
+/// a session left open across a band boundary (e.g. across noon) keeps
+/// showing the earlier greeting rather than recomputing. Decorative
+/// courtesy text, not cycle data (see the file header), so a stale band for
+/// the rest of one session was judged not worth a ticking/rebuild
+/// mechanism; flagged here rather than left silent.
 final greetingTimeOfDayProvider = Provider<String>((_) => greetingTimeOfDay());

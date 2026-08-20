@@ -108,17 +108,23 @@ class _ProfileBody extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Back affordance row (icon + section tag)
-              Row(
-                children: [
-                  Icon(Icons.chevron_left, color: c.muted, size: 22),
-                  const SizedBox(width: 2),
-                  const LumenSectionLabel(
-                    'Settings',
-                    fontSize: 11,
-                    letterSpacing: 1.5,
-                  ),
-                ],
+              // Section tag. Fix round 1, M6 (P4b-T17): this used to be a
+              // "back affordance row" — a decorative `Icon(chevron_left)`
+              // beside this label — which was tolerable while `/profile`
+              // was a top-level route (arguably implying "back to wherever
+              // you came from") but is dishonest now that this screen is
+              // the More branch's ROOT (R-19): there is nothing behind a
+              // root to go back TO, and the icon owns no semantics node, so
+              // it was purely a visual promise nothing backs. R-10 is the
+              // codebase's own rule against exactly this shape (it is what
+              // removed `Edit` and `+ Add to this day` at T16); the label
+              // alone stays as a plain section eyebrow, matching every
+              // other tab root's own `LumenSectionLabel` (e.g. screen 10's
+              // "Cycle").
+              const LumenSectionLabel(
+                'Settings',
+                fontSize: 11,
+                letterSpacing: 1.5,
               ),
 
               const SizedBox(height: 4),
@@ -422,16 +428,15 @@ class _EditButton extends ConsumerWidget {
     // function only receives the resulting text, or null if it was dismissed.
     final entered = await showDialog<String>(
       context: context,
-      builder: (_) => _EditDisplayNameDialog(initialValue: me.displayName ?? ''),
+      builder: (_) =>
+          _EditDisplayNameDialog(initialValue: me.displayName ?? ''),
     );
 
     final name = entered?.trim() ?? '';
     if (name.isEmpty) return;
 
     try {
-      await ref
-          .read(profileControllerProvider.notifier)
-          .saveDisplayName(name);
+      await ref.read(profileControllerProvider.notifier).saveDisplayName(name);
     } catch (_) {
       // Online-only: the save failed and is NOT queued. Keep the profile on
       // screen and tell the user to retry (no pending-write is persisted).

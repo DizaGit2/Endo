@@ -63,8 +63,15 @@ import 'package:lumen/shared/widgets/lumen_retry_button.dart';
 /// region/painTypes/triggers maps are private and screen-11-specific too).
 const List<String> _kMoodLabels = <String>['Low', 'Tired', 'Steady', 'Bright'];
 
+/// Fix round 1, M7: the out-of-range fallback used to be the word `'Mood'`
+/// — contract-constrained to 1-4 so unreachable today, but paired with the
+/// card's own `'MOOD'` label it would have read as the redundant "MOOD /
+/// Mood" the moment a malformed value ever reached the client. The raw
+/// integer is honest instead: something WAS logged, just outside the
+/// ratified scale, which is a different fact from nothing being logged at
+/// all (that case is `'Not logged today'`, decided by the caller).
 String _moodLabel(int mood) =>
-    (mood >= 1 && mood <= 4) ? _kMoodLabels[mood - 1] : 'Mood';
+    (mood >= 1 && mood <= 4) ? _kMoodLabels[mood - 1] : '$mood';
 
 // ---------------------------------------------------------------------------
 // DashboardScreen
@@ -114,57 +121,96 @@ class _Body extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Fix round 1, M9: an EXHAUSTIVE switch over the sealed CacheResult
+    // union. The original shape here — `result is Fresh<…> ? … :
+    // (result as Stale<…>).value` — is screen 31's own, copied verbatim,
+    // and it throws a runtime cast exception on any FUTURE CacheResult
+    // variant instead of failing to compile; `switch` over a sealed class
+    // is checked exhaustively by the analyzer, so a fourth subtype becomes
+    // a build error here rather than a production crash.
+    return switch (result) {
+      NetworkRequired() => const _NetworkRequiredBody(),
+      Fresh(:final value) => _LoadedBody(view: value, isStale: false),
+      Stale(:final value) => _LoadedBody(view: value, isStale: true),
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Loaded body — Fresh or Stale, both rendered the same way
+// ---------------------------------------------------------------------------
+
+/// Fix round 1, M4: wraps the content in the same `RefreshIndicator` +
+/// `AlwaysScrollableScrollPhysics` pattern `profile_screen.dart` uses. The
+/// stale notice below reads "connect to refresh", but before this fix
+/// nothing on screen 8 could actually refresh anything — no pull gesture,
+/// no retry in this body, and because the Home branch lives inside the
+/// shell's `IndexedStack`, switching tabs away and back does not rebuild
+/// the controller either. Without a real refresh path a stale dashboard
+/// stayed stale for the rest of the session while promising otherwise.
+/// `ref.invalidate` + re-read is a plain GET re-fetch, not a write — the
+/// same online-only-reads reasoning `profile_screen.dart`'s own comment
+/// states, and this task still writes nothing to the API.
+class _LoadedBody extends ConsumerWidget {
+  const _LoadedBody({required this.view, required this.isStale});
+  final DashboardView view;
+  final bool isStale;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = Theme.of(context).extension<LumenColors>()!;
-
-    if (result is NetworkRequired<DashboardView>) {
-      return const _NetworkRequiredBody();
-    }
-
-    final view = result is Fresh<DashboardView>
-        ? (result as Fresh<DashboardView>).value
-        : (result as Stale<DashboardView>).value;
-    final isStale = result is Stale<DashboardView>;
     final greeting = ref.watch(greetingTimeOfDayProvider);
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (isStale) ...[_StaleNotice(c: c), const SizedBox(height: 10)],
-          _DateLine(date: view.today),
-          const SizedBox(height: 2),
-          _GreetingLine(greeting: greeting, displayName: view.displayName),
-          const SizedBox(height: 14),
-          const LumenPhaseUnavailable(reason: null),
-          const SizedBox(height: 12),
-          // IntrinsicHeight, not a bare `Row(crossAxisAlignment: stretch)`:
-          // this Row sits inside a Column inside a SingleChildScrollView, so
-          // it receives an UNBOUNDED height from its parent. `stretch` asks
-          // each child to fill the Row's own cross-axis (height) extent —
-          // fine when that extent is bounded, but propagating "infinite" to
-          // each card crashes layout (`BoxConstraints forces an infinite
-          // height`). `IntrinsicHeight` measures the children's natural
-          // height first and gives the Row THAT as a bounded extent, so
-          // `stretch` still makes both cards match the taller one's height
-          // (the mockup's `.cards{display:grid}` behaviour) without ever
-          // asking anything to be infinitely tall.
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: _PainCard(
-                    todayPain: view.todayPain,
-                    yesterdayPain: view.yesterdayPain,
+    return RefreshIndicator(
+      onRefresh: () {
+        ref.invalidate(dashboardControllerProvider);
+        return ref.read(dashboardControllerProvider.future);
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (isStale) ...[_StaleNotice(c: c), const SizedBox(height: 10)],
+            _DateLine(date: view.today),
+            const SizedBox(height: 2),
+            _GreetingLine(greeting: greeting, displayName: view.displayName),
+            const SizedBox(height: 14),
+            // Fix round 1, M5: the response's OWN `unavailableReason`, not a
+            // hard-coded `null` — see `DashboardView.phaseUnavailableReason`'s
+            // dartdoc for why the distinction matters even though every P4a
+            // account renders the same neutral copy today.
+            LumenPhaseUnavailable(reason: view.phaseUnavailableReason),
+            const SizedBox(height: 12),
+            // IntrinsicHeight, not a bare `Row(crossAxisAlignment: stretch)`:
+            // this Row sits inside a Column inside a SingleChildScrollView, so
+            // it receives an UNBOUNDED height from its parent. `stretch` asks
+            // each child to fill the Row's own cross-axis (height) extent —
+            // fine when that extent is bounded, but propagating "infinite" to
+            // each card crashes layout (`BoxConstraints forces an infinite
+            // height`). `IntrinsicHeight` measures the children's natural
+            // height first and gives the Row THAT as a bounded extent, so
+            // `stretch` still makes both cards match the taller one's height
+            // (the mockup's `.cards{display:grid}` behaviour) without ever
+            // asking anything to be infinitely tall.
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _PainCard(
+                      todayPain: view.todayPain,
+                      yesterdayPain: view.yesterdayPain,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(child: _MoodCard(todayMood: view.todayMood)),
-              ],
+                  const SizedBox(width: 8),
+                  Expanded(child: _MoodCard(todayMood: view.todayMood)),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

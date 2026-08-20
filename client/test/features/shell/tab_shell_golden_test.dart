@@ -21,6 +21,7 @@ class _SettledDashboard extends DashboardController {
       todayPain: null,
       todayMood: null,
       yesterdayPain: null,
+      phaseUnavailableReason: null,
     ),
   );
 }

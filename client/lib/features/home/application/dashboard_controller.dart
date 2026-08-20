@@ -31,6 +31,7 @@ class DashboardView {
     required this.todayPain,
     required this.todayMood,
     required this.yesterdayPain,
+    required this.phaseUnavailableReason,
   });
 
   /// The user's current day, **as the server computes it** (D-12) — read
@@ -54,6 +55,18 @@ class DashboardView {
   /// requested months actually contains yesterday — the previous month
   /// whenever today is the 1st. `null` means nothing was logged yesterday.
   final int? yesterdayPain;
+
+  /// `CyclePhaseAvailabilityResponse.unavailableReason` off the CURRENT
+  /// month's own response — the same choice `CycleCalendarController` makes
+  /// (`responses[1].phase`, this class's own two-window equivalent is just
+  /// "the current one"), since every P4a response answers the same envelope
+  /// regardless of window. **Not hard-coded to `null`**: every P4a account
+  /// answers `phase_engine_not_implemented` today, so the screen renders
+  /// identically either way — but `LumenPhaseUnavailable.reason`'s own
+  /// dartdoc means `null` specifically as "the envelope omitted it", which is
+  /// not what happens here, and P6 giving a reason distinct copy would
+  /// otherwise silently render the neutral text on this one screen.
+  final String? phaseUnavailableReason;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,15 +161,17 @@ class DashboardController extends AsyncNotifier<CacheResult<DashboardView>> {
     final cycleRepo = ref.read(cycleRepositoryProvider);
 
     // Started here, before `today` is known — the profile read has no
-    // dependency on which month is "current". `.ignore()` is attached
+    // dependency on which month is "current". `.ignore()` is called
     // immediately: a genuine rejection here would otherwise race Dart's
     // zone-level "unhandled Future error" report against the `await` below,
     // because nothing subscribes to this future until AFTER `today` (a
-    // second, unrelated `await`) resolves — `.ignore()` gives it a listener
-    // synchronously, which silences that report without consuming the
-    // future; the SAME rejection still reaches `await meFuture` below
-    // untouched, exactly as a second independent listener on one Future
-    // always does in Dart.
+    // second, unrelated `await`) resolves. Corrected wording (fix round 1):
+    // on a `_Future`, `ignore()` sets a suppress-error flag on the future
+    // itself — it does NOT attach an independent listener — which is what
+    // stops the zone report from firing at all rather than merely routing it
+    // elsewhere; the SAME rejection still reaches `await meFuture` below
+    // untouched, because the flag only silences the "nobody is listening"
+    // report and never consumes or redirects the future's own completion.
     final meFuture = meRepo.getMe()..ignore();
 
     final today = await ref.read(sessionTodayProvider.future);
@@ -166,9 +181,10 @@ class DashboardController extends AsyncNotifier<CacheResult<DashboardView>> {
 
     // Both started before either is awaited — genuine concurrency, same
     // idiom as DayDetailController's two reads. Same `.ignore()` reasoning
-    // as `meFuture`: `currentFuture` gets no listener until AFTER
-    // `previousFuture` is created AND `meFuture` is awaited, a real gap a
-    // fast rejection can lose the race against.
+    // as `meFuture` (see the corrected mechanism note above): without it,
+    // `currentFuture` has its zone-level "unhandled error" report armed
+    // until AFTER `previousFuture` is created AND `meFuture` is awaited, a
+    // real gap a fast rejection can lose the race against.
     final currentFuture = cycleRepo.getCalendarMonth(currentMonth)..ignore();
     final previousFuture = cycleRepo.getCalendarMonth(previousMonth)..ignore();
 
@@ -194,7 +210,27 @@ class DashboardController extends AsyncNotifier<CacheResult<DashboardView>> {
       if (date != null) dayByDate[date] = day;
     }
 
-    final yesterday = todayDate.subtract(const Duration(days: 1)).toDate();
+    // Calendar arithmetic on the DAY FIELD, never `.subtract(Duration(days:
+    // 1))` (fix round 1, I2). `todayDate` is a LOCAL `DateTime`
+    // (`Date.toDateTime()`, `api/model/date.dart:24-31`, no `utc:`), and
+    // `.subtract` moves the underlying instant by exactly 24 real hours —
+    // which does not always land back on local midnight of the previous
+    // calendar day. Dart's own docs warn the result "may not even hit the
+    // calendar date 1 day earlier". Concretely, in es-ES/Europe/Madrid
+    // (D-03's primary locale) on 2026-03-30: local midnight is CEST
+    // (UTC+2); minus 24h lands at 2026-03-28 23:00 CET, i.e. `.toDate()` ==
+    // 2026-03-28 — the day BEFORE yesterday, not yesterday, and the pain
+    // comparison below would silently read the wrong row. `DateTime(y, m,
+    // d - 1)` is pure calendar-field construction — the same form the
+    // `previousMonth` line above already uses — and normalises month/year
+    // rollunder without ever computing an absolute time delta, so it cannot
+    // exhibit this class of bug regardless of what the local UTC offset
+    // does between today and yesterday.
+    final yesterday = DateTime(
+      todayDate.year,
+      todayDate.month,
+      todayDate.day - 1,
+    ).toDate();
     final todayRow = dayByDate[today];
     final yesterdayRow = dayByDate[yesterday];
 
@@ -204,6 +240,10 @@ class DashboardController extends AsyncNotifier<CacheResult<DashboardView>> {
       todayPain: todayRow?.pain,
       todayMood: todayRow?.mood,
       yesterdayPain: yesterdayRow?.pain,
+      // Fix round 1, M5: the CURRENT month's own envelope — the same choice
+      // `CycleCalendarController._loadMonth` makes for its analogous
+      // "which response's `phase` do we trust" question.
+      phaseUnavailableReason: currentRead.value.phase?.unavailableReason,
     );
 
     final stale = meRead.stale || currentRead.stale || previousRead.stale;
