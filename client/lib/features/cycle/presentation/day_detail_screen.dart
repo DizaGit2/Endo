@@ -11,10 +11,18 @@
 //
 // Cuts from the mockup, and why (T16 brief §4 has the full citations):
 //  * the `.dp` phase badge ("Luteal · Day 20") — CycleDayResponse carries no
-//    phase member at all, and rendering LumenPhaseUnavailable instead would
-//    require a second GET /cycle/calendar purely to display a constant
-//    string. Screen 11 renders NO phase treatment — not the badge, not the
-//    unavailable envelope. (T23, this is deliberate, not an oversight.)
+//    phase member at all. Screen 11 renders NO phase treatment — not the
+//    badge, not the unavailable envelope. **Not because a second network
+//    read would be needed** — `sessionTodayProvider` already issues that
+//    exact `GET /cycle/calendar` and pins it for the session
+//    (`server_today.dart`), and `phaseUnavailableCopy` resolves EVERY
+//    reason, including `null`, to the same neutral copy with no read at
+//    all (`lumen_phase_unavailable.dart`) — both checked; neither is the
+//    reason. The real reason: screen 10 is one tap away and already
+//    carries the phase-unavailable block, so repeating a constant string
+//    on every day view is noise, not information. (T23, this is
+//    deliberate, not an oversight — the ruling stands even though this
+//    file's earlier justification for it did not.)
 //  * the energy half of "Mood & energy" — D-10 defers energy entirely (no
 //    writer, no DTO, no scale in P4a). The section is renamed "Pain & mood"
 //    and renders the day-log's own `pain` (which the mockup draws no
@@ -254,8 +262,15 @@ class _Body extends StatelessWidget {
     final hasPain = log?.pain != null; // never a falsiness test — D-08.
     final hasMood = log?.mood != null;
     final hasNote = (log?.notes ?? '').trim().isNotEmpty;
-    final hasSymptoms = view.symptoms.isNotEmpty;
-    final hasAnything = hasPain || hasMood || hasNote || hasSymptoms;
+    // `symptomsTotal > 0`, NOT `symptoms.isNotEmpty` (fix round 1, M-4):
+    // gating the whole section — including the truncation notice — on the
+    // RETURNED page would let `symptomsTotal > 0` with an empty page
+    // (unreachable today because `limit` is always >= 1, but a silent-
+    // truncation shape all the same) fall through to the empty-day state
+    // below and say "nothing logged" on a day that is not empty. `total`
+    // is the ground truth; the page is just what happened to come back.
+    final hasSymptomData = view.symptomsTotal > 0;
+    final hasAnything = hasPain || hasMood || hasNote || hasSymptomData;
     final truncated = view.symptomsTotal > view.symptoms.length;
 
     return SingleChildScrollView(
@@ -270,7 +285,7 @@ class _Body extends StatelessWidget {
           // brief §5): a 200 with `log: null` and empty collections.
           if (!hasAnything) const _EmptyDay(),
 
-          if (hasSymptoms) ...[
+          if (hasSymptomData) ...[
             const _SectionLabel('Symptoms'),
             const SizedBox(height: 5),
             for (final symptom in view.symptoms) ...[
@@ -279,7 +294,11 @@ class _Body extends StatelessWidget {
             ],
             // A visible limit, never a silent one (R-18 / SymptomContracts
             // §222-228): `total` exceeding the page renders a count line
-            // rather than quietly truncating.
+            // rather than quietly truncating. Deliberately NOT nested
+            // inside a "the page has rows" condition — gated on
+            // `hasSymptomData` (`total > 0`) above so this notice still
+            // renders even in the (currently unreachable) shape where the
+            // page came back empty but `total` says otherwise.
             if (truncated)
               Padding(
                 padding: const EdgeInsets.only(top: 2, bottom: 4),
@@ -345,10 +364,13 @@ class _DayHeader extends StatelessWidget {
             fontWeight: FontWeight.w500,
           ),
         ),
-        // No phase badge here — see this file's header comment. Cut, not
-        // an oversight: CycleDayResponse carries no phase member, and
-        // LumenPhaseUnavailable would need a second network read to show a
-        // constant string.
+        // No phase badge here — see this file's header comment for the
+        // full reasoning. Cut, not an oversight: CycleDayResponse carries
+        // no phase member, and — contrary to what this comment used to
+        // say — rendering the unavailable envelope would cost no extra
+        // network read. It is still cut because it would be a constant
+        // string repeated on every day view: noise, not information, when
+        // screen 10 already shows it one tap away.
       ],
     );
   }

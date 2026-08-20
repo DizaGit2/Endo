@@ -7,10 +7,13 @@
 // screen (never a partial render), and `total` falling back to the page
 // length never manufactures a false truncation notice.
 
+import 'package:built_collection/built_collection.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/date.dart';
+import 'package:lumen/api/model/symptom_list_response.dart';
+import 'package:lumen/api/model/symptom_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/features/cycle/application/day_detail_controller.dart';
@@ -205,11 +208,20 @@ void main() {
       when(
         () => cycleRepo.getDay(any()),
       ).thenAnswer((_) async => Fresh(cycleDayFixture()));
+      // fix round 1, I-3: NOT `symptomListResponseFixture(total: null)` —
+      // the fixture (`fixtures.dart`: `..total = total ?? rows.length`)
+      // fills a null argument with the page length itself, so that call
+      // never produces a genuinely-null `total` and this test could not
+      // have failed no matter what `?? items.length` was mutated to.
+      // Built directly here, leaving `.total` genuinely unset, to reach
+      // the branch the fixture's own default-filling makes unreachable.
       when(() => symptomsRepo.getDay(any())).thenAnswer(
         (_) async => Fresh(
-          symptomListResponseFixture(
-            items: [symptomResponseFixture()],
-            total: null,
+          SymptomListResponse(
+            (b) => b
+              ..items = ListBuilder<SymptomResponse>([symptomResponseFixture()])
+              ..limit = 100
+              ..offset = 0,
           ),
         ),
       );

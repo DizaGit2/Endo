@@ -189,13 +189,14 @@ class CycleCalendarController extends AsyncNotifier<CycleCalendarView> {
     state = result;
   }
 
-  // ── Refresh (T16's call site) ───────────────────────────────────────────
+  // ── Refresh (T16b's call site) ──────────────────────────────────────────
 
   /// Re-reads whatever month is currently on screen, without resetting to
   /// today's month.
   ///
-  /// **This is what T16 (screen 11's day writes) must call after a
-  /// successful write** —
+  /// **This is what T16b (screen 11's day writes — the period-event editor
+  /// and the day-log editor, split out of T16 because they carry the
+  /// phase's worst data-loss paths) must call after a successful write** —
   /// `ref.read(cycleCalendarControllerProvider.notifier).refresh()` — and
   /// specifically NOT `ref.invalidate(cycleCalendarControllerProvider)`.
   /// Invalidating throws this notifier away and reruns [build], which always

@@ -19,23 +19,29 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lumen/api/model/cycle_calendar_day.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
+import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/router/app_router.dart';
 import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/features/cycle/application/cycle_calendar_controller.dart';
 import 'package:lumen/features/cycle/application/day_detail_controller.dart';
+import 'package:lumen/features/cycle/data/cycle_repository.dart';
 import 'package:lumen/features/cycle/presentation/cycle_calendar_screen.dart';
 import 'package:lumen/features/cycle/presentation/day_detail_screen.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_step.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
+import 'package:mocktail/mocktail.dart';
 
 import '../../support/harness.dart';
+
+class _MockCycleRepository extends Mock implements CycleRepository {}
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -82,6 +88,7 @@ class _SettledDayDetail extends DayDetailController {
 Future<void> _pumpProductionRouter(
   WidgetTester tester, {
   required String initialLocation,
+  List<Override> extraOverrides = const [],
 }) async {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -111,11 +118,16 @@ Future<void> _pumpProductionRouter(
           ),
         ),
       ),
+      ...extraOverrides,
     ],
   );
 }
 
 void main() {
+  setUpAll(() {
+    registerFallbackValue(DateTime(2026, 1, 1));
+  });
+
   group('R-02 — the parameterised route, verified against production', () {
     testWidgets(
       'a direct deep link to /cycle/day/2026-04-16 is recognised as a '
@@ -188,14 +200,27 @@ void main() {
       'a silent redirect to the calendar, and NOT the rolled date '
       '(March 3rd)',
       (tester) async {
+        // fix round 1, M-3: the brief's actual requirement is "assert no
+        // read is issued for the rolled date" — stated directly here with
+        // a mocked repository, rather than only inferred from
+        // `find.byType(DayDetailScreen), findsNothing`.
+        final cycleRepo = _MockCycleRepository();
+        when(
+          () => cycleRepo.getDay(any()),
+        ).thenAnswer((_) async => Fresh(cycleDayFixture()));
+
         await _pumpProductionRouter(
           tester,
           initialLocation: '/cycle/day/2026-02-31',
+          extraOverrides: [
+            cycleRepositoryProvider.overrideWithValue(cycleRepo),
+          ],
         );
 
         expect(find.byType(LumenErrorRetry), findsOneWidget);
         expect(find.byType(DayDetailScreen), findsNothing);
         expect(find.text("That date isn't valid."), findsOneWidget);
+        verifyNever(() => cycleRepo.getDay(DateTime(2026, 3, 3)));
       },
     );
 

@@ -26,16 +26,38 @@
 //      controller hangs the test.
 //   6. `obscureText: true` is on globally (flutter_test_config.dart), so these
 //      images prove layout, geometry and NON-TEXT colour (backgrounds,
-//      borders, decorations), and are insensitive to copy AT EQUAL CHARACTER
-//      COUNT. Assert strings in the semantics/widget test instead — a golden
-//      can never tell you WHICH glyphs were drawn.
-//      The qualifier is not pedantry and was measured (P4b-T13/M9): obscuring
-//      replaces each glyph with a block but preserves the RUN LENGTH, and the
-//      test font is fixed-advance, so a copy edit that changes the character
-//      count moves pixels and reddens the pair. Renaming "Phase shift" to
-//      "Phase shifts" reddened both of screen 7's goldens. So a length-changing
-//      copy edit needs `--update-goldens`; an equal-length one does not, and
-//      neither kind is *asserted* by these images.
+//      borders, decorations). Assert strings in the semantics/widget test
+//      instead — a golden can never tell you WHICH glyphs were drawn.
+//      **The insensitivity criterion is EQUAL RENDERED WIDTH, not equal
+//      character count — this is the THIRD false or imprecise
+//      self-description this file has carried, and the second correction to
+//      THIS SAME rule** (P4b-T13/M9 first wrote "equal character count";
+//      P4b-T16/fix-round-1 measured that claim itself and found it wrong).
+//      `BlockedTextPaintingContext.paintChild` (`alchemist` 0.14.0,
+//      `blocked_text_image.dart:34-44`) draws its rectangle at
+//      `child.size` — the REAL `RenderParagraph` size that ordinary
+//      proportional-font text layout already computed, before any glyph is
+//      replaced. Obscuring swaps *what gets painted*, never *how the
+//      paragraph was measured*, so the block's width tracks the true
+//      rendered width of the run, and no fixed-advance/monospace test font
+//      is configured anywhere in this repo to make character count a proxy
+//      for it. **Measured directly** (P4b-T16/fix-round-1): two 7-glyph
+//      strings of deliberately different composition ("lllllll" vs
+//      "WWWWWWW") produce dramatically different block widths at equal
+//      character count, while two ordinary same-length English words
+//      (e.g. "Bloating"/"Headache") land close but not always exactly
+//      equal — which is why an EQUAL-length production copy edit
+//      (`day_detail_screen.dart`'s label map, `'Bloating'` ->
+//      `'Headache'` and `'Fatigue'` -> `'Nauseaa'`) still reddened both
+//      goldens by 847 px: two ordinary words of the same length usually
+//      have close but not identical total glyph advance, and "close" is
+//      not "insensitive". A length-changing copy edit (rule 6's original
+//      example, "Phase shift" -> "Phase shifts") is the reliable, easy
+//      case of the same underlying rule — more glyphs is a coarser and
+//      more certain way to move the width than any same-length swap can be
+//      relied on NOT to. **Treat every copy edit as needing
+//      `--update-goldens` and a look at the diff** — length alone was
+//      never a safe test either way, and neither is character count.
 //   7. **TEXT OPACITY IS INVISIBLE TO A BLOCKED-TEXT GOLDEN — this is the
 //      second false self-description this file has carried** (P4b-T13 found
 //      the copy-insensitivity one above; P4b-T15/fix-round-1 found this one).
