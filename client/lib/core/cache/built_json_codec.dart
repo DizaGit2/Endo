@@ -60,11 +60,15 @@ Map<String, dynamic> toCacheJson<T>(Serializer<T> serializer, T value) {
 /// The trailing `!` asserts non-null on the result: `deserializeWith` is
 /// `T?`-typed in general (it also serves callers deserializing `null`
 /// itself), but a [map] that decodes at all always yields a `T`, never a bare
-/// `null`. Every one of the six original copies used the same `!` against a
-/// concrete (non-generic) `T?`, where this lint does not fire; ignored here
-/// only because making `T` generic is what makes the analyzer flag it — the
-/// runtime behaviour (a thrown `TypeError` on an actual null) is unchanged.
-T fromCacheJson<T>(Serializer<T> serializer, Map<String, dynamic> map) {
-  // ignore: null_check_on_nullable_type_parameter
+/// `null`. `T extends Object` is what makes that provable rather than merely
+/// true of today's six callers: an unbounded `T` lets a future caller pass a
+/// `Serializer<X?>` (built_value's generics are covariant), at which point
+/// `T?` collapses into `T` and the `!` stops meaning anything — bounding `T`
+/// to `Object` rules that out structurally, the same way [Serializer] itself
+/// never claims to serialize `null`.
+T fromCacheJson<T extends Object>(
+  Serializer<T> serializer,
+  Map<String, dynamic> map,
+) {
   return standardSerializers.deserializeWith(serializer, map)!;
 }
