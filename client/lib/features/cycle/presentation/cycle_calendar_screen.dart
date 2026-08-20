@@ -13,15 +13,20 @@
 //    stands in for them and for the four-swatch legend;
 //  * the mockup's back chevron is CUT — this is a bottom-nav branch root,
 //    there is nothing to go back to;
-//  * a day tap is CUT — it would land on screen 11, which T16 has not built
-//    yet, and ruling R-10 says inert navigation is hidden, not disabled.
+//  * a day tap now ROUTES to screen 11 (P4b-T16, `/cycle/day/:date`) — but
+//    only for the 30 CURRENT-MONTH cells. Adjacent-month cells stay dimmed
+//    and inert: they are context, not targets, and a tap on one would land
+//    on a day outside the visible month. R-10 required the route and the
+//    tap in one commit, which is why they land together here.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/formatters/lumen_formats.dart';
 import 'package:lumen/core/locale/locale_provider.dart';
+import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/cycle/application/cycle_calendar_controller.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
@@ -258,11 +263,17 @@ List<CycleCalendarGridCell> buildCycleCalendarGrid({
 }
 
 /// Identifies the rendered month grid (weekday header + day rows) so a test
-/// can scope an assertion to it specifically — e.g. "no `InkWell` in the
-/// GRID", as distinct from the two legitimate ones Material 3's `IconButton`
+/// can scope an assertion to it specifically.
+///
+/// Before P4b-T16 that assertion was "no `InkWell` in the GRID" — as
+/// distinct from the two legitimate ones Material 3's `IconButton`
 /// implementation gives the month chevrons (fix-round-1, I-1: a blanket,
 /// unscoped `find.byType(InkWell)` check would always find those two and
-/// could never usefully assert "none").
+/// could never usefully assert "none"). T16 INVERTS that assertion: the 30
+/// current-month cells are now `InkWell`s of their own (the tap that reaches
+/// screen 11), so the grid-scoped check now asserts "exactly 30", the same
+/// reasoning applied in the other direction — still scoped to the grid, so
+/// the chevrons' own two `InkWell`s never contaminate the count either way.
 const Key cycleCalendarGridKey = Key('cycle-calendar-grid');
 
 class _MonthGrid extends StatelessWidget {
@@ -331,11 +342,34 @@ class _MonthGrid extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 /// One day of the grid: a number, an optional today ring, an optional
-/// "something was logged" dot. **Never a control** — requirement 2: no
-/// `onTap`, no `InkWell` ripple, no button semantics. There is nothing behind
-/// a tap here yet (T16 adds the route and the tap together, in one commit),
-/// and hit areas are not expanded in anticipation of one either — the
-/// phase's tap-target ruling stands, and there is no tap to protect.
+/// "something was logged" dot.
+///
+/// **Only the 30 CURRENT-MONTH cells are controls (P4b-T16).**
+/// Adjacent-month cells (`cell.dimmed`) stay exactly as every cell was
+/// before T16 — no `onTap`, no `InkWell` ripple, no button semantics —
+/// because they are context, not targets: a tap on one would open a day
+/// outside the visible month, which is precisely the "which month am I in
+/// now" confusion the tappable-set ruling exists to avoid. Hit areas are
+/// not expanded for the ones that ARE tappable either — the phase's
+/// tap-target ruling stands (26 logical px, WCAG 2.2 SC 2.5.8, not
+/// Material's 48; screens 10/11/14 share this grid's geometry unchanged).
+///
+/// `InkWell` is the affordance, not `GestureDetector` + a hand-rolled
+/// `Semantics(button: true)`: it gives correct hit testing and Material
+/// press feedback for free, and it is what lets `cycleCalendarGridKey`'s
+/// `InkWell` count invert cleanly from "0" to "30" rather than needing to be
+/// replaced by a differently-typed check.
+///
+/// The wrapping `Semantics(excludeSemantics: true, onTap: …)` follows
+/// `a11y_guard.dart`'s own documented rule for that shape: excluding a
+/// child's semantics means the wrapper MUST carry the same `onTap` the
+/// child's gesture handler does, or the announced button has no action a
+/// screen reader's "activate" gesture can invoke. It is authored (rather
+/// than left to `MergeSemantics`, `LumenSelectableRow`'s usual house style)
+/// because the drawn content is a bare day NUMBER ("16"), which is
+/// ambiguous without the month — [LumenFormats.monthDay] is what the
+/// announced name should be, not what merging in the digit alone would
+/// produce.
 class _DayCell extends StatelessWidget {
   const _DayCell({required this.cell, required this.view, super.key});
 
@@ -392,7 +426,23 @@ class _DayCell extends StatelessWidget {
     // `.d.dim{opacity:.3}` dims the WHOLE cell (number, ring and dot alike) —
     // reproduced the same way, rather than fading just the text colour, so an
     // adjacent-month day that also happens to carry the today ring or a dot
-    // dims correctly too.
-    return cell.dimmed ? Opacity(opacity: 0.3, child: content) : content;
+    // dims correctly too. Dimmed cells stop here: inert, as before T16.
+    if (cell.dimmed) {
+      return Opacity(opacity: 0.3, child: content);
+    }
+
+    void onTap() => context.push(Routes.cycleDayPath(date));
+
+    return Semantics(
+      button: true,
+      label: LumenFormats.monthDay(date),
+      excludeSemantics: true,
+      onTap: onTap,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(7),
+        onTap: onTap,
+        child: content,
+      ),
+    );
   }
 }

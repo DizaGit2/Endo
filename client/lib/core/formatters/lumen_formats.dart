@@ -162,6 +162,45 @@ abstract final class LumenFormats {
     'December',
   ];
 
+  /// Returns `"Tuesday"` — the English weekday name for [d].
+  ///
+  /// **No [locale] parameter, on purpose — exactly [monthName]'s reasoning.**
+  /// Screen 11 (the day detail) is the one screen whose header needs a
+  /// weekday NAME rather than a numeric or locale-ordered form, and R-04
+  /// keeps every P4b string English — there is nothing for a locale to
+  /// select between, so this formatter cannot honestly take one. This is
+  /// the same split [orderedWeekdays] already makes for the WEEK's order:
+  /// the locale decides which day starts the week (D-05), the app owns the
+  /// day's name.
+  ///
+  /// [DateTime.weekday] is `1` (Monday) through `7` (Sunday); indexed
+  /// directly rather than reaching for `intl`'s `DateFormat.EEEE`, which
+  /// would pull in a translated name this app does not want.
+  static String weekdayName(DateTime d) => _englishWeekdays[d.weekday - 1];
+
+  /// English weekday names, indexed by `DateTime.weekday - 1` (Monday
+  /// first). Not translated, and not meant to be — see [weekdayName].
+  static const List<String> _englishWeekdays = <String>[
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
+  /// Returns `"April 7"` — an English month name plus the day, no year — for
+  /// [d].
+  ///
+  /// **No [locale] parameter** — same reasoning as [monthName]. Screen 11's
+  /// header needs a month-and-day form with no year: not [date]
+  /// (`DateFormat.yMd`, which is locale-ordered, numeric, AND carries a
+  /// year screen 11 has no room for) and not [monthName] (which carries the
+  /// year, not the day) — a third shape neither existing formatter makes.
+  static String monthDay(DateTime d) =>
+      '${_englishMonths[d.month - 1]} ${d.day}';
+
   // -------------------------------------------------------------------------
   // Time
   // -------------------------------------------------------------------------

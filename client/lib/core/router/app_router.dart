@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/features/cycle/presentation/cycle_calendar_screen.dart';
+import 'package:lumen/features/cycle/presentation/day_detail_screen.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
 import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.dart';
@@ -223,12 +224,39 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
       ),
       // 1 — Cycle. Screen 10 (calendar) ships here — P4b-T15. P4b-T16 adds
       // screen 11 (day detail) as a CHILD route under this one
-      // (`/cycle/day/:date`), together with the day-cell tap that reaches it.
+      // (`/cycle/day/:date`), together with the day-cell tap that reaches
+      // it — the app's FIRST parameterised route. A child, not a sibling in
+      // this branch's own `routes:` list, so it stacks on top of the
+      // calendar in the branch's own Navigator (system back / `context.pop()`
+      // returns to the calendar) rather than replacing it.
       StatefulShellBranch(
         routes: <RouteBase>[
           GoRoute(
             path: Routes.cycle,
             builder: (_, _) => const CycleCalendarScreen(),
+            routes: <RouteBase>[
+              GoRoute(
+                path: Routes.cycleDaySegment,
+                builder: (_, state) {
+                  // No `redirect:` here on purpose: a redirect would make a
+                  // malformed date vanish silently into `/cycle` with no
+                  // explanation, and this app has exactly ONE whole-surface
+                  // failure pattern (`_GateUnavailableBody` above collapses
+                  // onto the same `LumenErrorRetry`, per P4b-T5) — inventing
+                  // a second would violate that. The round-trip check that
+                  // catches `/cycle/day/2026-02-31` (which MATCHES this
+                  // route just as well as a real date —
+                  // `Routes.parseCycleDayDate`'s own dartdoc) runs here,
+                  // before any read — and, once T16b lands, before any
+                  // write — is ever issued for the rolled date.
+                  final date = Routes.parseCycleDayDate(
+                    state.pathParameters['date'],
+                  );
+                  if (date == null) return const _InvalidDayDateScreen();
+                  return DayDetailScreen(date: date);
+                },
+              ),
+            ],
           ),
         ],
       ),
@@ -398,6 +426,37 @@ class _GateUnavailableBody extends ConsumerWidget {
     return LumenErrorRetry(
       message: 'Something went wrong. Please try again.',
       onRetry: () => ref.invalidate(onboardingStatusProvider),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Invalid `:date` — screen 11's own failure surface for a malformed deep link
+// ---------------------------------------------------------------------------
+
+/// Rendered when `/cycle/day/:date` MATCHES but the value fails
+/// [Routes.parseCycleDayDate]'s round-trip check — e.g. a stale or
+/// hand-typed deep link to `/cycle/day/2026-02-31`, which go_router's
+/// pattern matcher accepts just as readily as a real date (see
+/// [Routes.parseCycleDayDate]'s dartdoc for why the pattern alone cannot
+/// catch it).
+///
+/// Same [LumenErrorRetry] every other whole-surface failure in this app
+/// uses — screen 11 is the one screen a malformed date belongs to, and there
+/// is nothing to "retry" that would fix a bad date, so the affordance
+/// returns to the calendar instead of re-running the same parse.
+class _InvalidDayDateScreen extends StatelessWidget {
+  const _InvalidDayDateScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: LumenErrorRetry(
+          message: "That date isn't valid.",
+          onRetry: () => context.go(Routes.cycle),
+        ),
+      ),
     );
   }
 }

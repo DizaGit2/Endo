@@ -460,6 +460,47 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // weekdayName() — the ENGLISH weekday name screen 11 needs (P4b-T16).
+  // No [locale] parameter — same reasoning as monthName.
+  // ---------------------------------------------------------------------------
+  group('LumenFormats.weekdayName', () {
+    test('renders the English weekday name', () {
+      // 2026-04-07 is a Tuesday.
+      expect(LumenFormats.weekdayName(DateTime(2026, 4, 7)), 'Tuesday');
+    });
+
+    test("Monday and Sunday — DateTime.weekday's own two boundaries", () {
+      // 2026-04-06 is a Monday (weekday == 1); 2026-04-12 is a Sunday
+      // (weekday == 7) — the array's first and last index.
+      expect(LumenFormats.weekdayName(DateTime(2026, 4, 6)), 'Monday');
+      expect(LumenFormats.weekdayName(DateTime(2026, 4, 12)), 'Sunday');
+    });
+
+    test('a non-boundary weekday (Thursday) renders correctly too', () {
+      expect(LumenFormats.weekdayName(DateTime(2026, 4, 9)), 'Thursday');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // monthDay() — the ENGLISH "month day" header screen 11 needs (P4b-T16).
+  // No [locale] parameter — same reasoning as monthName.
+  // ---------------------------------------------------------------------------
+  group('LumenFormats.monthDay', () {
+    test('renders the English month name plus the day, no year', () {
+      expect(LumenFormats.monthDay(DateTime(2026, 4, 7)), 'April 7');
+    });
+
+    test('ignores the year and time-of-day components it is handed', () {
+      expect(LumenFormats.monthDay(DateTime(2099, 4, 7, 23, 59)), 'April 7');
+    });
+
+    test("January and December — the month array's own two boundaries", () {
+      expect(LumenFormats.monthDay(DateTime(2026, 1, 1)), 'January 1');
+      expect(LumenFormats.monthDay(DateTime(2026, 12, 31)), 'December 31');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // hasLocaleData() — what the locale resolver leans on, added in P4b-T6
   // ---------------------------------------------------------------------------
   group('LumenFormats.hasLocaleData', () {

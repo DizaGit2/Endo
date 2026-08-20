@@ -40,6 +40,8 @@ import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/api/model/phase_override_boundary.dart';
+import 'package:lumen/api/model/symptom_list_response.dart';
+import 'package:lumen/api/model/symptom_response.dart';
 
 /// `GET /me`. The shipped default is a fully-onboarded Spanish-locale user.
 ///
@@ -479,6 +481,68 @@ CycleDayLogResponse cycleDayLogFixture({
       ..notes = notes
       ..createdAt = createdAt ?? DateTime.utc(2026, 4, 20, 8)
       ..updatedAt = updatedAt ?? DateTime.utc(2026, 4, 20, 8),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Symptoms (P4b-T16) — no fixture existed before this task
+// ---------------------------------------------------------------------------
+
+/// One `symptoms` row, as `GET /symptoms` echoes it.
+///
+/// **`intensity` defaults to `3`, not `0` and not `null`** — deliberately, so
+/// a test that wants the D-08 edge case (`intensity: 0` is a real datum, and
+/// `null` is the only "not recorded") asks for it explicitly rather than
+/// getting it by accident from an unset default. `painTypes`/`triggers`
+/// default to EMPTY lists, never null (`SymptomService.cs:556-557`: "empty,
+/// never NULL — keeping 'the user classified nothing' a single state").
+SymptomResponse symptomResponseFixture({
+  String? id = 'symptom-abc123',
+  String? symptomCode = 'bloating',
+  int? intensity = 3,
+  String? region = 'lower_abdomen',
+  String? side,
+  List<String>? painTypes = const <String>[],
+  List<String>? triggers = const <String>[],
+  DateTime? occurredAt,
+  Date? occurredOn,
+  String? notes,
+  DateTime? createdAt,
+  DateTime? updatedAt,
+}) {
+  return SymptomResponse(
+    (b) => b
+      ..id = id
+      ..symptomCode = symptomCode
+      ..intensity = intensity
+      ..region = region
+      ..side = side
+      ..painTypes = painTypes == null ? null : ListBuilder<String>(painTypes)
+      ..triggers = triggers == null ? null : ListBuilder<String>(triggers)
+      ..occurredAt = occurredAt ?? DateTime.utc(2026, 4, 20, 8)
+      ..occurredOn = occurredOn ?? Date(2026, 4, 20)
+      ..notes = notes
+      ..createdAt = createdAt ?? DateTime.utc(2026, 4, 20, 8)
+      ..updatedAt = updatedAt ?? DateTime.utc(2026, 4, 20, 8),
+  );
+}
+
+/// `GET /symptoms`'s response envelope. Defaults to one row and a `total`
+/// that MATCHES `items.length` — a test proving truncation is visible
+/// (§R-18: `total` may exceed the returned page) overrides both explicitly.
+SymptomListResponse symptomListResponseFixture({
+  List<SymptomResponse>? items,
+  int? total,
+  int? limit = 100,
+  int? offset = 0,
+}) {
+  final rows = items ?? <SymptomResponse>[symptomResponseFixture()];
+  return SymptomListResponse(
+    (b) => b
+      ..items = ListBuilder<SymptomResponse>(rows)
+      ..total = total ?? rows.length
+      ..limit = limit
+      ..offset = offset,
   );
 }
 

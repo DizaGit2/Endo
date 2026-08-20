@@ -1,4 +1,4 @@
-// Semantics + geometry for screen 10 (P4b-T15).
+// Semantics + geometry for screen 10 (P4b-T15, guards inverted at P4b-T16).
 //
 // Two kinds of test live here, deliberately side by side:
 //
@@ -7,8 +7,20 @@
 //    locale) is a fact about that function, not about the tree it feeds.
 //    `cycle_setup_screen_semantics_test.dart` mixes plain `test()`s with
 //    `testWidgetsWithSemantics()` the same way, for a pure helper of its own.
-//  * WIDGET tests of the rendered screen — the a11y rules, and requirement 2's
-//    correctness constraint: no day cell exposes button semantics.
+//  * WIDGET tests of the rendered screen — the a11y rules, and (until T16)
+//    requirement 2's correctness constraint that no day cell exposes button
+//    semantics.
+//
+// **P4b-T16 inverts the group below named "day cells are buttons now — the
+// tappable set is the 30 current-month cells".** Before T16 this file's day
+// cells carried no semantics config at all (T15's own comments — preserved
+// where still accurate — explain why `tester.getSemantics` on a cell's key
+// used to resolve to the scroll container). T16 gives EVERY current-month
+// cell its own `Semantics(button: true)` node, so per-cell assertions are
+// meaningful for the first time; adjacent-month cells stay exactly as they
+// were. `view()`'s April 2026 fixture is 35 drawn cells, 30 of them
+// current-month (2 leading + 3 trailing dimmed) — that 30 is what both
+// guards below are now keyed on.
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -265,49 +277,89 @@ void main() {
     );
 
     testWidgetsWithSemantics(
-      'no day cell exposes button semantics — requirement 2: days are not '
-      'tappable in this task',
+      'the 30 current-month cells are buttons; the 5 adjacent-month cells '
+      'are not — requirement 2, inverted at P4b-T16: only the visible '
+      'MONTH is tappable',
       (tester) async {
         await pump(tester, view());
 
-        // NOT `expectNotAButton` on a day cell's own key. `_DayCell`
-        // contributes no semantics config of its own (its render objects —
-        // AspectRatio/DecoratedBox/Stack/Opacity — none of them describe a
-        // SemanticsConfiguration), so `tester.getSemantics` — which walks
-        // UP the render tree from the keyed element looking for the nearest
-        // node — skips straight past every cell and resolves to whatever
-        // ancestor DOES have one: the scroll container. All four day-cell
-        // keys therefore resolve to the SAME node, and a mutation adding
-        // real button semantics to one cell cannot redden that assertion
-        // (fix-round-1, I-1 — measured: an `InkWell(onTap:)`-wrapped cell
-        // does not move this number at all, see below).
-        //
-        // The GLOBAL count is what a per-cell check cannot be: exactly the
-        // two month chevrons (asserted as buttons above) should be
-        // button-flagged ANYWHERE in the tree. A day cell — leading,
-        // trailing, today, marked, or plain — that gained
-        // `Semantics(button: true)` would push this past 2, regardless of
-        // which cell it was.
+        // The GLOBAL count: the two month chevrons (asserted as buttons
+        // above) PLUS exactly the 30 current-month day cells. Before T16
+        // this asserted "2" — no day cell had its own semantics node at
+        // all, so `tester.getSemantics` on a cell's key resolved to
+        // whatever ancestor DID (the scroll container), and every cell key
+        // resolved to that SAME node. T16 gives every current-month cell
+        // `Semantics(button: true)`, so a day cell — leading, trailing,
+        // today, marked, or plain — that gained OR LOST that flag moves
+        // this count away from 32, regardless of which cell it was.
         expect(
           kAnyButtonSemantics,
-          findsNWidgets(2),
+          findsNWidgets(32),
           reason:
-              'only the two month chevrons should be buttons; a day cell '
-              'that gained button semantics would push this count past 2',
+              'the two month chevrons plus the 30 current-month day cells '
+              'should be the only buttons on this screen; a dimmed '
+              'adjacent-month cell gaining button semantics, or a '
+              'current-month cell losing it, would move this count away '
+              'from 32',
         );
 
-        // The other concrete form requirement 2 bans — "no InkWell ripple"
-        // — does NOT set the button flag at all (measured, see the mutation
-        // note above), so it needs its own, separate assertion. SCOPED to
-        // the grid, not the whole screen: Material 3's own `IconButton`
-        // implementation gives the two month chevrons an `InkWell` each
-        // (measured — `_IconButtonM3` wraps its child in one), so an
-        // unscoped `find.byType(InkWell), findsNothing)` would always find
-        // those two legitimate ones and could never assert "the grid has
-        // none".
+        // SCOPED to the grid, not the whole screen: Material 3's own
+        // `IconButton` implementation gives the two month chevrons an
+        // `InkWell` each (measured — `_IconButtonM3` wraps its child in
+        // one), so an unscoped count would always include those two
+        // legitimate ones. Before T16 this asserted `findsNothing`;
+        // inverted now that every current-month cell IS an `InkWell` (the
+        // tap that reaches screen 11).
         expect(
           find.descendant(
             of: find.byKey(cycleCalendarGridKey),
+            matching: find.byType(InkWell),
+          ),
+          findsNWidgets(30),
+        );
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'a current-month cell announces itself as a button named "<Month> '
+      '<day>" — the positive control the per-cell assertion above could not '
+      'be written without',
+      (tester) async {
+        await pump(tester, view());
+
+        // April 16, 2026 is the fixture's ordinary marked current-month
+        // day (`view()`, above).
+        expectLabeledButton(
+          tester,
+          find.byKey(ValueKey<DateTime>(DateTime(2026, 4, 16))),
+          'April 16',
+          exactLabel: true,
+        );
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'an adjacent-month cell is not wrapped in an InkWell — the negative '
+      'control: dimmed cells stay context, never targets',
+      (tester) async {
+        await pump(tester, view());
+
+        // NOT `expectNotAButton` on the cell's own key: a dimmed cell
+        // contributes no `Semantics` config of its own, so
+        // `tester.getSemantics` would walk UP past it to whatever ancestor
+        // DOES have one — silently asserting about that ancestor instead
+        // of the cell (the a11y_guard rule: a negative assertion needs a
+        // handle that owns a node). The WHOLE-SCREEN count above (exactly
+        // 32) is the real negative control for "no adjacent-month cell
+        // gained button semantics"; this is the complementary WIDGET-tree
+        // check that this SPECIFIC dimmed cell — March 30, 2026, the
+        // fixture's leading cell that still carries a dot — has no
+        // `InkWell` of its own, which is unambiguous because
+        // `find.descendant` is scoped to that cell's subtree rather than
+        // walking the semantics tree.
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey<DateTime>(DateTime(2026, 3, 30))),
             matching: find.byType(InkWell),
           ),
           findsNothing,
