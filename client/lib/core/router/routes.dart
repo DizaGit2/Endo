@@ -4,7 +4,7 @@
 /// in [AppRouter] and throughout the feature screens.
 abstract final class Routes {
   /// Splash shown while auth state is still resolving (cold start), so a stored
-  /// session lands on [profile] without a flash of [welcome].
+  /// session lands on [home] without a flash of [welcome].
   static const splash = '/splash';
 
   /// Welcome / login gateway (onboarding step 1).
@@ -15,9 +15,6 @@ abstract final class Routes {
   /// Both "Begin" and "I already have an account" on [WelcomeScreen] land here;
   /// the login-vs-register split is handled within the account screen (T7).
   static const account = '/account';
-
-  /// Main profile / home destination for authenticated users.
-  static const profile = '/profile';
 
   /// Onboarding flow (post-auth first-run wizard).
   ///
@@ -44,7 +41,12 @@ abstract final class Routes {
 
   /// Home tab (screen 8, the dashboard) — branch 0.
   ///
-  /// P4b-T17 replaces its placeholder with the real dashboard.
+  /// **The authenticated default since R-19 (P4b-T17)** — `lumenRedirect`
+  /// sends a signed-in, onboarded user here now, not to a top-level
+  /// `/profile` route (removed — screen 31 now mounts under [more]).
+  /// `docs/superpowers/plans/lumen-build.md`'s R-19 entry has the full
+  /// reasoning for why the redirect flip and the [more] branch mount had to
+  /// land in the same commit.
   static const home = '/home';
 
   /// Cycle tab (screens 10/11/14) — branch 1.
@@ -126,10 +128,15 @@ abstract final class Routes {
   /// Body tab (screens 22–25) — branch 3. Not built in P4b.
   static const body = '/body';
 
-  /// More tab (treatment, reports, settings) — branch 4. Not built in P4b.
+  /// More tab (treatment, reports, settings) — branch 4.
   ///
-  /// Note that [profile] (screen 31) is deliberately NOT inside this branch
-  /// yet: it is still the authenticated landing route and lives outside the
-  /// shell until a task owns the More tab's real contents.
+  /// **Screen 31 (profile) mounts as this branch's ROOT since P4b-T17
+  /// (R-19)** — the settled home CLAUDE.md always intended for it, and the
+  /// ONLY URL that reaches it: there is no longer a top-level `/profile`
+  /// route, so profile has exactly one address. T22a later pushes screen 32
+  /// inside this branch, as a child of this root, the same way `/cycle/
+  /// day/:date` sits under [cycle]. Treatment and reports (the rest of what
+  /// this tab names) are not built in P4b and stay on [TabPlaceholderScreen]
+  /// — R-10.
   static const more = '/more';
 }

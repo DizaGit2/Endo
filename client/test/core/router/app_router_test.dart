@@ -105,9 +105,12 @@ void main() {
       expect(_known(AuthStatus.unauthenticated, '/'), isNull);
     });
 
-    test('unauthenticated on "/account" returns null (login screen allowed)', () {
-      expect(_known(AuthStatus.unauthenticated, '/account'), isNull);
-    });
+    test(
+      'unauthenticated on "/account" returns null (login screen allowed)',
+      () {
+        expect(_known(AuthStatus.unauthenticated, '/account'), isNull);
+      },
+    );
 
     test('unauthenticated on "/profile" redirects to "/"', () {
       expect(_known(AuthStatus.unauthenticated, '/profile'), equals('/'));
@@ -117,13 +120,18 @@ void main() {
       expect(_known(AuthStatus.unauthenticated, '/splash'), equals('/'));
     });
 
-    test('unauthenticated on "/onboarding" redirects to "/" (auth comes first)',
-        () {
-      expect(_known(AuthStatus.unauthenticated, '/onboarding'), equals('/'));
-    });
+    test(
+      'unauthenticated on "/onboarding" redirects to "/" (auth comes first)',
+      () {
+        expect(_known(AuthStatus.unauthenticated, '/onboarding'), equals('/'));
+      },
+    );
 
     test('unauthenticated on an unmatched location redirects to "/"', () {
-      expect(_unknownLocation(AuthStatus.unauthenticated, '/nope'), equals('/'));
+      expect(
+        _unknownLocation(AuthStatus.unauthenticated, '/nope'),
+        equals('/'),
+      );
     });
 
     test('unauthenticated on a deep unmatched location redirects to "/"', () {
@@ -141,74 +149,98 @@ void main() {
   group('lumenRedirect — authenticated and onboarded', () {
     const onboarded = OnboardingStatus.completed;
 
-    test('authenticated + onboarded on "/profile" returns null', () {
-      expect(
-        _known(AuthStatus.authenticated, '/profile', onboarding: onboarded),
-        isNull,
-      );
-    });
-
-    test('authenticated + onboarded on "/" redirects to "/profile"', () {
-      expect(
-        _known(AuthStatus.authenticated, '/', onboarding: onboarded),
-        equals('/profile'),
-      );
-    });
-
-    test('authenticated + onboarded on "/account" redirects to "/profile"', () {
-      expect(
-        _known(AuthStatus.authenticated, '/account', onboarding: onboarded),
-        equals('/profile'),
-      );
-    });
-
-    test('authenticated + onboarded on "/splash" redirects to "/profile"', () {
-      expect(
-        _known(AuthStatus.authenticated, '/splash', onboarding: onboarded),
-        equals('/profile'),
-      );
-    });
+    // R-19 (P4b-T17): the authed default is "/home", not "/profile" — this
+    // whole group's rows moved with it. A test that still asserted "/profile"
+    // here would pass with only HALF of R-19 done (the redirect never
+    // flipped) — see r19_navigation_test.dart for the half this pure-function
+    // group cannot reach: that a route registered ONLY once actually renders
+    // screen 31 under /more, and that /profile itself is gone.
 
     test(
-      'authenticated + onboarded on "/onboarding" redirects to "/profile" '
-      '(the flow is done — do not re-enter it)',
+      'authenticated + onboarded on "/home" returns null (already there)',
       () {
         expect(
-          _known(AuthStatus.authenticated, '/onboarding', onboarding: onboarded),
-          equals('/profile'),
-        );
-      },
-    );
-
-    test(
-      'authenticated + onboarded on any other registered route returns null '
-      '(the requested route is honoured)',
-      () {
-        expect(
-          _known(
-            AuthStatus.authenticated,
-            '/cycle/day/2026-04-07',
-            onboarding: onboarded,
-          ),
+          _known(AuthStatus.authenticated, '/home', onboarding: onboarded),
           isNull,
         );
       },
     );
 
-    test(
-      'authenticated + onboarded on an unmatched location redirects to '
-      '"/profile"',
-      () {
-        expect(
-          _unknownLocation(
-            AuthStatus.authenticated,
-            '/nope',
-            onboarding: onboarded,
-          ),
-          equals('/profile'),
-        );
-      },
-    );
+    test('authenticated + onboarded on "/" redirects to "/home"', () {
+      expect(
+        _known(AuthStatus.authenticated, '/', onboarding: onboarded),
+        equals('/home'),
+      );
+    });
+
+    test('authenticated + onboarded on "/account" redirects to "/home"', () {
+      expect(
+        _known(AuthStatus.authenticated, '/account', onboarding: onboarded),
+        equals('/home'),
+      );
+    });
+
+    test('authenticated + onboarded on "/splash" redirects to "/home"', () {
+      expect(
+        _known(AuthStatus.authenticated, '/splash', onboarding: onboarded),
+        equals('/home'),
+      );
+    });
+
+    test('authenticated + onboarded on "/onboarding" redirects to "/home" '
+        '(the flow is done — do not re-enter it)', () {
+      expect(
+        _known(AuthStatus.authenticated, '/onboarding', onboarding: onboarded),
+        equals('/home'),
+      );
+    });
+
+    test('authenticated + onboarded on any other registered route returns null '
+        '(the requested route is honoured)', () {
+      expect(
+        _known(
+          AuthStatus.authenticated,
+          '/cycle/day/2026-04-07',
+          onboarding: onboarded,
+        ),
+        isNull,
+      );
+    });
+
+    test('authenticated + onboarded on "/more" (the URL screen 31 actually '
+        'lives at now) returns null — the requested route is honoured, not '
+        'redirected past', () {
+      expect(
+        _known(AuthStatus.authenticated, '/more', onboarding: onboarded),
+        isNull,
+      );
+    });
+
+    test('authenticated + onboarded on an unmatched location redirects to '
+        '"/home"', () {
+      expect(
+        _unknownLocation(
+          AuthStatus.authenticated,
+          '/nope',
+          onboarding: onboarded,
+        ),
+        equals('/home'),
+      );
+    });
+
+    test('authenticated + onboarded on the literal string "/profile" — no '
+        'longer a registered route — is treated as an unmatched location and '
+        'redirects to "/home", not honoured as if it still meant something '
+        '(R-19: exactly one URL for screen 31, and it is not this one)', () {
+      expect(
+        _unknownLocation(
+          AuthStatus.authenticated,
+          '/profile',
+          onboarding: onboarded,
+        ),
+        equals('/home'),
+      );
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -218,13 +250,19 @@ void main() {
   group('lumenRedirect — authenticated but not onboarded (the gate)', () {
     const notOnboarded = OnboardingStatus.incomplete;
 
-    test('authenticated + not onboarded on "/profile" redirects to "/onboarding"',
-        () {
-      expect(
-        _known(AuthStatus.authenticated, '/profile', onboarding: notOnboarded),
-        equals('/onboarding'),
-      );
-    });
+    test(
+      'authenticated + not onboarded on "/profile" redirects to "/onboarding"',
+      () {
+        expect(
+          _known(
+            AuthStatus.authenticated,
+            '/profile',
+            onboarding: notOnboarded,
+          ),
+          equals('/onboarding'),
+        );
+      },
+    );
 
     test('authenticated + not onboarded on "/" redirects to "/onboarding"', () {
       expect(
@@ -233,21 +271,29 @@ void main() {
       );
     });
 
-    test('authenticated + not onboarded on "/account" redirects to "/onboarding"',
-        () {
-      expect(
-        _known(AuthStatus.authenticated, '/account', onboarding: notOnboarded),
-        equals('/onboarding'),
-      );
-    });
+    test(
+      'authenticated + not onboarded on "/account" redirects to "/onboarding"',
+      () {
+        expect(
+          _known(
+            AuthStatus.authenticated,
+            '/account',
+            onboarding: notOnboarded,
+          ),
+          equals('/onboarding'),
+        );
+      },
+    );
 
-    test('authenticated + not onboarded on "/splash" redirects to "/onboarding"',
-        () {
-      expect(
-        _known(AuthStatus.authenticated, '/splash', onboarding: notOnboarded),
-        equals('/onboarding'),
-      );
-    });
+    test(
+      'authenticated + not onboarded on "/splash" redirects to "/onboarding"',
+      () {
+        expect(
+          _known(AuthStatus.authenticated, '/splash', onboarding: notOnboarded),
+          equals('/onboarding'),
+        );
+      },
+    );
 
     test(
       'authenticated + not onboarded on a deep registered route redirects to '
@@ -264,35 +310,29 @@ void main() {
       },
     );
 
-    test(
-      'authenticated + not onboarded ALREADY on "/onboarding" returns null '
-      '(no redirect loop)',
-      () {
-        expect(
-          _known(
-            AuthStatus.authenticated,
-            '/onboarding',
-            onboarding: notOnboarded,
-          ),
-          isNull,
-        );
-      },
-    );
+    test('authenticated + not onboarded ALREADY on "/onboarding" returns null '
+        '(no redirect loop)', () {
+      expect(
+        _known(
+          AuthStatus.authenticated,
+          '/onboarding',
+          onboarding: notOnboarded,
+        ),
+        isNull,
+      );
+    });
 
-    test(
-      'authenticated + not onboarded on an unmatched location redirects to '
-      '"/onboarding"',
-      () {
-        expect(
-          _unknownLocation(
-            AuthStatus.authenticated,
-            '/nope',
-            onboarding: notOnboarded,
-          ),
-          equals('/onboarding'),
-        );
-      },
-    );
+    test('authenticated + not onboarded on an unmatched location redirects to '
+        '"/onboarding"', () {
+      expect(
+        _unknownLocation(
+          AuthStatus.authenticated,
+          '/nope',
+          onboarding: notOnboarded,
+        ),
+        equals('/onboarding'),
+      );
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -312,36 +352,37 @@ void main() {
       );
     });
 
-    test('authenticated + unknown onboarding on "/profile" holds on "/splash"',
-        () {
-      expect(
-        _known(AuthStatus.authenticated, '/profile', onboarding: loading),
-        equals('/splash'),
-      );
-    });
-
-    test('authenticated + unknown onboarding on "/onboarding" holds on "/splash"',
-        () {
-      expect(
-        _known(AuthStatus.authenticated, '/onboarding', onboarding: loading),
-        equals('/splash'),
-      );
-    });
-
     test(
-      'authenticated + unknown onboarding on an unmatched location holds on '
-      '"/splash"',
+      'authenticated + unknown onboarding on "/profile" holds on "/splash"',
       () {
         expect(
-          _unknownLocation(
-            AuthStatus.authenticated,
-            '/nope',
-            onboarding: loading,
-          ),
+          _known(AuthStatus.authenticated, '/profile', onboarding: loading),
           equals('/splash'),
         );
       },
     );
+
+    test(
+      'authenticated + unknown onboarding on "/onboarding" holds on "/splash"',
+      () {
+        expect(
+          _known(AuthStatus.authenticated, '/onboarding', onboarding: loading),
+          equals('/splash'),
+        );
+      },
+    );
+
+    test('authenticated + unknown onboarding on an unmatched location holds on '
+        '"/splash"', () {
+      expect(
+        _unknownLocation(
+          AuthStatus.authenticated,
+          '/nope',
+          onboarding: loading,
+        ),
+        equals('/splash'),
+      );
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -370,7 +411,11 @@ void main() {
 
     test('authenticated + unavailable on "/onboarding" holds on "/splash"', () {
       expect(
-        _known(AuthStatus.authenticated, '/onboarding', onboarding: unavailable),
+        _known(
+          AuthStatus.authenticated,
+          '/onboarding',
+          onboarding: unavailable,
+        ),
         equals('/splash'),
       );
     });
@@ -412,26 +457,20 @@ void main() {
     });
 
     test('onboardingCompleted == null maps to incomplete', () {
-      expect(
-        onboardingStatusFrom(_me()),
-        OnboardingStatus.incomplete,
-      );
+      expect(onboardingStatusFrom(_me()), OnboardingStatus.incomplete);
     });
 
     test('a null profile maps to incomplete', () {
       expect(onboardingStatusFrom(null), OnboardingStatus.incomplete);
     });
 
-    test(
-      'a profile whose onboardingCompleted is null routes an authenticated '
-      'user to "/onboarding"',
-      () {
-        final status = onboardingStatusFrom(_me());
-        expect(
-          _known(AuthStatus.authenticated, '/profile', onboarding: status),
-          equals('/onboarding'),
-        );
-      },
-    );
+    test('a profile whose onboardingCompleted is null routes an authenticated '
+        'user to "/onboarding"', () {
+      final status = onboardingStatusFrom(_me());
+      expect(
+        _known(AuthStatus.authenticated, '/profile', onboarding: status),
+        equals('/onboarding'),
+      );
+    });
   });
 }

@@ -36,6 +36,9 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/router/app_router.dart';
 import 'package:lumen/core/router/routes.dart';
+import 'package:lumen/core/time/greeting_clock.dart';
+import 'package:lumen/features/home/application/dashboard_controller.dart';
+import 'package:lumen/features/home/presentation/dashboard_screen.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_step.dart';
@@ -99,7 +102,6 @@ List<RouteBase> _probeRoutes() => <RouteBase>[
   GoRoute(path: Routes.splash, builder: (_, _) => const _Probe('splash')),
   GoRoute(path: Routes.welcome, builder: (_, _) => const _Probe('welcome')),
   GoRoute(path: Routes.account, builder: (_, _) => const _Probe('account')),
-  GoRoute(path: Routes.profile, builder: (_, _) => const _Probe('profile')),
   GoRoute(
     path: Routes.onboarding,
     builder: (_, _) => const _Probe('onboarding'),
@@ -207,10 +209,24 @@ class _FakeProfileController extends ProfileController {
   Future<void> saveDisplayName(String name) async {}
 }
 
-MeResponse _me(bool? onboardingCompleted) => meResponseFixture(
-  id: 'user-1',
-  onboardingCompleted: onboardingCompleted,
-);
+/// Screen 8, pinned to a settled Fresh view with nothing logged — this
+/// file's subject is the ROUTE the onboarded case lands on, not the
+/// dashboard's own content.
+class _SettledDashboard extends DashboardController {
+  @override
+  Future<CacheResult<DashboardView>> build() async => Fresh(
+    DashboardView(
+      today: DateTime(2026, 4, 20),
+      displayName: 'Maya',
+      todayPain: null,
+      todayMood: null,
+      yesterdayPain: null,
+    ),
+  );
+}
+
+MeResponse _me(bool? onboardingCompleted) =>
+    meResponseFixture(id: 'user-1', onboardingCompleted: onboardingCompleted);
 
 /// Pumps the real [LumenApp] (and therefore the real `goRouterProvider` route
 /// table) with an authenticated session whose `/me` reports
@@ -238,6 +254,12 @@ Future<void> _pumpRealApp(
       // a dependency, so the harness that lands on it has to supply one — the
       // resume answer itself is irrelevant here, only that the shell settles.
       onboardingFlowControllerProvider.overrideWith(_SettledOnboarding.new),
+      // P4b-T17 (R-19): the onboarded case now lands on screen 8 (the real
+      // dashboard, not a placeholder), which reads `GET /me` AND
+      // `GET /cycle/calendar` (current + previous month) on mount. Pinned
+      // settled for the same reason the onboarding shell above is.
+      dashboardControllerProvider.overrideWith(_SettledDashboard.new),
+      greetingTimeOfDayProvider.overrideWithValue('Good morning'),
     ],
   );
 
@@ -262,17 +284,21 @@ void main() {
         );
 
         expect(find.text('newly registered'), findsOneWidget);
-        expect(find.text('profile'), findsNothing);
+        expect(find.text('home'), findsNothing);
       },
     );
 
-    testWidgets('a location matching no route still falls back by auth status', (
-      tester,
-    ) async {
-      await _pumpProbeRouter(tester, initialLocation: '/definitely-not-a-route');
+    testWidgets(
+      'a location matching no route still falls back by auth status',
+      (tester) async {
+        await _pumpProbeRouter(
+          tester,
+          initialLocation: '/definitely-not-a-route',
+        );
 
-      expect(find.text('profile'), findsOneWidget);
-    });
+        expect(find.text('home'), findsOneWidget);
+      },
+    );
 
     testWidgets(
       'the gate still wins over a registered route (adapter passes status '
@@ -295,18 +321,14 @@ void main() {
   // -------------------------------------------------------------------------
 
   group('routes inside a StatefulShellRoute branch', () {
-    testWidgets(
-      'a route registered ONLY inside a shell branch is recognised',
-      (tester) async {
-        await _pumpProbeRouter(
-          tester,
-          initialLocation: '/t2-shell-branch-route',
-        );
+    testWidgets('a route registered ONLY inside a shell branch is recognised', (
+      tester,
+    ) async {
+      await _pumpProbeRouter(tester, initialLocation: '/t2-shell-branch-route');
 
-        expect(find.text('shell branch route'), findsOneWidget);
-        expect(find.text('profile'), findsNothing);
-      },
-    );
+      expect(find.text('shell branch route'), findsOneWidget);
+      expect(find.text('home'), findsNothing);
+    });
 
     testWidgets('a shell branch\'s root route is recognised', (tester) async {
       await _pumpProbeRouter(tester, initialLocation: Routes.cycle);
@@ -321,7 +343,7 @@ void main() {
         await _pumpProbeRouter(tester, initialLocation: '/cycle/not-a-route');
 
         // The shell must not swallow unmatched deep links into its branch.
-        expect(find.text('profile'), findsOneWidget);
+        expect(find.text('home'), findsOneWidget);
       },
     );
   });
@@ -332,14 +354,18 @@ void main() {
   // -------------------------------------------------------------------------
 
   group('parameterised routes nested under a shell branch root', () {
-    testWidgets('"/cycle/day/2026-04-07" matches the "/cycle/day/:date" route', (
-      tester,
-    ) async {
-      await _pumpProbeRouter(tester, initialLocation: '/cycle/day/2026-04-07');
+    testWidgets(
+      '"/cycle/day/2026-04-07" matches the "/cycle/day/:date" route',
+      (tester) async {
+        await _pumpProbeRouter(
+          tester,
+          initialLocation: '/cycle/day/2026-04-07',
+        );
 
-      expect(find.text('day 2026-04-07'), findsOneWidget);
-      expect(find.text('profile'), findsNothing);
-    });
+        expect(find.text('day 2026-04-07'), findsOneWidget);
+        expect(find.text('home'), findsNothing);
+      },
+    );
 
     testWidgets('a different concrete date matches the same route', (
       tester,
@@ -365,7 +391,10 @@ void main() {
     testWidgets(
       'switching away from a branch and back leaves you on the pushed route',
       (tester) async {
-        await _pumpProbeRouter(tester, initialLocation: '/cycle/day/2026-04-07');
+        await _pumpProbeRouter(
+          tester,
+          initialLocation: '/cycle/day/2026-04-07',
+        );
         expect(find.text('day 2026-04-07'), findsOneWidget);
         expect(_selectedIndex(tester), 1);
 
@@ -427,7 +456,8 @@ void main() {
     );
 
     testWidgets(
-      'an authenticated, onboarded user ARRIVES at the profile screen',
+      'an authenticated, onboarded user ARRIVES at the dashboard (screen 8) '
+      '— R-19, not the profile screen anymore',
       (tester) async {
         await _pumpRealApp(tester, onboardingCompleted: true);
 
@@ -436,8 +466,13 @@ void main() {
         // could not fail for the reason this test exists (e.g. deleting the
         // onboardingStatusProvider listen in _RouterRefreshNotifier would
         // leave it green). Assert the destination, not just the non-destination.
-        expect(find.byType(ProfileScreen), findsOneWidget);
+        expect(find.byType(DashboardScreen), findsOneWidget);
         expect(find.byType(OnboardingShellScreen), findsNothing);
+        // R-19's other half, in the SAME real app: profile is not what the
+        // default route shows anymore, but it is not gone — it is one tap
+        // away on the More tab (proven directly, production tap handler
+        // included, in r19_navigation_test.dart).
+        expect(find.byType(ProfileScreen), findsNothing);
       },
     );
   });

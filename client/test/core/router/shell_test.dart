@@ -15,17 +15,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lumen/api/model/cycle_calendar_day.dart';
 import 'package:lumen/api/model/date.dart';
+import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
+import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/router/app_router.dart';
 import 'package:lumen/core/router/routes.dart';
+import 'package:lumen/core/time/greeting_clock.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/features/cycle/application/cycle_calendar_controller.dart';
 import 'package:lumen/features/cycle/presentation/cycle_calendar_screen.dart';
+import 'package:lumen/features/home/application/dashboard_controller.dart';
+import 'package:lumen/features/home/presentation/dashboard_screen.dart';
 import 'package:lumen/features/onboarding/application/cycle_setup_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_step.dart';
 import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.dart';
+import 'package:lumen/features/settings/application/profile_controller.dart';
+import 'package:lumen/features/settings/presentation/profile_screen.dart';
 import 'package:lumen/shared/widgets/lumen_scaffold.dart';
 
 import '../../support/harness.dart';
@@ -69,6 +76,15 @@ Future<void> _pumpShell(
       // mount. Pinned settled for the same reason as the two controllers
       // above.
       cycleCalendarControllerProvider.overrideWith(_SettledCalendar.new),
+      // …and since P4b-T17 (R-19) the Home TAB itself renders screen 8 (the
+      // real dashboard, not a placeholder), which reads `GET /me` and
+      // `GET /cycle/calendar` (current + previous month) on mount — pinned
+      // settled for the same reason.
+      dashboardControllerProvider.overrideWith(_SettledDashboard.new),
+      greetingTimeOfDayProvider.overrideWithValue('Good morning'),
+      // …and the More TAB now renders screen 31 (profile) instead of a
+      // placeholder too (P4b-T17, R-19), which reads `GET /me` on mount.
+      profileControllerProvider.overrideWith(_FakeProfileController.new),
     ],
   );
 }
@@ -109,6 +125,31 @@ class _SettledCalendar extends CycleCalendarController {
   );
 }
 
+/// Screen 8, pinned to a settled Fresh view with nothing logged.
+class _SettledDashboard extends DashboardController {
+  @override
+  Future<CacheResult<DashboardView>> build() async => Fresh(
+    DashboardView(
+      today: DateTime(2026, 4, 20),
+      displayName: 'Maya',
+      todayPain: null,
+      todayMood: null,
+      yesterdayPain: null,
+    ),
+  );
+}
+
+/// Screen 31, pinned to a settled Fresh profile — the same shape
+/// `route_table_test.dart`'s `_FakeProfileController` uses.
+class _FakeProfileController extends ProfileController {
+  @override
+  Future<CacheResult<MeResponse>> build() async =>
+      Fresh(meResponseFixture(id: 'user-1'));
+
+  @override
+  Future<void> saveDisplayName(String name) async {}
+}
+
 int _selectedIndex(WidgetTester tester) =>
     tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex;
 
@@ -118,30 +159,29 @@ int _selectedIndex(WidgetTester tester) =>
 const _allLabels = <String>['Home', 'Cycle', 'Hormones', 'Body', 'More'];
 
 /// (bottom-nav label, the heading the tab's destination renders) for the
-/// tabs that are STILL a bare [TabPlaceholderScreen]. Cycle is deliberately
-/// absent since P4b-T15: it renders [CycleCalendarScreen] now, which has no
-/// heading string to compare against — see [_tabContent].
+/// tabs that are STILL a bare [TabPlaceholderScreen]. Cycle (P4b-T15), Home
+/// and More (P4b-T17, R-19) are deliberately absent — none of the three
+/// renders a placeholder heading anymore; see [_tabContent].
 const _placeholderTabs = <(String, String)>[
-  ('Home', 'Home isn\'t here yet'),
   ('Hormones', 'Hormones aren\'t here yet'),
   ('Body', 'Body tracking isn\'t here yet'),
-  ('More', 'More isn\'t here yet'),
 ];
 
 /// (bottom-nav label, a [Finder] that matches ONLY when that tab's real
 /// content is on screen), for every one of the five tabs.
 ///
-/// Four still render [TabPlaceholderScreen] and are found by their heading
-/// text, same as [_placeholderTabs]. Cycle (P4b-T15) is found by its own
-/// screen TYPE instead — [CycleCalendarScreen] no longer has a placeholder
-/// heading to compare against, and finding it by TYPE is also what proves the
-/// route table's builder was actually replaced, not merely relabelled.
+/// Two still render [TabPlaceholderScreen] and are found by their heading
+/// text, same as [_placeholderTabs]. Cycle (P4b-T15), Home and More
+/// (P4b-T17, R-19) are found by their own screen TYPE instead — none of the
+/// three has a placeholder heading to compare against, and finding by TYPE
+/// is also what proves the route table's builder was actually replaced, not
+/// merely relabelled.
 List<(String label, Finder content)> _tabContent() => <(String, Finder)>[
-  ('Home', find.text('Home isn\'t here yet')),
+  ('Home', find.byType(DashboardScreen)),
   ('Cycle', find.byType(CycleCalendarScreen)),
   ('Hormones', find.text('Hormones aren\'t here yet')),
   ('Body', find.text('Body tracking isn\'t here yet')),
-  ('More', find.text('More isn\'t here yet')),
+  ('More', find.byType(ProfileScreen)),
 ];
 
 void main() {
@@ -157,7 +197,7 @@ void main() {
 
       expect(find.byType(LumenBottomNav), findsOneWidget);
       expect(_selectedIndex(tester), 0);
-      expect(find.text('Home isn\'t here yet'), findsOneWidget);
+      expect(find.byType(DashboardScreen), findsOneWidget);
     });
 
     testWidgets('all five destinations are present, in CLAUDE.md order', (
@@ -241,9 +281,11 @@ void main() {
   // -------------------------------------------------------------------------
 
   group('unimplemented tabs state plainly that the feature is not here', () {
-    // Home excluded (T17 still owes it its real screen); Cycle excluded
-    // entirely from _placeholderTabs since P4b-T15 gave it a real one.
-    for (final (label, heading) in _placeholderTabs.sublist(1)) {
+    // Cycle, Home and More are entirely absent from _placeholderTabs (each
+    // gave up its placeholder — P4b-T15, and P4b-T17/R-19 respectively), so
+    // this iterates the full (now Hormones/Body-only) list rather than
+    // dropping a leading entry that no longer exists.
+    for (final (label, heading) in _placeholderTabs) {
       testWidgets('the $label tab renders the exact placeholder copy', (
         tester,
       ) async {

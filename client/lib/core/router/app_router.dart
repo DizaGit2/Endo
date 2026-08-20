@@ -5,6 +5,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/features/cycle/presentation/cycle_calendar_screen.dart';
 import 'package:lumen/features/cycle/presentation/day_detail_screen.dart';
+import 'package:lumen/features/home/presentation/dashboard_screen.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
 import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.dart';
@@ -47,9 +48,20 @@ import 'package:lumen/shared/widgets/lumen_scaffold.dart';
 /// | authenticated   | unknown or unavailable | anything else | "/splash"   |
 /// | authenticated   | incomplete | "/onboarding"           | null          |
 /// | authenticated   | incomplete | anything else           | "/onboarding" |
-/// | authenticated   | completed  | "/", "/account", "/splash", "/onboarding" | "/profile" |
-/// | authenticated   | completed  | unmatched location      | "/profile"    |
+/// | authenticated   | completed  | "/", "/account", "/splash", "/onboarding" | "/home" |
+/// | authenticated   | completed  | unmatched location      | "/home"       |
 /// | authenticated   | completed  | any other known route   | null          |
+///
+/// **R-19: the authed default is [Routes.home], not `/profile`.** Screen 31
+/// (profile) has no top-level route anymore — it mounts as the More branch's
+/// root ([Routes.more], see [lumenRoutes]) — so this row and that mount are
+/// the two halves of one ruling, shipped in the same commit: flipping this
+/// default while profile stayed a separate top-level route would have
+/// stranded a signed-in user with no route to sign-out (no nav destination
+/// reaches `/profile` once it is not the default), and mounting profile
+/// under More while this default still pointed at the old `/profile` route
+/// would have given the one screen two live URLs with divergent back
+/// behaviour. Neither half alone is R-19.
 ///
 /// The `authenticated + unknown/unavailable` rows are the "profile not loaded
 /// yet" case: this function must not fetch `/me` (it runs synchronously and
@@ -99,14 +111,16 @@ String? lumenRedirect({
 
         // Gate open: honour the requested route. Onboarded users have no
         // business on welcome / account / splash / onboarding, and an unmatched
-        // location falls back to the authed default.
+        // location falls back to the authed default — the Home branch since
+        // R-19, not `/profile` (removed as a top-level route; see this
+        // function's own dartdoc for why the two halves of R-19 ship together).
         case OnboardingStatus.completed:
           if (!isKnownLocation ||
               location == Routes.welcome ||
               location == Routes.account ||
               location == Routes.splash ||
               location == Routes.onboarding) {
-            return Routes.profile;
+            return Routes.home;
           }
           return null;
       }
@@ -175,7 +189,7 @@ class _RouterRefreshNotifier extends ChangeNotifier {
 /// - **Outside the shell** — splash, welcome, account, onboarding. These are
 ///   pre-app surfaces: the mockups for screens 1–7 have no bottom nav, and a
 ///   user part-way through onboarding must not be handed a nav bar that lets
-///   them wander off. [Routes.profile] is also still out here (see below).
+///   them wander off. Screen 31 (profile) is NOT out here — see below.
 /// - **Inside the shell** — the five bottom-nav tabs, as branches of a
 ///   [StatefulShellRoute.indexedStack] in CLAUDE.md's order. `indexedStack`
 ///   (rather than a plain [ShellRoute] over an [IndexedStack] of tab roots)
@@ -188,13 +202,17 @@ class _RouterRefreshNotifier extends ChangeNotifier {
 /// route, not as new top-level entries — a top-level route renders over the
 /// whole app with no nav bar and no branch history.
 ///
-/// **Why [Routes.profile] is not the More branch yet.** Screen 31 is a settings
-/// screen and CLAUDE.md files settings under More, so that is where it will end
-/// up. But it is also today's authenticated landing route and the only way to
-/// reach sign-out and account deletion, and P4b-T2's brief keeps the three
-/// unbuilt tabs on the placeholder. Moving it in now would mean either two
-/// entry points to one screen or an authenticated user landing on a
-/// placeholder — so it stays a top-level route until a task owns the More tab.
+/// **Screen 31 (profile) mounts as the More branch's ROOT (P4b-T17, R-19)** —
+/// the settled home CLAUDE.md always intended for it (a settings screen files
+/// under More), and now its only URL: there is no top-level `/profile` route
+/// anymore. This shipped in the SAME commit as [Routes.home] becoming the
+/// authed default (`lumenRedirect`, above) — the two are one ruling, not two:
+/// flipping the default alone (profile still top-level, still unreached from
+/// any nav destination) would have stranded a signed-in user with no route to
+/// sign-out; mounting profile here alone (default still pointing at the old
+/// `/profile`) would have given one screen two live URLs with divergent back
+/// behaviour. T22a later pushes screen 32 inside this branch as a CHILD of
+/// this root — the same shape `/cycle/day/:date` uses under [Routes.cycle].
 ///
 /// A function rather than a constant, deliberately: [StatefulShellRoute] and
 /// [StatefulShellBranch] each allocate a [GlobalKey], so two simultaneously
@@ -203,7 +221,6 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
   GoRoute(path: Routes.splash, builder: (_, _) => const _SplashScreen()),
   GoRoute(path: Routes.welcome, builder: (_, _) => const WelcomeScreen()),
   GoRoute(path: Routes.account, builder: (_, _) => const AccountScreen()),
-  GoRoute(path: Routes.profile, builder: (_, _) => const ProfileScreen()),
   GoRoute(
     path: Routes.onboarding,
     builder: (_, _) => const OnboardingShellScreen(),
@@ -212,13 +229,13 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
     builder: (_, _, navigationShell) =>
         _TabShell(navigationShell: navigationShell),
     branches: <StatefulShellBranch>[
-      // 0 — Home. P4b-T17 replaces the builder with screen 8 (dashboard).
+      // 0 — Home. Screen 8 (the dashboard), and the authenticated default
+      // since R-19 (P4b-T17) — see lumenRedirect's own dartdoc.
       StatefulShellBranch(
         routes: <RouteBase>[
           GoRoute(
             path: Routes.home,
-            builder: (_, _) =>
-                const TabPlaceholderScreen(heading: 'Home isn\'t here yet'),
+            builder: (_, _) => const DashboardScreen(),
           ),
         ],
       ),
@@ -282,13 +299,15 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
           ),
         ],
       ),
+      // 4 — More. Screen 31 (profile) mounts as this branch's root since
+      // P4b-T17 (R-19) — see lumenRoutes' own dartdoc above for why this and
+      // the redirect flip are one ruling. Treatment and reports (the rest of
+      // what "More" names) are not built in P4b and stay off this branch —
+      // R-10 covers only the TAB existing with an honest destination, not a
+      // full accordion of placeholder children.
       StatefulShellBranch(
         routes: <RouteBase>[
-          GoRoute(
-            path: Routes.more,
-            builder: (_, _) =>
-                const TabPlaceholderScreen(heading: 'More isn\'t here yet'),
-          ),
+          GoRoute(path: Routes.more, builder: (_, _) => const ProfileScreen()),
         ],
       ),
     ],

@@ -18,10 +18,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
+import 'package:lumen/core/time/greeting_clock.dart';
+import 'package:lumen/features/home/application/dashboard_controller.dart';
+import 'package:lumen/features/home/presentation/dashboard_screen.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.dart';
-import 'package:lumen/features/settings/presentation/profile_screen.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -41,6 +43,25 @@ class _FakeProfileController extends ProfileController {
   Future<void> saveDisplayName(String name) async {}
 }
 
+/// Screen 8, pinned to a settled Fresh view — P4b-T17 (R-19) made it the
+/// authed landing screen this file's gate ultimately lands on, so a
+/// successful `/me` read now has a dashboard's own reads (`GET
+/// /cycle/calendar` x2) behind it too. Pinned settled for the same reason
+/// `_FakeProfileController` is: this file's subject is the GATE, not the
+/// dashboard's content.
+class _SettledDashboard extends DashboardController {
+  @override
+  Future<CacheResult<DashboardView>> build() async => Fresh(
+    DashboardView(
+      today: DateTime(2026, 4, 20),
+      displayName: 'Maya',
+      todayPain: null,
+      todayMood: null,
+      yesterdayPain: null,
+    ),
+  );
+}
+
 MeResponse _me() => meResponseFixture(id: 'user-1');
 
 /// Pumps the real app with an authenticated session whose `/me` read behaves
@@ -56,6 +77,8 @@ Future<void> _pumpApp(WidgetTester tester, MeRepository repo) async {
       ...lumenOverrides(),
       meRepositoryProvider.overrideWithValue(repo),
       profileControllerProvider.overrideWith(_FakeProfileController.new),
+      dashboardControllerProvider.overrideWith(_SettledDashboard.new),
+      greetingTimeOfDayProvider.overrideWithValue('Good morning'),
     ],
   );
   await tester.pump(const Duration(milliseconds: 16));
@@ -91,9 +114,10 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Try again'), findsOneWidget);
-      // The user is held, not guessed past: no onboarding, no profile.
+      // The user is held, not guessed past: no onboarding, no dashboard
+      // (the authed landing screen since R-19 — P4b-T17).
       expect(find.byType(OnboardingShellScreen), findsNothing);
-      expect(find.byType(ProfileScreen), findsNothing);
+      expect(find.byType(DashboardScreen), findsNothing);
     },
   );
 
@@ -144,7 +168,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 16));
 
     expect(calls, 2);
-    expect(find.byType(ProfileScreen), findsOneWidget);
+    expect(find.byType(DashboardScreen), findsOneWidget);
   });
 
   // -------------------------------------------------------------------------
@@ -161,6 +185,6 @@ void main() {
     await tester.pump(const Duration(seconds: 30));
 
     expect(find.text('Try again'), findsNothing);
-    expect(find.byType(ProfileScreen), findsOneWidget);
+    expect(find.byType(DashboardScreen), findsOneWidget);
   });
 }
