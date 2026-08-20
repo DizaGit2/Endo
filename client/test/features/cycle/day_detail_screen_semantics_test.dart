@@ -350,6 +350,30 @@ void main() {
         expect(find.text('Nothing logged for this day.'), findsNothing);
       },
     );
+
+    testWidgetsWithSemantics(
+      'fix round 2, M-4: symptomsTotal: 0 with a NON-EMPTY returned page '
+      'still renders the row — the mirror image of round 1\'s shape, '
+      'introduced by round 1\'s own fix and caught at re-review',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            date: date,
+            log: null,
+            symptoms: [symptomResponseFixture(symptomCode: 'bloating')],
+            symptomsTotal: 0,
+          ),
+        );
+
+        expect(find.text('Bloating'), findsOneWidget);
+        expect(find.text('Nothing logged for this day.'), findsNothing);
+        // total (0) is not greater than the page (1), so no truncation
+        // notice is expected here — only that the row itself survives.
+        expect(find.textContaining('Showing'), findsNothing);
+      },
+    );
   });
 
   group('chips render only from the ratified vocabulary', () {

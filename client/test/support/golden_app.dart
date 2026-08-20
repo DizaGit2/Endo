@@ -29,35 +29,56 @@
 //      borders, decorations). Assert strings in the semantics/widget test
 //      instead — a golden can never tell you WHICH glyphs were drawn.
 //      **The insensitivity criterion is EQUAL RENDERED WIDTH, not equal
-//      character count — this is the THIRD false or imprecise
-//      self-description this file has carried, and the second correction to
-//      THIS SAME rule** (P4b-T13/M9 first wrote "equal character count";
-//      P4b-T16/fix-round-1 measured that claim itself and found it wrong).
+//      character count and not equal glyph identity — this is the FOURTH
+//      false or imprecise self-description this file has carried, and the
+//      second correction to THIS SAME rule** (P4b-T13/M9 first wrote
+//      "equal character count"; P4b-T16/fix-round-1 measured that the
+//      criterion was wrong but got the MECHANISM sentence wrong too;
+//      P4b-T16/fix-round-2 corrects the mechanism). Sharpest control
+//      (fix-round-2): `"Bloating"` -> `"Blotaing"` — the same 8 glyphs,
+//      reordered, identical rendered width — passes at 0 px. `"lllllll"`
+//      -> `"WWWWWWW"` (same length, very different width) does not. It is
+//      width, specifically, that the images are insensitive to holding
+//      equal — never character count, never which glyphs are present.
+//
+//      **The mechanism has TWO environments that give opposite answers,
+//      and that split is the part worth remembering.**
 //      `BlockedTextPaintingContext.paintChild` (`alchemist` 0.14.0,
 //      `blocked_text_image.dart:34-44`) draws its rectangle at
-//      `child.size` — the REAL `RenderParagraph` size that ordinary
-//      proportional-font text layout already computed, before any glyph is
-//      replaced. Obscuring swaps *what gets painted*, never *how the
-//      paragraph was measured*, so the block's width tracks the true
-//      rendered width of the run, and no fixed-advance/monospace test font
-//      is configured anywhere in this repo to make character count a proxy
-//      for it. **Measured directly** (P4b-T16/fix-round-1): two 7-glyph
-//      strings of deliberately different composition ("lllllll" vs
-//      "WWWWWWW") produce dramatically different block widths at equal
-//      character count, while two ordinary same-length English words
-//      (e.g. "Bloating"/"Headache") land close but not always exactly
-//      equal — which is why an EQUAL-length production copy edit
-//      (`day_detail_screen.dart`'s label map, `'Bloating'` ->
-//      `'Headache'` and `'Fatigue'` -> `'Nauseaa'`) still reddened both
-//      goldens by 847 px: two ordinary words of the same length usually
-//      have close but not identical total glyph advance, and "close" is
-//      not "insensitive". A length-changing copy edit (rule 6's original
-//      example, "Phase shift" -> "Phase shifts") is the reliable, easy
-//      case of the same underlying rule — more glyphs is a coarser and
-//      more certain way to move the width than any same-length swap can be
-//      relied on NOT to. **Treat every copy edit as needing
-//      `--update-goldens` and a look at the diff** — length alone was
-//      never a safe test either way, and neither is character count.
+//      `child.size` — the REAL `RenderParagraph` size ordinary text layout
+//      already computed, before any glyph is replaced — so the block's
+//      width always tracks the true rendered width of the run. What
+//      changes between environments is which FONT that layout used:
+//        - In an ORDINARY `flutter_test` widget test (no golden), the
+//          binding's default font genuinely IS fixed-advance. Measured
+//          directly, in this repo, outside any golden: `"lllllll"` and
+//          `"WWWWWWW"` both come out **78.75 px** wide. Character count
+//          really is a safe proxy for width here.
+//        - Inside an `alchemist` golden, it is not: `goldenTest`'s setup
+//          (`_setUpGoldenTests` -> `loadFonts()`,
+//          `alchemist-0.14.0/lib/src/golden_test.dart:26-30`, `:38-67`)
+//          reads this app's OWN `FontManifest.json` and registers every
+//          real bundled family — including proportional Roboto — before
+//          the first `goldenTest` body runs. Measured directly, inside a
+//          golden: the SAME two strings come out **20.44 px** and
+//          **70.06 px**. `obscureText` swaps what gets PAINTED; it never
+//          touches what MEASURED the paragraph, and inside a golden that
+//          measurement uses a real proportional font.
+//      **This split is exactly why the original "fixed-advance test font"
+//      claim looked right for so long: it is true of an ordinary widget
+//      test and false of a golden**, and this file is about goldens. A
+//      mechanism claim measured in the wrong environment reads as
+//      confirmed and is not.
+//
+//      Consequence for real copy: two same-length English words are NOT
+//      reliably close in rendered width. `"Bloating"`/`"Headache"`
+//      (`day_detail_screen.dart`'s label map, the actual production edit
+//      that surfaced this) measure **42.28 px** and **51.48 px** inside a
+//      golden — 22% apart, not "close" — which is why that equal-length
+//      swap reddened both goldens by 847 px. **Treat every copy edit,
+//      length-changing or not, as needing `--update-goldens` and a look at
+//      the diff** — neither character count nor "it's just a synonym of
+//      similar length" is a safe test either way.
 //   7. **TEXT OPACITY IS INVISIBLE TO A BLOCKED-TEXT GOLDEN — this is the
 //      second false self-description this file has carried** (P4b-T13 found
 //      the copy-insensitivity one above; P4b-T15/fix-round-1 found this one).

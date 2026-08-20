@@ -262,14 +262,25 @@ class _Body extends StatelessWidget {
     final hasPain = log?.pain != null; // never a falsiness test — D-08.
     final hasMood = log?.mood != null;
     final hasNote = (log?.notes ?? '').trim().isNotEmpty;
-    // `symptomsTotal > 0`, NOT `symptoms.isNotEmpty` (fix round 1, M-4):
-    // gating the whole section — including the truncation notice — on the
-    // RETURNED page would let `symptomsTotal > 0` with an empty page
-    // (unreachable today because `limit` is always >= 1, but a silent-
-    // truncation shape all the same) fall through to the empty-day state
-    // below and say "nothing logged" on a day that is not empty. `total`
-    // is the ground truth; the page is just what happened to come back.
-    final hasSymptomData = view.symptomsTotal > 0;
+    // `symptomsTotal > 0 || symptoms.isNotEmpty` (fix round 1 tried
+    // `symptomsTotal > 0` alone, fix round 2 corrected it): each half
+    // guards the OTHER's silent-loss shape, and a server inconsistency can
+    // make either half zero while the other is not.
+    //  - `symptomsTotal > 0` alone: gating the whole section — including
+    //    the truncation notice — on the RETURNED page would let
+    //    `symptomsTotal > 0` with an empty page (unreachable today because
+    //    `limit` is always >= 1, but a silent-truncation shape all the
+    //    same) fall through to the empty-day state and say "nothing
+    //    logged" on a day that is not empty.
+    //  - `symptoms.isNotEmpty` alone (fix round 1's actual defect, found
+    //    at re-review): `total == 0` with a NON-empty page would fall
+    //    through the same way and DROP every returned row — the mirror
+    //    image of the first shape, on the same screen, introduced by the
+    //    fix for the first one.
+    // `total` is the ground truth for whether the SECTION exists; the page
+    // is the ground truth for what to render inside it. Neither one alone
+    // is sufficient to decide the section is empty.
+    final hasSymptomData = view.symptomsTotal > 0 || view.symptoms.isNotEmpty;
     final hasAnything = hasPain || hasMood || hasNote || hasSymptomData;
     final truncated = view.symptomsTotal > view.symptoms.length;
 
@@ -296,9 +307,10 @@ class _Body extends StatelessWidget {
             // §222-228): `total` exceeding the page renders a count line
             // rather than quietly truncating. Deliberately NOT nested
             // inside a "the page has rows" condition — gated on
-            // `hasSymptomData` (`total > 0`) above so this notice still
-            // renders even in the (currently unreachable) shape where the
-            // page came back empty but `total` says otherwise.
+            // `hasSymptomData` (`total > 0 || symptoms.isNotEmpty`) above
+            // so this notice still renders even in the (currently
+            // unreachable) shape where the page came back empty but
+            // `total` says otherwise.
             if (truncated)
               Padding(
                 padding: const EdgeInsets.only(top: 2, bottom: 4),

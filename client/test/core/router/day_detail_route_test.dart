@@ -36,12 +36,15 @@ import 'package:lumen/features/cycle/presentation/day_detail_screen.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_step.dart';
+import 'package:lumen/features/symptoms/data/symptoms_repository.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../../support/harness.dart';
 
 class _MockCycleRepository extends Mock implements CycleRepository {}
+
+class _MockSymptomsRepository extends Mock implements SymptomsRepository {}
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -204,16 +207,36 @@ void main() {
         // read is issued for the rolled date" — stated directly here with
         // a mocked repository, rather than only inferred from
         // `find.byType(DayDetailScreen), findsNothing`.
+        //
+        // fix round 2, M-3: `symptomsRepositoryProvider` must ALSO be
+        // overridden, or this assertion is vacuous. `DayDetailController.
+        // build()` reads `symptomsRepositoryProvider` before it ever calls
+        // `cycleRepo.getDay` — left un-overridden, that provider throws
+        // while building (it reaches the real, un-overridden
+        // `cacheStoreProvider`, which throws by design when un-overridden)
+        // BEFORE `cycleRepo.getDay` can be reached at all, on every path —
+        // guard intact or broken alike. `verifyNever` would then pass for
+        // the wrong reason (nothing ever calls the mock, full stop) rather
+        // than for the reason this test claims (the guard rejected the
+        // rolled date). With both repositories mocked and answering
+        // successfully, the guard is the only thing standing between a
+        // broken round-trip check and a real `getDay(2026-03-03)` call —
+        // which is what makes this assertion capable of failing at all.
         final cycleRepo = _MockCycleRepository();
         when(
           () => cycleRepo.getDay(any()),
         ).thenAnswer((_) async => Fresh(cycleDayFixture()));
+        final symptomsRepo = _MockSymptomsRepository();
+        when(
+          () => symptomsRepo.getDay(any()),
+        ).thenAnswer((_) async => Fresh(symptomListResponseFixture()));
 
         await _pumpProductionRouter(
           tester,
           initialLocation: '/cycle/day/2026-02-31',
           extraOverrides: [
             cycleRepositoryProvider.overrideWithValue(cycleRepo),
+            symptomsRepositoryProvider.overrideWithValue(symptomsRepo),
           ],
         );
 
