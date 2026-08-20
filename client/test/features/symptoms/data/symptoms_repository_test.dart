@@ -203,6 +203,34 @@ void main() {
 
       expect(result, isA<NetworkRequired<SymptomListResponse>>());
     });
+
+    test('a 200 with no body is a typed ServerFailure carried inside '
+        'NetworkRequired (via cachedRead\'s own ambiguity handling), with its '
+        'OWN message distinct from createBatch\'s "no body"/"no items" cases '
+        '(fix round 2, M-3 — this site had no test at all before)', () async {
+      when(
+        () => api.symptomsGet(
+          from: any(named: 'from'),
+          to: any(named: 'to'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<SymptomListResponse>(
+          requestOptions: RequestOptions(path: '/symptoms'),
+          statusCode: 200,
+        ),
+      );
+
+      final result = await repo.getDay(DateTime(2026, 4, 20));
+
+      expect(result, isA<NetworkRequired<SymptomListResponse>>());
+      final failure = (result as NetworkRequired<SymptomListResponse>).failure;
+      expect(failure, isA<ServerFailure>());
+      expect(
+        (failure as ServerFailure).message,
+        'The server returned an empty symptoms-day response.',
+      );
+    });
   });
 
   // ---------------------------------------------------------------------
@@ -686,11 +714,18 @@ void main() {
         final invalidated = verify(
           () => store.invalidate(captureAny()),
         ).captured;
+        // Fix round 2, item 2: the explicit-occurredAt branch is a ±1-day
+        // WINDOW (Apr 19/20/21), not just Apr 20 alone — see the dedicated
+        // window test below for the isolated pin of this shape.
         expect(
           invalidated,
           unorderedEquals(<String>[
+            'GET:/cycle/day/2026-04-19',
+            'GET:/symptoms?day=2026-04-19',
             'GET:/cycle/day/2026-04-20',
             'GET:/symptoms?day=2026-04-20',
+            'GET:/cycle/day/2026-04-21',
+            'GET:/symptoms?day=2026-04-21',
             'GET:/cycle/calendar?month=2026-04',
           ]),
           reason:
@@ -724,18 +759,67 @@ void main() {
 
       expect(failure, isA<NetworkFailure>());
       final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      // Fix round 2, item 2: each explicit occurredAt now falls back to its
+      // own ±1-day WINDOW (7 keys: 2 extra days × [cycleDay, symptomsDay] +
+      // 1 shared month key), not just its own day (3 keys).
       expect(
         invalidated,
         unorderedEquals(<String>[
+          'GET:/cycle/day/2026-04-19',
+          'GET:/symptoms?day=2026-04-19',
           'GET:/cycle/day/2026-04-20',
           'GET:/symptoms?day=2026-04-20',
+          'GET:/cycle/day/2026-04-21',
+          'GET:/symptoms?day=2026-04-21',
           'GET:/cycle/calendar?month=2026-04',
+          'GET:/cycle/day/2026-05-02',
+          'GET:/symptoms?day=2026-05-02',
           'GET:/cycle/day/2026-05-03',
           'GET:/symptoms?day=2026-05-03',
+          'GET:/cycle/day/2026-05-04',
+          'GET:/symptoms?day=2026-05-04',
           'GET:/cycle/calendar?month=2026-05',
         ]),
       );
     });
+
+    test(
+      'item 2: an explicit occurredAt falls back to a ±1-day WINDOW '
+      '(D-1, D, D+1), not just its own day — the client cannot compute the '
+      'server\'s profile-timezone civil day offline, and IANA offsets span '
+      '-12:00..+14:00, so the window is provably exhaustive (fix round 2)',
+      () async {
+        when(
+          () => api.symptomsPost(
+            createSymptomsRequest: any(named: 'createSymptomsRequest'),
+          ),
+        ).thenAnswer(apiNetworkFailure());
+
+        final failure = await repo
+            .createBatch(
+              entries: [_draft(occurredAt: DateTime.utc(2026, 4, 20, 8))],
+              fallbackDay: _anyFallbackDay,
+            )
+            .then<Object?>((v) => v, onError: (Object e) => e);
+
+        expect(failure, isA<NetworkFailure>());
+        final invalidated = verify(
+          () => store.invalidate(captureAny()),
+        ).captured;
+        expect(
+          invalidated,
+          unorderedEquals(<String>[
+            'GET:/cycle/day/2026-04-19',
+            'GET:/symptoms?day=2026-04-19',
+            'GET:/cycle/day/2026-04-20',
+            'GET:/symptoms?day=2026-04-20',
+            'GET:/cycle/day/2026-04-21',
+            'GET:/symptoms?day=2026-04-21',
+            'GET:/cycle/calendar?month=2026-04',
+          ]),
+        );
+      },
+    );
 
     test('a real 400 (validated BEFORE anything is written) invalidates '
         'NOTHING — the positive control proving the ambiguity test actually '
@@ -811,12 +895,63 @@ void main() {
 
       expect(failure, isA<NetworkFailure>());
       final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      // Fix round 2, item 2: the explicit entry's own branch is a ±1-day
+      // window (May 2/3/4 = 7 keys); the null entry's fallbackDay branch
+      // stays EXACT (Apr 20 = 3 keys, un-windowed — see item 3 below).
       expect(
         invalidated,
         unorderedEquals(<String>[
+          'GET:/cycle/day/2026-05-02',
+          'GET:/symptoms?day=2026-05-02',
           'GET:/cycle/day/2026-05-03',
           'GET:/symptoms?day=2026-05-03',
+          'GET:/cycle/day/2026-05-04',
+          'GET:/symptoms?day=2026-05-04',
           'GET:/cycle/calendar?month=2026-05',
+          'GET:/cycle/day/2026-04-20',
+          'GET:/symptoms?day=2026-04-20',
+          'GET:/cycle/calendar?month=2026-04',
+        ]),
+      );
+    });
+
+    test('item 3: fallbackDay is used AS GIVEN, never windowed and never '
+        'normalised — a LOCAL DateTime carrying the server\'s civil day is '
+        'not shifted (fix round 2). Production supplies fallbackDay as '
+        'Date.toDateTime() — LOCAL midnight — while every OTHER test in this '
+        'file uses DateTime.utc(...); this is the one test that would catch '
+        'a future ".toUtc() for consistency" edit on this branch, which '
+        'would be a no-op everywhere else and a real off-by-one-day bug in '
+        'production', () async {
+      when(
+        () => api.symptomsPost(
+          createSymptomsRequest: any(named: 'createSymptomsRequest'),
+        ),
+      ).thenAnswer(apiNetworkFailure());
+
+      // LOCAL (non-UTC) midnight, the exact shape Date.toDateTime()
+      // produces in production (client/lib/api/model/date.dart:25-31).
+      final localFallbackDay = DateTime(2026, 4, 20);
+      expect(
+        localFallbackDay.isUtc,
+        isFalse,
+        reason:
+            'sanity check that this IS the local case, not the '
+            'DateTime.utc(...) shape every other test in this file uses',
+      );
+
+      final failure = await repo
+          .createBatch(
+            entries: [_draft(occurredAt: null)],
+            fallbackDay: localFallbackDay,
+          )
+          .then<Object?>((v) => v, onError: (Object e) => e);
+
+      expect(failure, isA<NetworkFailure>());
+      final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      expect(
+        invalidated,
+        unorderedEquals(<String>[
           'GET:/cycle/day/2026-04-20',
           'GET:/symptoms?day=2026-04-20',
           'GET:/cycle/calendar?month=2026-04',

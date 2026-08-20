@@ -212,8 +212,11 @@ class SymptomsRepository {
         final response = await _api.symptomsGet(from: day, to: day, limit: 100);
         final body = response.data;
         if (body == null) {
+          // Fix round 2, M-3: its own message, distinct from createBatch's
+          // "no body" and "no items" cases below — three different
+          // broken-contract shapes, three different strings.
           throw const ServerFailure(
-            'The server returned an empty symptoms response.',
+            'The server returned an empty symptoms-day response.',
           );
         }
         return body;
@@ -276,9 +279,11 @@ class SymptomsRepository {
   ///    date.** If the write throws a [NetworkFailure] or [ServerFailure] —
   ///    the server may have already committed the rows before the response
   ///    was lost — [cachedWrite]'s `invalidateKeysOnAmbiguousFailure` runs
-  ///    [_fallbackInvalidationKeys]: an entry's OWN day if
-  ///    [SymptomEntryDraft.occurredAt] is explicit, else [fallbackDay]'s
-  ///    day — never nothing. [fallbackDay] matters because screen 12's
+  ///    [_fallbackInvalidationKeys]: a ±1-day WINDOW around the entry's own
+  ///    day if [SymptomEntryDraft.occurredAt] is explicit (fix round 2, item
+  ///    2 — the client cannot compute the server's exact profile-timezone
+  ///    day offline), else [fallbackDay]'s EXACT day, un-windowed — never
+  ///    nothing. [fallbackDay] matters because screen 12's
   ///    mockup draws no date affordance at all, so on the traffic T20 will
   ///    actually send, EVERY entry's `occurredAt` is `null` (fix round 1,
   ///    C-1) — the first version of this method, which contributed no key
@@ -299,7 +304,7 @@ class SymptomsRepository {
   /// [SymptomEntryDraft]'s own fields are — the same shape
   /// `CheckinRepository.quickCheckin`'s `fallbackDay` already uses in
   /// production for screen 9, which has the same "no date affordance, server
-  /// picks `now`" shape (`checkin_repository.dart:79-84`). It is
+  /// picks `now`" shape (`checkin_repository.dart:95-101`). It is
   /// invalidation-only: it never reaches the request body, so it cannot
   /// change which instant the server stores (`SymptomService.cs:430`).
   Future<List<SymptomResponse>> createBatch({
@@ -424,16 +429,16 @@ List<String> _keysForCreatedItems(List<SymptomResponse> items) {
 /// S-6's ambiguous-failure invalidation list (`lumen-build.md:1145`) for a
 /// write whose outcome `cachedWrite` could not confirm.
 ///
-/// For each entry: if [SymptomEntryDraft.occurredAt] is explicit, THAT day's
-/// keys; if it was left `null` (asking the server for its own `now`),
-/// [fallbackDay]'s keys instead — **never nothing** (fix round 1, C-1).
-/// [fallbackDay] is a required, server-confirmed "today"
-/// (`sessionTodayProvider`) — the same shape
-/// `CheckinRepository.quickCheckin`'s `fallbackDay` already uses in
-/// production for the IDENTICAL case (screen 9 draws no date affordance
-/// either, `checkin_repository.dart:79-84`). It is NOT the device clock D-12
-/// forbids and NOT a guess: it is the one value in this whole call the server
-/// has already confirmed.
+/// For each entry: if [SymptomEntryDraft.occurredAt] is explicit, a ±1-day
+/// WINDOW around it (see [_dayWindow] — fix round 2, item 2); if it was left
+/// `null` (asking the server for its own `now`), [fallbackDay]'s keys
+/// instead, un-windowed — **never nothing** (fix round 1, C-1). [fallbackDay]
+/// is a required, server-confirmed "today" (`sessionTodayProvider`) — the
+/// same shape `CheckinRepository.quickCheckin`'s `fallbackDay` already uses
+/// in production for the IDENTICAL case (screen 9 draws no date affordance
+/// either, `checkin_repository.dart:95-101`). It is NOT the device clock
+/// D-12 forbids and NOT a guess: it is the one value in this whole call the
+/// server has already confirmed.
 ///
 /// **This closes the gap the first version of this function left.** Screen
 /// 12's mockup draws no date affordance at all
@@ -443,21 +448,57 @@ List<String> _keysForCreatedItems(List<SymptomResponse> items) {
 /// for the survey's most-likely-bad-outcome path (2N indistinguishable rows
 /// after a re-save) on the only traffic shape that exists.
 ///
-/// **Known residual imprecision (M-2).** [CacheKeys.keysForDate] reads a
-/// `DateTime`'s civil `year`/`month`/`day` with no timezone conversion of its
-/// own, while the SERVER derives the stored day in the user's PROFILE
-/// timezone (`SymptomService.cs:526`, `dayResolver.ToUserDay`). Normalising
-/// an explicit `occurredAt` to UTC first (below) at least makes this
-/// function's answer independent of whether the caller built a local- or
-/// UTC-flavoured `DateTime` for the SAME instant; it does not, and cannot,
-/// reproduce the server's profile-timezone conversion without a second round
-/// trip that this fallback path — reached only after the network has already
-/// failed once — cannot afford to make. A batch whose entries sit within a
-/// few hours of the user's local midnight may therefore invalidate a
-/// neighbouring day instead of, or in addition to, the true one.
-/// Over-invalidation costs a wasted re-fetch; under-invalidation is the S-6
-/// hazard this function exists to close — so this is the direction to err in
-/// when the two cannot both be had.
+/// **M-2, corrected at fix round 2 — `.toUtc()` was INERT, not a fix.** The
+/// first version of this function called `.toUtc()` on an explicit
+/// `occurredAt`, reasoning that it made the answer independent of whether
+/// the caller built a local- or UTC-flavoured `DateTime`. That reasoning was
+/// wrong: the client serialises with built_value's `Iso8601DateTimeSerializer`
+/// (`client/lib/api/serializers.dart:116`), whose `serialize` THROWS
+/// `ArgumentError` on a non-UTC `DateTime` — so any `occurredAt` that can
+/// actually reach the wire is already UTC (`.toUtc()` is a no-op on every
+/// value that gets here and later succeeds), and a local one would crash
+/// INSIDE `write()` with an uncaught `ArgumentError` — neither `DioException`
+/// nor `Failure`, so `cachedWrite` never even reaches this list — long before
+/// this function's answer could matter. `.toUtc()` bought nothing, on either
+/// path.
+///
+/// **The gap `.toUtc()` never closed, closed instead by a ±1-day window.**
+/// [CacheKeys.keysForDate] reads the UTC civil date, while the SERVER derives
+/// the stored day in the user's PROFILE timezone (`SymptomService.cs:526`,
+/// `dayResolver.ToUserDay`). IANA offsets span −12:00…+14:00, so a
+/// profile-timezone civil date differs from the UTC civil date by AT MOST
+/// one day either way — [_dayWindow]'s `{D−1, D, D+1}` is therefore provably
+/// exhaustive. An exact computation is not available offline: the client has
+/// the profile timezone's NAME but no tz database (`package:timezone` is not
+/// a dependency), so the window is the only exhaustive shape reachable here.
+/// Applied ONLY to the explicit-`occurredAt` branch.
+///
+/// **The [fallbackDay] branch is deliberately NOT windowed, and must never
+/// be.** `fallbackDay` is the server's OWN profile-timezone "today"
+/// (`sessionTodayProvider`, reading `GET /cycle/calendar`'s `today`) —
+/// already exact; widening it would trade a right answer for three
+/// wrong-adjacent ones. **Production supplies it as `Date.toDateTime()` —
+/// LOCAL midnight carrying the server's civil fields**
+/// (`client/lib/api/model/date.dart:25-31`,
+/// `quick_checkin_controller.dart:212`) — while every test in this file
+/// passes `DateTime.utc(...)`; both read the identical `year`/`month`/`day`
+/// today, so nothing distinguishes them here. **A future "consistency" edit
+/// adding `.toUtc()` to THIS branch would be a no-op in every test and a
+/// real off-by-one-day bug in production**, shifting local midnight onto the
+/// PREVIOUS UTC day on every positive-offset device. Pinned by a dedicated
+/// test passing a LOCAL `DateTime` for `fallbackDay` (fix round 2, item 3) —
+/// that test must redden if `.toUtc()` is ever added here.
+///
+/// **Cost of the window.** [CacheStore.invalidate] deletes the entry outright
+/// (`hive_boot.dart`), and the ambiguous-failure path IS the offline path —
+/// so over-invalidating a neighbouring day converts a would-be `Stale`
+/// render into `NetworkRequired` for a day the write never touched. Still far
+/// cheaper than the S-6 hazard this function exists to close (2N duplicate
+/// clinical rows), and `keysForDate` already deletes the month's calendar key
+/// regardless of which of the three days triggered it — so the incremental
+/// cost is one extra `cycleDay`/`symptomsDay` pair per neighbouring day,
+/// roughly 3 → 9 keys per explicit-`occurredAt` entry, de-duplicated through
+/// the `Set` below.
 List<String> _fallbackInvalidationKeys(
   List<SymptomEntryDraft> entries,
   DateTime fallbackDay,
@@ -465,13 +506,24 @@ List<String> _fallbackInvalidationKeys(
   final keys = <String>{};
   for (final entry in entries) {
     final occurredAt = entry.occurredAt;
-    keys.addAll(
-      CacheKeys.keysForDate(
-        occurredAt == null ? fallbackDay : occurredAt.toUtc(),
-      ),
-    );
+    if (occurredAt == null) {
+      keys.addAll(CacheKeys.keysForDate(fallbackDay));
+    } else {
+      for (final day in _dayWindow(occurredAt)) {
+        keys.addAll(CacheKeys.keysForDate(day));
+      }
+    }
   }
   return keys.toList(growable: false);
+}
+
+/// [instant]'s own civil day plus its immediate neighbours (D−1, D, D+1) —
+/// see [_fallbackInvalidationKeys]'s doc for why this specific window is
+/// exhaustive for a profile-timezone civil date given only a UTC instant.
+Iterable<DateTime> _dayWindow(DateTime instant) sync* {
+  yield instant.subtract(const Duration(days: 1));
+  yield instant;
+  yield instant.add(const Duration(days: 1));
 }
 
 // ---------------------------------------------------------------------------
