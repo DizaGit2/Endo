@@ -27,6 +27,7 @@ import 'package:lumen/api/model/cycle_day_log_response.dart';
 import 'package:lumen/api/model/cycle_day_response.dart';
 import 'package:lumen/api/model/cycle_event_response.dart';
 import 'package:lumen/api/model/cycle_phase_availability_response.dart';
+import 'package:lumen/api/model/create_symptoms_response.dart';
 import 'package:lumen/api/model/cycle_settings_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goal_selection.dart';
@@ -544,6 +545,17 @@ SymptomListResponse symptomListResponseFixture({
       ..total = total ?? rows.length
       ..limit = limit
       ..offset = offset,
+  );
+}
+
+/// `POST /symptoms`'s 201 envelope (P4b-T19) — every row the batch created,
+/// in request order. Defaults to one row, matching [symptomListResponseFixture].
+CreateSymptomsResponse createSymptomsResponseFixture({
+  List<SymptomResponse>? items,
+}) {
+  final rows = items ?? <SymptomResponse>[symptomResponseFixture()];
+  return CreateSymptomsResponse(
+    (b) => b..items = ListBuilder<SymptomResponse>(rows),
   );
 }
 
