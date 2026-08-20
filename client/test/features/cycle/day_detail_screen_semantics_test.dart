@@ -638,5 +638,26 @@ void main() {
         }
       },
     );
+
+    testWidgets(
+      'P4b-T18: an out-of-range mood renders the raw integer, never the '
+      'superseded word "Mood" — the same M7 fix promoted to a shared '
+      'constant this screen now uses too',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            date: date,
+            log: cycleDayLogFixture(pain: null, mood: 9),
+            symptoms: const [],
+            symptomsTotal: 0,
+          ),
+        );
+
+        expect(find.text('9'), findsOneWidget);
+        expect(find.text('Mood'), findsNothing);
+      },
+    );
   });
 }

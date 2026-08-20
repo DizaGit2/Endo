@@ -46,6 +46,7 @@ import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/formatters/lumen_formats.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/cycle/application/day_detail_controller.dart';
+import 'package:lumen/shared/mood_labels.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 
 // ---------------------------------------------------------------------------
@@ -124,10 +125,6 @@ const Map<String, String> _kTriggerLabels = <String, String>{
   'poor_sleep': 'Poor sleep',
   'weather': 'Weather',
 };
-
-/// `cycle_day_logs.mood`'s 4-member scale, `Codes[value - 1]` — the wire
-/// carries the integer 1-4, never the code string.
-const List<String> _kMoodLabels = <String>['Low', 'Tired', 'Steady', 'Bright'];
 
 /// The symptom row's own label: the code's ratified display label, or a
 /// sentence-cased fallback of the raw code.
@@ -546,7 +543,10 @@ class _MoodRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
-    final label = (mood >= 1 && mood <= 4) ? _kMoodLabels[mood - 1] : 'Mood';
+    // P4b-T18: the shared `moodLabel` fallback is `'$mood'`, not the word
+    // `'Mood'` (fix round 1, M7) — this row carried the superseded shape
+    // until this promotion; see mood_labels.dart's own dartdoc.
+    final label = moodLabel(mood);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.input,

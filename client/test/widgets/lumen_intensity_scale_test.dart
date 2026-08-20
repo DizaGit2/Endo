@@ -1,19 +1,28 @@
-// Tests for LumenIntensityScale (P4b-T5, brief §3; decisions D-08 and R-12).
+// Tests for LumenIntensityScale (P4b-T5, brief §3; P4b-T18 fix round;
+// decision D-08).
 //
 // TDD (RED first): this widget did not exist. Screens 9, 12 and 13 all need
 // the NRS-11 control, and two decisions about it are the kind that get lost in
 // a re-implementation:
 //
-//   * D-08 — ELEVEN stops, 0..10. Screen 9's mockup draws ten (0..9) and
-//     `definitions.md:24` records that as a mockup artifact P4b corrects.
-//   * R-12 — `0` is a real logged value meaning "none today"; `null` is "not
-//     recorded". A caller must never be able to tell them apart by falsiness.
-//     Sent to `POST /checkin/quick`, `pain: 0` OVERWRITES a stored 8; treated
-//     as absent, it silently would not.
+//   * D-08 — ELEVEN stops, 0..10, and `0` is a real logged value meaning
+//     "none today"; `null` is "not recorded". Screen 9's mockup draws ten
+//     (0..9) and `definitions.md:24` records that as a mockup artifact P4b
+//     corrects. A caller must never be able to tell `0` and `null` apart by
+//     falsiness. Sent to `POST /checkin/quick`, `pain: 0` OVERWRITES a stored
+//     8; treated as absent, it silently would not. (The widget's own dartdoc
+//     used to credit this to "ruling R-12" — R-12 is scoped to screens 12/13
+//     and never mentions screen 9 or the day log; D-08 is the rule that
+//     actually binds this widget. Fixed at P4b-T18.)
 //
-// The R-12 tests below are the ones that matter: they are written so that an
-// implementation using `int` + a 0-means-unset convention, or one that reports
-// the taps as `int?`, fails rather than passes quietly.
+// The D-08 tests below are the ones that matter: they are written so that an
+// implementation using `int` + a 0-means-unset convention fails rather than
+// passes quietly.
+//
+// P4b-T18 additionally gives the widget a way BACK to "not recorded": tapping
+// the currently-selected stop clears it to `null` (`onChanged` is now
+// `ValueChanged<int?>`) — see the "clearing" group below. Before this, once
+// any stop was tapped the widget could never report `null` again on its own.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,10 +36,9 @@ import '../support/harness.dart';
 // Harness
 // ---------------------------------------------------------------------------
 
-/// Records every value the scale reports back. Deliberately typed `int` — a
-/// widget that handed back `int?` would not compile against this list, which
-/// is half the point of the R-12 assertions.
-late List<int> reported;
+/// Records every value the scale reports back — `int?`, since P4b-T18 gave
+/// the clear-to-null gesture a way to report `null`.
+late List<int?> reported;
 
 Future<void> _pumpScale(
   WidgetTester tester, {
@@ -38,7 +46,7 @@ Future<void> _pumpScale(
   bool enabled = true,
   Brightness brightness = Brightness.light,
 }) {
-  reported = <int>[];
+  reported = <int?>[];
   return pumpApp(
     tester,
     brightness: brightness,
@@ -59,10 +67,7 @@ Future<void> _pumpScale(
 /// The painted box of the stop labelled [stop].
 BoxDecoration _stopDecoration(WidgetTester tester, int stop) {
   final container = tester.widget<Container>(
-    find.ancestor(
-      of: find.text('$stop'),
-      matching: find.byType(Container),
-    ),
+    find.ancestor(of: find.text('$stop'), matching: find.byType(Container)),
   );
   return container.decoration! as BoxDecoration;
 }
@@ -118,7 +123,17 @@ void main() {
           .map(effectiveText)
           .toSet();
       expect(rendered, <String>{
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
+        '0',
+        '1',
+        '2',
+        '3',
+        '4',
+        '5',
+        '6',
+        '7',
+        '8',
+        '9',
+        '10',
         'None',
         'Worst',
       });
@@ -126,7 +141,7 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // R-12 — 0 is a datum, null is the absence of one
+  // D-08 — 0 is a datum, null is the absence of one
   // -------------------------------------------------------------------------
 
   group('0 and null are different states', () {
@@ -179,6 +194,43 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // P4b-T18 — a mistaken tap is reachable, not permanent
+  // -------------------------------------------------------------------------
+
+  group('tapping the selected stop clears it', () {
+    testWidgets('tapping the currently-selected stop reports null', (
+      tester,
+    ) async {
+      await _pumpScale(tester, value: 5);
+
+      await tester.tap(find.text('5'));
+      await tester.pump();
+
+      expect(reported, <int?>[null]);
+    });
+
+    testWidgets('tapping the currently-selected 0 also reports null — the '
+        'clear gesture is not swallowed by 0\'s own falsiness', (tester) async {
+      await _pumpScale(tester, value: 0);
+
+      await tester.tap(find.text('0'));
+      await tester.pump();
+
+      expect(reported, <int?>[null]);
+    });
+
+    testWidgets('tapping a DIFFERENT stop still reports that stop\'s own '
+        'integer, never null', (tester) async {
+      await _pumpScale(tester, value: 5);
+
+      await tester.tap(find.text('7'));
+      await tester.pump();
+
+      expect(reported, <int?>[7]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Selection
   // -------------------------------------------------------------------------
 
@@ -202,10 +254,7 @@ void main() {
       expect(decoration.border, Border.all(color: lumenLight.accent));
       expect(decoration.borderRadius, BorderRadius.circular(7));
       expect(label.fontWeight, FontWeight.w500);
-      expect(
-        label.color,
-        lumenTheme(Brightness.light).colorScheme.onPrimary,
-      );
+      expect(label.color, lumenTheme(Brightness.light).colorScheme.onPrimary);
     });
 
     testWidgets('an unselected stop is input-on-border, muted', (tester) async {
@@ -214,7 +263,10 @@ void main() {
 
       expect(decoration.color, lumenLight.input);
       expect(decoration.border, Border.all(color: lumenLight.border));
-      expect(tester.widget<Text>(find.text('4')).style!.color, lumenLight.muted);
+      expect(
+        tester.widget<Text>(find.text('4')).style!.color,
+        lumenLight.muted,
+      );
     });
 
     testWidgets('enabled: false ignores taps', (tester) async {
@@ -233,10 +285,7 @@ void main() {
       // dark that is near-white on light gold (~1.4:1).
       await _pumpScale(tester, value: 3, brightness: Brightness.dark);
 
-      expect(
-        _stopDecoration(tester, 3).color,
-        lumenDark.accent,
-      );
+      expect(_stopDecoration(tester, 3).color, lumenDark.accent);
       expect(
         tester.widget<Text>(find.text('3')).style!.color,
         lumenTheme(Brightness.dark).colorScheme.onPrimary,

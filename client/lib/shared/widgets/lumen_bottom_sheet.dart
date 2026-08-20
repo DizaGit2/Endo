@@ -38,6 +38,14 @@ Color scrimFor(Brightness brightness) =>
 ///
 /// [isDismissible] gates BOTH the scrim tap and the drag, so a caller that
 /// needs a decision cannot be escaped by a swipe instead.
+///
+/// **`useRootNavigator: true` (P4b-T18).** `screen-mockups.md:354` is
+/// canonical for this screen and says verbatim: *"Bottom nav: belongs to Home
+/// (the sheet covers the nav)."* Mounted on a BRANCH Navigator (the SDK
+/// default), the sheet would leave the bottom nav's five destinations lit,
+/// tappable and semantically live behind the scrim — a spec deviation, not a
+/// design choice. Mounting on the app's root Navigator instead puts the sheet
+/// above the whole shell, nav included.
 Future<T?> showLumenBottomSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -45,6 +53,7 @@ Future<T?> showLumenBottomSheet<T>({
 }) {
   return showModalBottomSheet<T>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     isDismissible: isDismissible,
     enableDrag: isDismissible,
@@ -137,9 +146,7 @@ class LumenBottomSheet extends StatelessWidget {
           // must still hug short content — an Expanded would stretch every
           // sheet to the full viewport — while a tall form scrolls rather
           // than overflowing the route.
-          Flexible(
-            child: SingleChildScrollView(child: child),
-          ),
+          Flexible(child: SingleChildScrollView(child: child)),
         ],
       ),
     );

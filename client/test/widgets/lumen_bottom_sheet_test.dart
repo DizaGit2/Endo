@@ -146,6 +146,66 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // useRootNavigator (P4b-T18) — the sheet must cover the bottom nav
+  // -------------------------------------------------------------------------
+  //
+  // `screen-mockups.md:354`, verbatim: "Bottom nav: belongs to Home (the
+  // sheet covers the nav)." A sheet opened on a BRANCH Navigator (the SDK
+  // default) mounts INSIDE that branch's own Overlay — a descendant of the
+  // branch Navigator widget — leaving a sibling bottom nav outside the
+  // branch untouched and tappable. Opened on the app's ROOT Navigator
+  // instead, the sheet is not a descendant of the branch Navigator at all.
+
+  group('useRootNavigator', () {
+    testWidgets('mounts on the ROOT navigator, not a nested branch one', (
+      tester,
+    ) async {
+      final branchNavigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: lumenTheme(Brightness.light),
+          home: Scaffold(
+            body: Navigator(
+              key: branchNavigatorKey,
+              onGenerateRoute: (settings) => MaterialPageRoute<void>(
+                builder: (context) => Builder(
+                  builder: (context) => Center(
+                    child: ElevatedButton(
+                      onPressed: () => showLumenBottomSheet<void>(
+                        context: context,
+                        builder: (_) => const Text('How\'s today?'),
+                      ),
+                      child: const Text('open'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LumenBottomSheet), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(branchNavigatorKey),
+          matching: find.byType(LumenBottomSheet),
+        ),
+        findsNothing,
+        reason:
+            'the sheet mounted inside the BRANCH Navigator\'s own Overlay — '
+            'a bottom nav living outside that branch would stay lit and '
+            'tappable underneath the scrim, contradicting '
+            'screen-mockups.md:354 ("the sheet covers the nav").',
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Metrics — screen 9's mockup, exactly
   // -------------------------------------------------------------------------
 

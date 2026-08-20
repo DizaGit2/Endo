@@ -20,10 +20,12 @@ import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/formatters/lumen_formats.dart';
 import 'package:lumen/core/time/greeting_clock.dart';
 import 'package:lumen/core/time/server_today.dart';
+import 'package:lumen/features/checkin/presentation/quick_checkin_screen.dart';
 import 'package:lumen/features/cycle/data/cycle_repository.dart';
 import 'package:lumen/features/home/application/dashboard_controller.dart';
 import 'package:lumen/features/home/presentation/dashboard_screen.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
+import 'package:lumen/shared/widgets/lumen_bottom_sheet.dart';
 import 'package:lumen/shared/widgets/lumen_phase_unavailable.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -425,7 +427,12 @@ void main() {
         await _pump(tester, () => _FreshDashboard(_view(todayMood: 9)));
 
         expect(find.text('9'), findsOneWidget);
-        expect(find.text('Mood'), findsNothing);
+        // Narrowed at P4b-T18, not deleted: the Mood QUICK-LOG TILE (a
+        // different element — a launcher, not the card) now legitimately
+        // renders the word "Mood" once. `findsOneWidget` here is what
+        // proves the CARD's own fallback still does NOT ALSO say "Mood" —
+        // if it did, this would read `findsNWidgets(2)` and fail.
+        expect(find.text('Mood'), findsOneWidget);
       },
     );
   });
@@ -470,55 +477,61 @@ void main() {
       expect(find.textContaining('Typical for phase'), findsNothing);
     });
 
-    testWidgets('no quick-log row of any kind', (tester) async {
-      await _pump(tester, () => _FreshDashboard(_view()));
+    testWidgets(
+      'P4b-T18: the "Quick log" row ships with its one real member, Mood '
+      '— Symptom (T20) and Activity (P5) are still absent, and shipping '
+      'them without a destination is what R-20 forbids, not a row with '
+      'ONE working tile in it',
+      (tester) async {
+        await _pump(tester, () => _FreshDashboard(_view()));
 
-      expect(find.textContaining('Quick log'), findsNothing);
-      expect(find.text('Symptom'), findsNothing);
-      expect(find.text('Mood'), findsNothing); // the CARD says "MOOD", but
-      // never the standalone quick-log tile label — see the next test for
-      // the card's own (differently-cased) label.
-      expect(find.text('Activity'), findsNothing);
-    });
+        // LumenFieldLabel DRAWS its text uppercased ("QUICK LOG") — the
+        // sentence-case string is what it ANNOUNCES, a separate Semantics
+        // value, not what a plain `find.text` search sees.
+        expect(find.text('QUICK LOG'), findsOneWidget);
+        expect(find.text('Symptom'), findsNothing);
+        expect(find.text('Activity'), findsNothing);
+      },
+    );
 
-    testWidgets('the Mood CARD label is present, distinguishing it from '
-        'the cut quick-log tile', (tester) async {
+    testWidgets('the Mood CARD\'s "MOOD" label and the Mood TILE\'s "Mood" '
+        'label are both present, distinguishably cased', (tester) async {
       await _pump(tester, () => _FreshDashboard(_view()));
 
       expect(find.text('MOOD'), findsOneWidget);
+      expect(find.text('Mood'), findsOneWidget);
     });
   });
 
   // ---------------------------------------------------------------------
-  // Zero interactive affordances (fix round 1, M2+M3)
+  // Interactive affordances — exactly the Mood tile (R-20)
   // ---------------------------------------------------------------------
   //
-  // The old "no month-link shortcut" test (`find.byIcon(Icons.calendar_
-  // month), findsNothing`) could not fail for the reason it named: nothing
-  // in this screen ever imports that icon, so the assertion passed
-  // vacuously, and it would have missed a TEXT month link just as easily as
-  // an icon one. R-20 means screen 8 ships with NO interactive affordance
-  // at all until T18/T20 add their tiles — so the real guard is a
-  // whole-screen button count, exactly as screens 10 and 11 pin their own
-  // known button counts. A "known positive control" sits alongside it,
-  // proving the harness can actually SEE a button when the screen has one
-  // (the NetworkRequired body's Retry button) — without that, "0 buttons"
-  // could just as easily mean "the semantics harness is broken" as "the
-  // screen is honestly actionless".
+  // Originally "zero interactive affordances" (fix round 1, M2+M3): the old
+  // "no month-link shortcut" test (`find.byIcon(Icons.calendar_month),
+  // findsNothing`) could not fail for the reason it named — nothing in this
+  // screen ever imported that icon — so the real guard became a whole-screen
+  // button COUNT, exactly as screens 10 and 11 pin their own. **P4b-T18 was
+  // built to redden this the moment the Mood tile shipped, and that
+  // reddening is the intended signal, not a failure** — the count below is
+  // updated from 0 to 1, not deleted, and the reasoning stays: any button
+  // beyond the Mood tile today would point at nothing (Symptom/Activity have
+  // no destination yet).
 
-  group('zero interactive affordances (R-20)', () {
+  group('interactive affordances (R-20)', () {
     testWidgetsWithSemantics(
-      'the loaded dashboard offers no buttons at all — no tile ships '
-      'without its destination',
+      'the loaded dashboard offers EXACTLY ONE button — the Mood tile — '
+      'no tile ships without its destination',
       (tester) async {
         await _pump(tester, () => _FreshDashboard(_view()));
 
-        expectNoButtons(
-          tester,
+        expect(
+          kAnyButtonSemantics,
+          findsNWidgets(1),
           reason:
-              'screen 8 ships with no quick-log tile until T18/T20 add one '
-              'together with its destination (R-20); any button here today '
-              'would point at nothing',
+              'screen 8 ships with exactly the Mood tile (T18) until T20 '
+              'adds Symptom together with its destination (R-20); any '
+              'OTHER button here today would point at nothing',
         );
       },
     );
@@ -539,6 +552,28 @@ void main() {
         );
       },
     );
+  });
+
+  // ---------------------------------------------------------------------
+  // The Mood quick-log tile (P4b-T18)
+  // ---------------------------------------------------------------------
+
+  group('the Mood quick-log tile', () {
+    testWidgetsWithSemantics('is a labelled, tappable button', (tester) async {
+      await _pump(tester, () => _FreshDashboard(_view()));
+
+      expectLabeledButton(tester, find.text('Mood'), 'Mood');
+    });
+
+    testWidgets('opens screen 9, the quick check-in sheet', (tester) async {
+      await _pump(tester, () => _FreshDashboard(_view()));
+
+      await tester.tap(find.text('Mood'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(QuickCheckinScreen), findsOneWidget);
+      expect(find.byType(LumenBottomSheet), findsOneWidget);
+    });
   });
 
   // ---------------------------------------------------------------------

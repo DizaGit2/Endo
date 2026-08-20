@@ -1,4 +1,4 @@
-// Screen 8 — the dashboard (P4b-T17, READ SURFACE ONLY).
+// Screen 8 — the dashboard (P4b-T17 READ SURFACE + P4b-T18's Mood tile).
 //
 // The Home tab's landing screen, and — as of R-19 (`app_router.dart`) — the
 // authenticated default: a signed-in, onboarded user lands here, not on
@@ -6,7 +6,10 @@
 // `CycleRepository.getCalendarMonth` for the CURRENT and PREVIOUS month
 // (unconditionally — `dashboard_controller.dart`'s own dartdoc has the full
 // "why unconditional" reasoning) and renders what P4a genuinely supplies.
-// Writes nothing.
+// This SCREEN writes nothing directly — the one control that can cause a
+// write is the Mood tile, which OPENS screen 9 (a separate, sheet-hosted
+// screen; see `features/checkin/presentation/quick_checkin_screen.dart`) and
+// writes nothing itself.
 //
 // Cuts from the mockup, and why (T17 brief §"What is CUT" has the full
 // citations):
@@ -31,13 +34,14 @@
 //  * the month link — the Cycle tab already reaches the calendar, and a
 //    second entry point with different back behaviour is precisely the
 //    problem R-19 exists to fix.
-//  * the WHOLE "Quick log" row (ruling R-20): at T17, Symptom (screen
-//    12/T20) and Mood (screen 9/T18) have no destination yet, and Activity
-//    is P5 — a "quick log" row containing only "More" is not a quick-log
-//    row. T18 adds the Mood tile with screen 9; T20 adds the Symptom tile
-//    with screen 12. Activity never ships in P4b. This screen therefore
-//    lands with no actions on it beyond the bottom nav — the honest
-//    consequence of building screens in dependency order.
+//  * at T17, the WHOLE "Quick log" row was cut (ruling R-20): Symptom (screen
+//    12/T20) and Mood (screen 9/T18) had no destination yet, and Activity is
+//    P5 — a "quick log" row containing only "More" is not a quick-log row.
+//    **T18 adds the row back with its one real member**, Mood, together with
+//    screen 9 — the destination ships in the SAME commit, which is what R-20
+//    requires. Symptom and Activity remain absent until T20 and P5
+//    respectively; a one-tile "Quick log" row is not the same defect the cut
+//    row was: every tile IN it works.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,32 +50,15 @@ import 'package:lumen/core/formatters/lumen_formats.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/core/time/greeting_clock.dart'
     show greetingTimeOfDayProvider;
+import 'package:lumen/features/checkin/presentation/quick_checkin_screen.dart';
 import 'package:lumen/features/home/application/dashboard_controller.dart';
+import 'package:lumen/shared/mood_labels.dart';
+import 'package:lumen/shared/widgets/lumen_bottom_sheet.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
+import 'package:lumen/shared/widgets/lumen_field_label.dart';
 import 'package:lumen/shared/widgets/lumen_phase_unavailable.dart';
 import 'package:lumen/shared/widgets/lumen_retry_button.dart';
-
-// ---------------------------------------------------------------------------
-// The mood scale label
-// ---------------------------------------------------------------------------
-
-/// `cycle_day_logs.mood`'s 4-member scale, `Codes[value - 1]` — the wire
-/// carries the integer 1-4, never the code string. The SAME map
-/// `day_detail_screen.dart`'s `_MoodRow` uses; kept as its own private copy
-/// here rather than shared, matching this codebase's existing convention of
-/// each screen owning its own small label maps (`day_detail_screen.dart`'s
-/// region/painTypes/triggers maps are private and screen-11-specific too).
-const List<String> _kMoodLabels = <String>['Low', 'Tired', 'Steady', 'Bright'];
-
-/// Fix round 1, M7: the out-of-range fallback used to be the word `'Mood'`
-/// — contract-constrained to 1-4 so unreachable today, but paired with the
-/// card's own `'MOOD'` label it would have read as the redundant "MOOD /
-/// Mood" the moment a malformed value ever reached the client. The raw
-/// integer is honest instead: something WAS logged, just outside the
-/// ratified scale, which is a different fact from nothing being logged at
-/// all (that case is `'Not logged today'`, decided by the caller).
-String _moodLabel(int mood) =>
-    (mood >= 1 && mood <= 4) ? _kMoodLabels[mood - 1] : '$mood';
+import 'package:lumen/shared/widgets/lumen_selectable_row.dart';
 
 // ---------------------------------------------------------------------------
 // DashboardScreen
@@ -209,6 +196,10 @@ class _LoadedBody extends ConsumerWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            const LumenFieldLabel('Quick log'),
+            const SizedBox(height: 8),
+            const Row(children: [Expanded(child: _MoodQuickLogTile())]),
           ],
         ),
       ),
@@ -477,13 +468,63 @@ class _MoodCard extends StatelessWidget {
           const _CardLabel('Mood'),
           const SizedBox(height: 2),
           Text(
-            mood != null ? _moodLabel(mood) : 'Not logged today',
+            mood != null ? moodLabel(mood) : 'Not logged today',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w500,
               color: c.ink,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The Mood quick-log tile (P4b-T18, R-20)
+// ---------------------------------------------------------------------------
+
+/// The mockup's `.q` quick-log tile — reused here as [LumenSelectableRow]
+/// with `selected: false` always: this is a LAUNCHER (it opens screen 9),
+/// never a toggle, so there is no selected state to draw. Reusing the shared
+/// row rather than hand-rolling a fourth token-styled tappable box gives this
+/// tile the same fill/border/`MergeSemantics` shape as every other row in the
+/// app for free, and its unselected colours (`c.input`/`c.border`) already
+/// match the mockup's idle `.q` exactly.
+///
+/// A bare `Row` with one `Expanded` child in the caller, rather than sizing
+/// this tile itself — T20 adds a Symptom tile beside it, and the row is
+/// already shaped to take a second `Expanded` sibling without restructuring.
+class _MoodQuickLogTile extends StatelessWidget {
+  const _MoodQuickLogTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).extension<LumenColors>()!;
+
+    return LumenSelectableRow(
+      selected: false,
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      borderRadius: 10,
+      onTap: () => showLumenBottomSheet<void>(
+        context: context,
+        builder: (_) => const QuickCheckinScreen(),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // The mockup's `.qi` glyph, `◐` — above U+007F and not on
+          // kAllowedNonAsciiGlyphs, so it becomes an Icon (a11y_guard.dart's
+          // dingbat rule). Mapped by this tile's ROLE — "open the mood
+          // logger", a general category launcher, not any one mood LEVEL —
+          // to Icons.mood, Material's own icon for exactly that concept.
+          // (Contrast the four mood-level tiles inside screen 9 itself,
+          // which map to the sentiment_* family instead — see
+          // quick_checkin_screen.dart.)
+          Icon(Icons.mood, size: 16, color: c.accent),
+          const SizedBox(height: 2),
+          Text('Mood', style: TextStyle(fontSize: 9, color: c.ink)),
         ],
       ),
     );

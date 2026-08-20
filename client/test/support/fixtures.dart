@@ -40,6 +40,7 @@ import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/api/model/phase_override_boundary.dart';
+import 'package:lumen/api/model/quick_checkin_response.dart';
 import 'package:lumen/api/model/symptom_list_response.dart';
 import 'package:lumen/api/model/symptom_response.dart';
 
@@ -543,6 +544,25 @@ SymptomListResponse symptomListResponseFixture({
       ..total = total ?? rows.length
       ..limit = limit
       ..offset = offset,
+  );
+}
+
+/// `POST /checkin/quick`'s response — the STORED row, not an echo of the
+/// request (`CycleDayService.cs:187`). [pain]/[mood] default to null, NOT to
+/// 0 — a test that wants the response to actually carry a field must say so
+/// explicitly, the same D-08 discipline the production code itself follows.
+QuickCheckinResponse quickCheckinResponseFixture({
+  Date? day,
+  int? pain,
+  int? mood,
+  DateTime? updatedAt,
+}) {
+  return QuickCheckinResponse(
+    (b) => b
+      ..day = day ?? Date(2026, 4, 20)
+      ..pain = pain
+      ..mood = mood
+      ..updatedAt = updatedAt ?? DateTime.utc(2026, 4, 20, 8),
   );
 }
 

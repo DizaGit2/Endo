@@ -20,14 +20,14 @@ import 'package:lumen/shared/widgets/lumen_intensity_scale.dart';
 
 import '../support/harness.dart';
 
-late List<int> reported;
+late List<int?> reported;
 
 Future<void> _pumpScale(
   WidgetTester tester, {
   required int? value,
   bool enabled = true,
 }) {
-  reported = <int>[];
+  reported = <int?>[];
   return pumpApp(
     tester,
     home: Scaffold(
@@ -93,20 +93,21 @@ void main() {
     expect(_scaleData(tester).value, 'Not recorded');
   });
 
-  testWidgetsWithSemantics('the announced value follows the value it is given', (
-    tester,
-  ) async {
-    // Pinning the update, not just one snapshot: a widget that hard-coded its
-    // semantics value would pass any single assertion above.
-    await _pumpScale(tester, value: null);
-    expect(_scaleData(tester).value, 'Not recorded');
+  testWidgetsWithSemantics(
+    'the announced value follows the value it is given',
+    (tester) async {
+      // Pinning the update, not just one snapshot: a widget that hard-coded its
+      // semantics value would pass any single assertion above.
+      await _pumpScale(tester, value: null);
+      expect(_scaleData(tester).value, 'Not recorded');
 
-    await _pumpScale(tester, value: 0);
-    expect(_scaleData(tester).value, '0 out of 10');
+      await _pumpScale(tester, value: 0);
+      expect(_scaleData(tester).value, '0 out of 10');
 
-    await _pumpScale(tester, value: 10);
-    expect(_scaleData(tester).value, '10 out of 10');
-  });
+      await _pumpScale(tester, value: 10);
+      expect(_scaleData(tester).value, '10 out of 10');
+    },
+  );
 
   // -------------------------------------------------------------------------
   // Setting the value without a drag
@@ -218,7 +219,7 @@ void main() {
     _perform(tester, SemanticsAction.decrease);
     await tester.pump();
 
-    expect(reported, <int>[4, 2]);
+    expect(reported, <int?>[4, 2]);
   });
 
   testWidgetsWithSemantics('increase from "not recorded" selects 0', (

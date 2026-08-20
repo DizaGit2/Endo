@@ -13,13 +13,20 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 /// draws a ten-button `0..9` row; `definitions.md:24` records that as a mockup
 /// artifact P4b corrects, so the row here has eleven.
 ///
-/// **2. `0` is a datum; `null` is the absence of one (ruling R-12).** `0` means
-/// "none today" and, sent to `POST /checkin/quick`, overwrites a stored `8`.
-/// `null` means "not recorded". They are different states and this widget
-/// renders them differently: at `0` the first stop is filled, at `null` no stop
-/// is. [value] is therefore `int?` and [onChanged] hands back a non-null `int`,
-/// so **no caller can tell the two apart with a falsiness test** — which is the
-/// bug the ruling exists to prevent, on either side of the wire.
+/// **2. `0` is a datum; `null` is the absence of one (D-08: "0 = valid 'none
+/// today'").** `0` means "none today" and, sent to `POST /checkin/quick`,
+/// overwrites a stored `8`. `null` means "not recorded". They are different
+/// states and this widget renders them differently: at `0` the first stop is
+/// filled, at `null` no stop is. [value] is therefore `int?` and [onChanged]
+/// hands back `int?` too, so **no caller can tell the two apart with a
+/// falsiness test** — which is the bug the rule exists to prevent, on either
+/// side of the wire.
+///
+/// **A mistaken tap is reachable, not permanent (P4b-T18).** Tapping the
+/// CURRENTLY SELECTED stop clears it back to `null` rather than re-firing the
+/// same value — otherwise, once any stop was tapped, the widget could never
+/// return to "not recorded" on its own, and `POST /checkin/quick` has no clear
+/// affordance either. Every other tap behaves exactly as before.
 ///
 /// ## No intermediate labels
 ///
@@ -66,9 +73,11 @@ class LumenIntensityScale extends StatelessWidget {
   /// `0` is a real logged value and must never be conflated with `null`.
   final int? value;
 
-  /// Called with the stop the user chose. Always a non-null `int`, including
-  /// `0` — so the caller cannot lose the distinction on the way out.
-  final ValueChanged<int> onChanged;
+  /// Called with the stop the user chose, including `0` — or `null` when the
+  /// user tapped the currently-selected stop to clear it back to "not
+  /// recorded". Never invented: a `null` here always traces to that one
+  /// gesture, never to a default.
+  final ValueChanged<int?> onChanged;
 
   /// What this scale is measuring, for a screen reader — e.g. 'Pain level'.
   /// The visible label above the control is the screen's to render (the
@@ -105,7 +114,9 @@ class LumenIntensityScale extends StatelessWidget {
       increasedValue: next == null ? null : describeValue(next),
       decreasedValue: previous == null ? null : describeValue(previous),
       onIncrease: enabled && next != null ? () => onChanged(next) : null,
-      onDecrease: enabled && previous != null ? () => onChanged(previous) : null,
+      onDecrease: enabled && previous != null
+          ? () => onChanged(previous)
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -120,7 +131,13 @@ class LumenIntensityScale extends StatelessWidget {
                     // `current == stop`, never `current != null && current > 0`
                     // or any other shape that could collapse 0 into null.
                     selected: current == stop,
-                    onTap: enabled ? () => onChanged(stop) : null,
+                    // Tapping the ALREADY-selected stop clears it to `null`
+                    // (the one gesture that can produce `null` from a tap);
+                    // every other stop still reports its own integer,
+                    // including 0.
+                    onTap: enabled
+                        ? () => onChanged(current == stop ? null : stop)
+                        : null,
                     colors: c,
                   ),
                 ),
@@ -196,9 +213,7 @@ class _Stop extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected ? colors.accent : colors.input,
             borderRadius: BorderRadius.circular(7),
-            border: Border.all(
-              color: selected ? colors.accent : colors.border,
-            ),
+            border: Border.all(color: selected ? colors.accent : colors.border),
           ),
           child: Text(
             '$stop',
