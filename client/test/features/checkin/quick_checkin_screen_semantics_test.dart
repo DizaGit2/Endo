@@ -382,7 +382,9 @@ void main() {
     // stays green even if the constant drifted to something
     // `expectRetryReissuesOneRequest`'s own real callers (`find.text(label)`
     // with NO membership check against `kRetryLabels`,
-    // `test/support/retry_trap.dart:33`,`:39-40`) would never find. This
+    // `test/support/retry_trap.dart:33` for the constant, `:41` for
+    // `find.text(label)` itself — fix round 2, item 4: `:39-40` was the
+    // dartdoc/signature lines, not the call) would never find. This
     // membership check is the independent guard that actually fails if the
     // constant drifts.
     test('kQuickCheckinRetryLabel is a member of kRetryLabels', () {
@@ -482,11 +484,18 @@ void main() {
   // Fix round 1, I-3 — the sheet cannot be dismissed mid-write
   // -------------------------------------------------------------------------
   //
-  // Measured against the Flutter SDK source, not assumed: the scrim tap and
-  // the system/predictive back gesture both route through
-  // `Navigator.maybePop` (`widgets/routes.dart:988`), which consults
-  // `PopScope.canPop` freshly on every attempt — that path is what
-  // `QuickCheckinScreen`'s own `PopScope` gates. Drag-to-dismiss calls
+  // Measured against the Flutter SDK source, not assumed: the scrim tap
+  // calls `Navigator.maybePop` from `modal_barrier.dart:230`
+  // (`ModalBarrier`'s own `handleDismiss`); the system/predictive back
+  // gesture calls the SAME method from `app.dart:1619`
+  // (`_WidgetsAppState.didPopRoute`). Both reach `route.popDisposition`,
+  // which consults `PopScope.canPop` freshly on every attempt — that path
+  // is what `QuickCheckinScreen`'s own `PopScope` gates.
+  // `widgets/routes.dart:988` is ALSO a `Navigator.maybePop` call, but a
+  // THIRD, different one — `_DismissModalAction.invoke`, the
+  // `DismissIntent`/Escape-key path, not the scrim or system back (fix
+  // round 2, item 4: the earlier citation pointed at this line by mistake).
+  // Drag-to-dismiss calls
   // `Navigator.pop` DIRECTLY from `BottomSheet`'s `onClosing`
   // (`material/bottom_sheet.dart`'s `_ModalBottomSheet.build`), bypassing
   // `PopScope` entirely and unreachable by any reactive gate — closed a

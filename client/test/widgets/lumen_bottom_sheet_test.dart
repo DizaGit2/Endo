@@ -32,6 +32,7 @@ Future<Future<String?>> _openSheet(
   WidgetTester tester, {
   Widget content = const Text('How\'s today?'),
   bool isDismissible = true,
+  bool? enableDrag,
   Brightness brightness = Brightness.light,
 }) async {
   late Future<String?> result;
@@ -47,6 +48,7 @@ Future<Future<String?>> _openSheet(
               result = showLumenBottomSheet<String>(
                 context: context,
                 isDismissible: isDismissible,
+                enableDrag: enableDrag,
                 builder: (_) => content,
               );
             },
@@ -126,6 +128,31 @@ void main() {
 
       expect(find.byType(LumenBottomSheet), findsOneWidget);
     });
+
+    // Fix round 2, item 2: `enableDrag` defaults to MIRRORING
+    // `isDismissible` when the caller does not pass it — pinned here
+    // because nothing did. A caller who decided `isDismissible: false`
+    // (a decision sheet the user must answer) and never mentioned drag at
+    // all must not have that decision escapable by a swipe either.
+    testWidgets(
+      'isDismissible: false with NO enableDrag override also blocks a '
+      'downward drag — the default mirrors isDismissible, not `true`',
+      (tester) async {
+        await _openSheet(tester, isDismissible: false);
+
+        await tester.drag(find.byType(LumenBottomSheet), const Offset(0, 400));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byType(LumenBottomSheet),
+          findsOneWidget,
+          reason:
+              'enableDrag ?? isDismissible must resolve to false here — '
+              'an `enableDrag ?? true` mutation would let a swipe escape '
+              'an isDismissible: false decision sheet',
+        );
+      },
+    );
 
     testWidgets('returns the value its content pops with', (tester) async {
       final result = await _openSheet(

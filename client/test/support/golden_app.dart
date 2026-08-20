@@ -95,6 +95,33 @@
 //      text node from a full-strength one. Assert `Opacity.opacity` directly
 //      in a widget test instead (`cycle_calendar_screen_semantics_test.dart`,
 //      "an adjacent-month cell is drawn at 0.3 opacity…").
+//   8. **AN `Icon` IS BLOCKED THE SAME WAY A `Text` IS, AND FOR THE SAME
+//      REASON — P4b-T18 fix round 2.** `Icon`'s `build` wraps its glyph in a
+//      `RichText` (`widgets/icon.dart:328`), which is a `RenderParagraph` —
+//      the exact type `BlockedTextPaintingContext.paintChild` matches on
+//      (`alchemist` 0.14.0, `blocked_text_image.dart:34-41`):
+//      `if (child is RenderParagraph) { … canvas.drawRect(offset &
+//      child.size, paint); }`. **The glyph itself is never painted at
+//      all** — not blocked-and-measured, simply never drawn — so these
+//      images are insensitive to which `IconData` was chosen. What DOES
+//      still reach the canvas is the same two things rule 6 already names
+//      for text: the rect's SIZE (`child.size`, driven by `Icon.size`) and
+//      its COLOUR (`child.text.style?.color`, i.e. `Icon.color` — an icon
+//      swap paired with a colour change still shows). Measured directly:
+//      swapping an icon's `IconData` to an unrelated one leaves all four
+//      goldens green; changing only its `size` reddens all four.
+//
+//      **Do not attribute the size-insensitivity-across-codepoints to "the
+//      icon font is monospaced so every glyph has the same advance width"**
+//      — that is plausible-sounding and WRONG for the same reason rule 6's
+//      original claim was: it is environment-sensitive reasoning about what
+//      a real font measures, and this file has now been corrected on it
+//      three times (rule 6, rule 7, this one). The actual, environment-
+//      INDEPENDENT reason two different icons at the same `size` paint
+//      identically is `drawRect` itself — `child.size` is set by `Icon`'s
+//      own layout (bound to the `size` parameter), not measured from
+//      whatever glyph the chosen font happens to contain, and the branch
+//      above never inspects the glyph at all.
 
 import 'package:alchemist/alchemist.dart';
 import 'package:flutter/material.dart';

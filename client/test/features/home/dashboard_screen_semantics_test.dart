@@ -11,6 +11,7 @@
 // absent.
 
 import 'dart:async';
+import 'dart:ui' show Tristate;
 
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -564,6 +565,29 @@ void main() {
 
       expectLabeledButton(tester, find.text('Mood'), 'Mood');
     });
+
+    // Fix round 2, item 1: M-3 (round 1) fixed LumenSelectableRow so
+    // `selected: null` omits the flag, and this call site passes `null` —
+    // but nothing pinned the CALL SITE itself. Reverting it to `selected:
+    // false` (the exact bug M-3 exists to fix) left the widget-level tests
+    // untouched and the whole suite green; only a test that reads THIS
+    // tile's own node catches a regression here.
+    testWidgetsWithSemantics(
+      'announces no selected state at all — a pure launcher, not a toggle',
+      (tester) async {
+        await _pump(tester, () => _FreshDashboard(_view()));
+
+        final data = tester.getSemantics(find.text('Mood')).getSemanticsData();
+        expect(
+          data.flagsCollection.isSelected,
+          Tristate.none,
+          reason:
+              'selected: false (round 1\'s original shape) would announce '
+              '"not selected" for a control that was never selectable; '
+              'selected: null omits the flag entirely',
+        );
+      },
+    );
 
     testWidgets('opens screen 9, the quick check-in sheet', (tester) async {
       await _pump(tester, () => _FreshDashboard(_view()));
