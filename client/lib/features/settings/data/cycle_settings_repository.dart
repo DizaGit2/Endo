@@ -1,9 +1,7 @@
-import 'dart:convert';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/api/api/lumen_api_api.dart';
 import 'package:lumen/api/model/cycle_settings_response.dart';
-import 'package:lumen/api/serializers.dart';
+import 'package:lumen/core/cache/built_json_codec.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
@@ -74,30 +72,10 @@ class CycleSettingsRepository {
         }
         return body;
       },
-      toJson: _toJson,
-      fromJson: _fromJson,
+      toJson: (value) => toCacheJson(CycleSettingsResponse.serializer, value),
+      fromJson: (map) => fromCacheJson(CycleSettingsResponse.serializer, map),
       ttl: CacheKeys.ttl,
     );
-  }
-
-  // ── built_value ↔ JSON-map helpers ─────────────────────────────────────────
-
-  /// Serializes for the Hive cache. Round-tripped through `json.encode` so no
-  /// Dart-only type (the custom-serialized `Date` on `pausedSince` included)
-  /// reaches the box.
-  static Map<String, dynamic> _toJson(CycleSettingsResponse settings) {
-    final encoded = standardSerializers.serializeWith(
-      CycleSettingsResponse.serializer,
-      settings,
-    );
-    return json.decode(json.encode(encoded)) as Map<String, dynamic>;
-  }
-
-  static CycleSettingsResponse _fromJson(Map<String, dynamic> map) {
-    return standardSerializers.deserializeWith(
-      CycleSettingsResponse.serializer,
-      map,
-    )!;
   }
 }
 

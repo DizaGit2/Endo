@@ -8,12 +8,10 @@
 // (the default of 50 can silently exceed on a heavy day, and an out-of-range
 // value is a 400 on this endpoint, never a clamp).
 
-import 'dart:convert';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/symptom_list_response.dart';
-import 'package:lumen/api/serializers.dart';
+import 'package:lumen/core/cache/built_json_codec.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/features/symptoms/data/symptoms_repository.dart';
@@ -133,13 +131,9 @@ void main() {
 }
 
 /// [value], serialized exactly the shape `SymptomsRepository` writes to and
-/// reads from the cache box — the same round trip `CycleRepository`'s own
-/// `_calendarToJson`/`_dayToJson` perform, reproduced here because that pair
-/// is private to the class under test.
+/// reads from the cache box — `toCacheJson` (`core/cache/built_json_codec.dart`)
+/// is the very function the repository's own `getDay` uses, so this is the
+/// real round trip, not a reimplementation of it.
 Map<String, dynamic> _wireMapFor(SymptomListResponse value) {
-  final encoded = standardSerializers.serializeWith(
-    SymptomListResponse.serializer,
-    value,
-  );
-  return json.decode(json.encode(encoded)) as Map<String, dynamic>;
+  return toCacheJson(SymptomListResponse.serializer, value);
 }

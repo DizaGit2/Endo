@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:built_collection/built_collection.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,7 +16,7 @@ import 'package:lumen/api/model/save_goals_request.dart';
 import 'package:lumen/api/model/save_hormone_prefs_request.dart';
 import 'package:lumen/api/model/save_notification_prefs_request.dart';
 import 'package:lumen/api/model/save_onboarding_cycle_request.dart';
-import 'package:lumen/api/serializers.dart';
+import 'package:lumen/core/cache/built_json_codec.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
@@ -147,8 +145,8 @@ class OnboardingRepository {
         }
         return body;
       },
-      toJson: _stateToJson,
-      fromJson: _stateFromJson,
+      toJson: (state) => toCacheJson(OnboardingStateResponse.serializer, state),
+      fromJson: (map) => fromCacheJson(OnboardingStateResponse.serializer, map),
       ttl: CacheKeys.ttl,
     );
   }
@@ -690,25 +688,6 @@ class OnboardingRepository {
     );
 
     return body;
-  }
-
-  // ── built_value ↔ JSON-map helpers ─────────────────────────────────────────
-
-  /// Serializes for the Hive cache. Round-tripped through `json.encode` so no
-  /// Dart-only type (the custom-serialized `Date` included) reaches the box.
-  static Map<String, dynamic> _stateToJson(OnboardingStateResponse state) {
-    final encoded = standardSerializers.serializeWith(
-      OnboardingStateResponse.serializer,
-      state,
-    );
-    return json.decode(json.encode(encoded)) as Map<String, dynamic>;
-  }
-
-  static OnboardingStateResponse _stateFromJson(Map<String, dynamic> map) {
-    return standardSerializers.deserializeWith(
-      OnboardingStateResponse.serializer,
-      map,
-    )!;
   }
 }
 

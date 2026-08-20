@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/api/api/lumen_api_api.dart';
 import 'package:lumen/api/model/cycle_calendar_response.dart';
@@ -7,7 +5,7 @@ import 'package:lumen/api/model/cycle_day_response.dart';
 import 'package:lumen/api/model/cycle_event_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/log_cycle_event_request.dart';
-import 'package:lumen/api/serializers.dart';
+import 'package:lumen/core/cache/built_json_codec.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
@@ -108,8 +106,8 @@ class CycleRepository {
         }
         return body;
       },
-      toJson: _calendarToJson,
-      fromJson: _calendarFromJson,
+      toJson: (value) => toCacheJson(CycleCalendarResponse.serializer, value),
+      fromJson: (map) => fromCacheJson(CycleCalendarResponse.serializer, map),
       ttl: CacheKeys.ttl,
     );
   }
@@ -150,8 +148,8 @@ class CycleRepository {
         }
         return body;
       },
-      toJson: _dayToJson,
-      fromJson: _dayFromJson,
+      toJson: (value) => toCacheJson(CycleDayResponse.serializer, value),
+      fromJson: (map) => fromCacheJson(CycleDayResponse.serializer, map),
       ttl: CacheKeys.ttl,
     );
   }
@@ -278,41 +276,6 @@ class CycleRepository {
         await _store.invalidate(key);
       }
     }
-  }
-
-  // ── built_value ↔ JSON-map helpers ─────────────────────────────────────────
-
-  /// Serialized for the Hive cache. Round-tripped through `json.encode` so no
-  /// Dart-only type (the custom-serialized `Date` fields included) reaches the
-  /// box.
-  static Map<String, dynamic> _calendarToJson(CycleCalendarResponse value) {
-    final encoded = standardSerializers.serializeWith(
-      CycleCalendarResponse.serializer,
-      value,
-    );
-    return json.decode(json.encode(encoded)) as Map<String, dynamic>;
-  }
-
-  static CycleCalendarResponse _calendarFromJson(Map<String, dynamic> map) {
-    return standardSerializers.deserializeWith(
-      CycleCalendarResponse.serializer,
-      map,
-    )!;
-  }
-
-  static Map<String, dynamic> _dayToJson(CycleDayResponse value) {
-    final encoded = standardSerializers.serializeWith(
-      CycleDayResponse.serializer,
-      value,
-    );
-    return json.decode(json.encode(encoded)) as Map<String, dynamic>;
-  }
-
-  static CycleDayResponse _dayFromJson(Map<String, dynamic> map) {
-    return standardSerializers.deserializeWith(
-      CycleDayResponse.serializer,
-      map,
-    )!;
   }
 }
 

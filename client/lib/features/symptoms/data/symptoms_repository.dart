@@ -1,10 +1,8 @@
-import 'dart:convert';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/api/api/lumen_api_api.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/symptom_list_response.dart';
-import 'package:lumen/api/serializers.dart';
+import 'package:lumen/core/cache/built_json_codec.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
@@ -95,29 +93,10 @@ class SymptomsRepository {
         }
         return body;
       },
-      toJson: _toJson,
-      fromJson: _fromJson,
+      toJson: (value) => toCacheJson(SymptomListResponse.serializer, value),
+      fromJson: (map) => fromCacheJson(SymptomListResponse.serializer, map),
       ttl: CacheKeys.ttl,
     );
-  }
-
-  // ── built_value ↔ JSON-map helpers ─────────────────────────────────────
-
-  /// Serialized for the Hive cache. Round-tripped through `json.encode` so no
-  /// Dart-only type reaches the box — same shape as `CycleRepository`'s pair.
-  static Map<String, dynamic> _toJson(SymptomListResponse value) {
-    final encoded = standardSerializers.serializeWith(
-      SymptomListResponse.serializer,
-      value,
-    );
-    return json.decode(json.encode(encoded)) as Map<String, dynamic>;
-  }
-
-  static SymptomListResponse _fromJson(Map<String, dynamic> map) {
-    return standardSerializers.deserializeWith(
-      SymptomListResponse.serializer,
-      map,
-    )!;
   }
 }
 
