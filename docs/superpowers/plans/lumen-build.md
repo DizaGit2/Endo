@@ -1131,7 +1131,7 @@ value. The user sees a banner so it is not silent, but it is the same class of l
 - [x] **T18 — Screen 9 quick check-in.** `POST /checkin/quick` (MERGE; ≥1 of pain/mood; `pain: 0` is a supplied datum — never a falsiness test); 0–10 scale, not the mockup's 0–9; **"+ Add details" is CUT from T18 and ships in T20 with screen 12** — this line previously said to ship it "per R-13", which contradicted **R-20** (an affordance ships with its destination) since R-13's destination *is* screen 12. R-20 wins; R-13's save-first behaviour is unchanged and lands with the button at T20. **T18 additionally fixes two shared widgets while they still have one caller**: `LumenIntensityScale` gains `ValueChanged<int?>` so tapping the selected stop clears back to "not recorded" (today a mis-tap is permanent — every stop fires including the selected one, `onDecrease` is null at 0, and the endpoint has no clear affordance), and `LumenBottomSheet` gains `useRootNavigator: true` so the sheet covers the nav as `screen-mockups.md:354` specifies rather than leaving five destinations live behind the scrim.
 
 *Symptoms (screens 12–13).*
-- [ ] **T14b — Collapse the built_value↔JSON helper pair (NEW, from T14's review; do it BEFORE T19).**
+- [x] **T14b — Collapse the built_value↔JSON helper pair (NEW, from T14's review; do it BEFORE T19).**
   The same pair now has **six verbatim copies** across four repositories (`cycle_repository.dart:278-306`,
   `me_repository.dart:96-107`, `cycle_settings_repository.dart:88-101`, `onboarding_repository.dart:699-712`)
   — double the phase's own promotion trigger of three. Two generic free functions in `core/cache/` collapse
@@ -1163,7 +1163,7 @@ docker compose -f deploy/docker-compose.yml up vault-init      # idempotent re-p
 ```
 
 **STATUS**
-- **State:** IN_PROGRESS · **Branch:** `phase/04b-logging-client` (from `bc73237`) · **Tasks:** 23/35 (T1–T18 + the review-born inserts T5b/T5c/T5d/T8b/T9b/T14b; five screens shipped — 3, 4, 5, 6, 7 — and onboarding is complete end to end)
+- **State:** IN_PROGRESS · **Branch:** `phase/04b-logging-client` (from `bc73237`) · **Tasks:** 24/37 (T1–T18 + T14b + the review-born inserts T5b/T5c/T5d/T8b/T9b/T14b; five screens shipped — 3, 4, 5, 6, 7 — and onboarding is complete end to end)
 - Phase-entry survey + rulings recorded (r20). Verification output lands here at T25.
 
 ---
