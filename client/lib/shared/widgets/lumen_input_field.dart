@@ -88,7 +88,19 @@ class LumenInputField extends StatelessWidget {
     this.inputFormatters,
     this.onChanged,
     this.suffixText,
-  });
+    this.maxLines = 1,
+    this.minLines,
+    this.maxLength,
+  }) : assert(
+         !obscure || maxLines == 1,
+         'LumenInputField: obscure and a multiline maxLines are mutually '
+         'exclusive (obscure: $obscure, maxLines: $maxLines). Flutter\'s own '
+         'TextField asserts the same thing (obscureText == false || '
+         'maxLines == 1) — hiding entered characters while allowing more '
+         'than one visual line has no sane rendering. Pass obscure: false '
+         'for a multiline field (screen 12\'s notes), or leave maxLines at '
+         'its default of 1 for a password field (account_screen.dart).',
+       );
 
   /// The text being edited. Owned (and disposed) by the caller.
   final TextEditingController controller;
@@ -164,6 +176,55 @@ class LumenInputField extends StatelessWidget {
   /// `test/widgets/lumen_input_field_test.dart`'s `suffixText` group.
   final String? suffixText;
 
+  /// How many visual lines the field spans. Defaults to `1` — the framework
+  /// default — so all five existing call sites (screens 2 and 4, onboarding's
+  /// account and baseline screens) are unaffected by this parameter existing
+  /// at all.
+  ///
+  /// Added at P4b-T19c for screen 12's notes field ahead of the screen that
+  /// needs it (T20), so that screen's own commit does not have to edit this
+  /// shared file too. Pass `null` for an unbounded field that grows with its
+  /// content.
+  final int? maxLines;
+
+  /// The field's minimum height, in lines. Defaults to `null` (the framework
+  /// default, same as every pre-existing call site).
+  ///
+  /// **Why this exists though the plan names only `maxLength`.** `maxLines: 4`
+  /// ALONE yields a box one line tall that grows as the user types — which
+  /// does not read as a notes field on first paint. `minLines` is what makes
+  /// `maxLines` behave like a fixed-height textarea; it is the same one-line
+  /// mechanical forwarding as `maxLines` itself, and omitting it would have
+  /// guaranteed a second edit to this file inside T20 — exactly what T19c
+  /// exists to prevent by landing both parameters together.
+  final int? minLines;
+
+  /// The maximum number of characters the field will accept, hard-enforced at
+  /// input time with Flutter's default [TextField.maxLengthEnforcement] (no
+  /// override here) — additional keystrokes are simply refused once the cap
+  /// is reached, and the field shows a `N/maxLength` counter styled from this
+  /// file's own 12 px / [FontWeight.w400] message scale (see [errorText]'s
+  /// `errorStyle`) rather than Flutter's default counter styling.
+  ///
+  /// **Set to 2000 by screen 12's notes field, mirroring the contract's own
+  /// bound.** `FieldLimits.cs:25` declares `MaxNotesLength = 2000`, and
+  /// `SymptomService.cs` applies it AFTER TRIMMING. A raw client-side cap at
+  /// the same number is therefore strictly safe: trimmed length is always
+  /// `<=` raw length, so a field that can never exceed 2000 raw characters can
+  /// never produce a value the server rejects for length. The only user this
+  /// inconveniences is one whose overflow is entirely leading/trailing
+  /// whitespace — which the server discards anyway.
+  ///
+  /// Blocking input silently is worse than blocking it with an explanation,
+  /// which is why the counter stays visible rather than being suppressed.
+  ///
+  /// **This is a structural field limit, not a clinical bound.** R-17 forbids
+  /// a clinical bound in `client/lib` and forbids any bound that blocks data
+  /// entry; it does not govern a string length the contract itself declares.
+  /// Recorded here explicitly so this cap is never mistaken for an R-17
+  /// violation later.
+  final int? maxLength;
+
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
@@ -195,6 +256,9 @@ class LumenInputField extends StatelessWidget {
         inputFormatters: inputFormatters,
         onChanged: onChanged,
         style: inputStyle,
+        maxLines: maxLines,
+        minLines: minLines,
+        maxLength: maxLength,
         decoration: InputDecoration(
           // A `hint` WIDGET, not `hintText` — see the class doc. The two cannot
           // both be given (`InputDecoration`'s own assert), and the style has
@@ -236,6 +300,15 @@ class LumenInputField extends StatelessWidget {
             fontSize: 12,
             fontWeight: FontWeight.w400,
             color: errorColor,
+          ),
+          // Only painted when [maxLength] is set — Material draws no counter
+          // widget at all otherwise, so this is inert for the five existing
+          // call sites. Styled to this file's own 12/w400 scale rather than
+          // Flutter's default counter styling, per [maxLength]'s doc.
+          counterStyle: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w400,
+            color: c.muted,
           ),
         ),
       ),

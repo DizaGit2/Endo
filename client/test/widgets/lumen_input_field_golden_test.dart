@@ -12,15 +12,20 @@ final _controllers = <String, TextEditingController>{
   'Email': TextEditingController(text: 'maya@example.com'),
   'Password': TextEditingController(),
   'Clinic': TextEditingController(),
+  'Notes': TextEditingController(text: 'Cramping started this morning.'),
 };
 
-/// The field in the three states a screen puts it in — empty, filled and
-/// disabled — under the label the design system draws above it.
+/// The field in the states a screen puts it in — empty, filled and disabled —
+/// under the label the design system draws above it, plus (P4b-T19c) the
+/// fixed-height multiline shape with its own character-count counter.
 ///
 /// `obscureText: true` means the image never shows the strings, so what this
-/// pins is the treatment: the input fill, the 12 px outline, the resting border
-/// colour, and that a disabled field is visibly the same box rather than a
-/// different control.
+/// pins is the treatment: the input fill, the 12 px outline, the resting
+/// border colour, that a disabled field is visibly the same box rather than a
+/// different control, and — new since T19c — the multiline field's fixed
+/// height and its counter row underneath. The existing four fields are
+/// unchanged pixel-for-pixel; only the Notes field and the frame's overall
+/// height are new.
 Widget _form(Brightness brightness) {
   final c = brightness == Brightness.light ? lumenLight : lumenDark;
 
@@ -29,6 +34,9 @@ Widget _form(Brightness brightness) {
     String hint, {
     bool enabled = true,
     bool obscure = false,
+    int? maxLines,
+    int? minLines,
+    int? maxLength,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -49,6 +57,9 @@ Widget _form(Brightness brightness) {
           hint: hint,
           enabled: enabled,
           obscure: obscure,
+          maxLines: maxLines ?? 1,
+          minLines: minLines,
+          maxLength: maxLength,
         ),
       ],
     );
@@ -69,6 +80,17 @@ Widget _form(Brightness brightness) {
           field('Password', '••••••••', obscure: true),
           const SizedBox(height: 14),
           field('Clinic', 'Not set', enabled: false),
+          const SizedBox(height: 14),
+          // The new capability (P4b-T19c): a fixed-height, multi-line field
+          // with a character cap and its own styled counter — screen 12's
+          // notes field, ahead of the screen that needs it.
+          field(
+            'Notes',
+            'Add a note',
+            maxLines: 4,
+            minLines: 4,
+            maxLength: 2000,
+          ),
         ],
       ),
     ),

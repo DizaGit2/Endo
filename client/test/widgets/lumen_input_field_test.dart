@@ -35,6 +35,9 @@ Future<TextEditingController> _pumpField(
   String? suffixText,
   String text = '',
   Brightness brightness = Brightness.light,
+  int? maxLines = 1,
+  int? minLines,
+  int? maxLength,
 }) async {
   final controller = TextEditingController(text: text);
   addTearDown(controller.dispose);
@@ -52,6 +55,9 @@ Future<TextEditingController> _pumpField(
         errorText: errorText,
         keyboardType: keyboardType,
         suffixText: suffixText,
+        maxLines: maxLines,
+        minLines: minLines,
+        maxLength: maxLength,
       ),
     ),
   );
@@ -201,11 +207,7 @@ void main() {
                 hint: 'you@example.com',
                 errorText: 'Enter a valid email address.',
               ),
-              LumenInputField(
-                controller: without,
-                label: 'Name',
-                hint: 'Maya',
-              ),
+              LumenInputField(controller: without, label: 'Name', hint: 'Maya'),
             ],
           ),
         ),
@@ -337,7 +339,6 @@ void main() {
       expect(hint.fontFamily, 'Roboto');
     });
 
-
     testWidgets('the entered text is ink at 14', (tester) async {
       await _pumpField(tester);
       final style = _field(tester).style!;
@@ -408,5 +409,119 @@ void main() {
 
       expect(_hintStyle(tester).color, lumenDark.muted.withValues(alpha: 0.6));
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // maxLines / minLines / maxLength (P4b-T19c) — screen 12's notes field
+  // -------------------------------------------------------------------------
+
+  group('multiline (P4b-T19c)', () {
+    testWidgets(
+      'maxLines defaults to 1 and minLines/maxLength default to null — the '
+      'five existing call sites are unaffected',
+      (tester) async {
+        await _pumpField(tester);
+
+        expect(_field(tester).maxLines, 1);
+        expect(_field(tester).minLines, isNull);
+        expect(_field(tester).maxLength, isNull);
+      },
+    );
+
+    testWidgets('maxLines and minLines forward to the TextField', (
+      tester,
+    ) async {
+      await _pumpField(tester, maxLines: 4, minLines: 4);
+
+      expect(_field(tester).maxLines, 4);
+      expect(_field(tester).minLines, 4);
+    });
+
+    testWidgets('maxLength forwards to the TextField', (tester) async {
+      await _pumpField(tester, maxLines: 4, minLines: 4, maxLength: 2000);
+
+      expect(_field(tester).maxLength, 2000);
+    });
+
+    testWidgets(
+      'input is truncated at the cap — a raw client cap the contract\'s '
+      'MaxNotesLength=2000 can never be exceeded by',
+      (tester) async {
+        final controller = await _pumpField(
+          tester,
+          maxLines: 4,
+          minLines: 4,
+          maxLength: 5,
+        );
+
+        await tester.enterText(find.byType(TextField), '1234567890');
+
+        expect(
+          controller.text.length,
+          lessThanOrEqualTo(5),
+          reason:
+              'Flutter\'s default maxLengthEnforcement must actually be '
+              'wired — without `maxLength` reaching the TextField, nothing '
+              'stops more than the cap from landing in the controller.',
+        );
+      },
+    );
+
+    testWidgets(
+      'the counter is styled from the design tokens, not Flutter\'s default',
+      (tester) async {
+        await _pumpField(tester, maxLines: 4, minLines: 4, maxLength: 2000);
+        final style = _decoration(tester).counterStyle!;
+
+        // Same 12/w400 scale the errorText/message treatment already uses in
+        // this file, so the counter reads as part of the same field rather
+        // than a stock Material addition.
+        expect(style.fontSize, 12);
+        expect(style.fontWeight, FontWeight.w400);
+        expect(style.color, lumenLight.muted);
+      },
+    );
+
+    testWidgets(
+      'obscure with a multiline maxLines throws an assertion naming both '
+      'parameters',
+      (tester) async {
+        final controller = TextEditingController();
+        addTearDown(controller.dispose);
+
+        expect(
+          () => LumenInputField(
+            controller: controller,
+            label: 'Password',
+            hint: '',
+            obscure: true,
+            maxLines: 4,
+          ),
+          throwsA(
+            isA<AssertionError>().having(
+              (e) => '${e.message}',
+              'message',
+              allOf(contains('obscure'), contains('maxLines')),
+            ),
+          ),
+          reason:
+              'obscure: true and a multiline maxLines have no sane rendering '
+              '— Flutter\'s own TextField asserts the same combination for '
+              'the same reason (obscureText == false || maxLines == 1).',
+        );
+      },
+    );
+
+    testWidgets(
+      'obscure with maxLines left at its default of 1 does not throw — '
+      'account_screen.dart\'s password field must keep working',
+      (tester) async {
+        // No expect(throwsA) here on purpose: a build that throws fails the
+        // pump itself, so simply completing this pump IS the assertion.
+        await _pumpField(tester, obscure: true);
+
+        expect(_field(tester).obscureText, isTrue);
+      },
+    );
   });
 }
