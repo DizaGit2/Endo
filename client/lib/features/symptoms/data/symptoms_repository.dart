@@ -60,9 +60,20 @@ import 'package:lumen/core/network/api_client.dart';
 /// [occurredAt] is `required` but nullable: an explicit `null` asks the
 /// server for its own single `now` for the whole batch — the "logging as it
 /// happens" case the contract names as a first-class choice, not a defect
-/// (`SymptomService.cs:428-430`). It is NOT one of the three silently-defaulted
-/// fields above; it is `required` only so every call site states its choice
-/// explicitly, the same discipline as the rest of this class.
+/// (`SymptomService.cs:428-430`).
+///
+/// **Correction (fix round 1, I-1): `occurredAt` IS a fourth silently-defaulted
+/// field, not exempt from the class above.** `SymptomService.cs:430`,
+/// `entry.OccurredAt ?? now`, no 400 — and a mapper bug that drops the
+/// `..occurredAt = occurredAt` line in [_toWire] has a WORSE consequence than
+/// the other three: every entry, even one built with an explicit historical
+/// instant, would silently relocate onto today — an entire backdated batch,
+/// permanently and indistinguishably re-dated. `null` reaching the wire is
+/// still a legitimate, deliberate choice (that half was always true); what
+/// this class got wrong was implying the field carried none of the mapper's
+/// silent-default risk. It is `required` for the same "state your choice"
+/// reason as the other three, and [_toWire]'s wire-level tests now pin it the
+/// same way (`symptoms_repository_test.dart`, `createBatch` group).
 class SymptomEntryDraft {
   const SymptomEntryDraft({
     required this.symptomCode,
@@ -239,7 +250,7 @@ class SymptomsRepository {
   /// ONE transaction, so splitting it here would silently reintroduce the
   /// half-written-episode hazard the endpoint exists to prevent.
   ///
-  /// **How the four T19 hazards are held.**
+  /// **How the T19 hazards are held (fix round 1 revises items 2 and 3).**
   ///
   /// 1. **`cachedWrite` is GENERALISED, not bypassed** (`cached_query.dart`):
   ///    it now returns the write's own result, and [invalidateKeysFor] lets
@@ -248,24 +259,33 @@ class SymptomsRepository {
   ///    server-derived `occurredOn` exist until the 201 comes back.
   /// 2. **Every distinct `occurredOn` in the response is invalidated**, not
   ///    one date — a batch may span several days and the server derives each
-  ///    row's day independently (`SymptomService.cs:526`). A `null`
-  ///    `occurredOn` on a returned row — which the contract's `DateOnly`
-  ///    guarantees can never actually happen — is treated as a broken
-  ///    response and answers a loud [ServerFailure] rather than silently
-  ///    skipping that row's invalidation (DL-2: never a fallback where the
-  ///    contract promises a value).
-  /// 3. **Ambiguous failure invalidates anyway (S-6).** If the write throws a
-  ///    [NetworkFailure] or [ServerFailure] — the server may have already
-  ///    committed the rows before the response was lost — every date named by
-  ///    THIS REQUEST's own [SymptomEntryDraft.occurredAt] values is
-  ///    invalidated too, via [cachedWrite]'s `invalidateKeysOnAmbiguousFailure`.
-  ///    An entry whose `occurredAt` was left `null` (asking the server for
-  ///    its own `now`) contributes no key here — the client has no
-  ///    server-confirmed day to invalidate and D-12 forbids guessing one from
-  ///    the device clock, so that narrow gap is accepted and documented
-  ///    rather than papered over with a device-clock guess.
-  /// 4. **A missing `symptomCode`/`region`/`side` cannot be expressed** — see
-  ///    [SymptomEntryDraft].
+  ///    row's day independently (`SymptomService.cs:526`). A `null` `items`
+  ///    or a `null` `occurredOn` on a returned row — both of which the
+  ///    contract's non-nullable `Items`/`DateOnly` guarantee can never
+  ///    actually happen — are treated as a broken response and answer a loud
+  ///    [ServerFailure], validated INSIDE the `write:` closure (see
+  ///    [_requireValidItems]) rather than afterward: a throw placed after
+  ///    `write()` had already returned successfully — where fix round 1 found
+  ///    it — sits outside `cachedWrite`'s ambiguity handling entirely, so it
+  ///    both skips invalidating every OTHER, perfectly valid item in the same
+  ///    batch and never reaches [invalidateKeysOnAmbiguousFailure] — a known
+  ///    successful write left with a 100%-stale cache, worse than the silent
+  ///    skip this loud guard exists to replace (I-2/I-5).
+  /// 3. **Ambiguous failure invalidates anyway (S-6), for 100% of expected
+  ///    traffic, not only the entries that happen to carry an explicit
+  ///    date.** If the write throws a [NetworkFailure] or [ServerFailure] —
+  ///    the server may have already committed the rows before the response
+  ///    was lost — [cachedWrite]'s `invalidateKeysOnAmbiguousFailure` runs
+  ///    [_fallbackInvalidationKeys]: an entry's OWN day if
+  ///    [SymptomEntryDraft.occurredAt] is explicit, else [fallbackDay]'s
+  ///    day — never nothing. [fallbackDay] matters because screen 12's
+  ///    mockup draws no date affordance at all, so on the traffic T20 will
+  ///    actually send, EVERY entry's `occurredAt` is `null` (fix round 1,
+  ///    C-1) — the first version of this method, which contributed no key
+  ///    for a null `occurredAt`, invalidated nothing for that traffic shape,
+  ///    which is 100% of it.
+  /// 4. **A missing `symptomCode`/`region`/`side`/`occurredAt` cannot be
+  ///    expressed** — see [SymptomEntryDraft].
   ///
   /// Any other failure (a real 400, 401, 409, 429, 5xx that is NOT preceded
   /// by an ambiguous network condition, …) invalidates nothing, matching
@@ -273,8 +293,18 @@ class SymptomsRepository {
   /// [ValidationFailure.fields] keyed `entries[N].field`
   /// (`SymptomService.cs:127`, `$"entries[{i}]"`), which
   /// [ValidationFailure.path] builds.
+  ///
+  /// [fallbackDay] is the server-confirmed "today" (`sessionTodayProvider`),
+  /// **required** for the identical "impossible to forget" reason
+  /// [SymptomEntryDraft]'s own fields are — the same shape
+  /// `CheckinRepository.quickCheckin`'s `fallbackDay` already uses in
+  /// production for screen 9, which has the same "no date affordance, server
+  /// picks `now`" shape (`checkin_repository.dart:79-84`). It is
+  /// invalidation-only: it never reaches the request body, so it cannot
+  /// change which instant the server stores (`SymptomService.cs:430`).
   Future<List<SymptomResponse>> createBatch({
     required List<SymptomEntryDraft> entries,
+    required DateTime fallbackDay,
   }) async {
     if (entries.length < minBatchEntries || entries.length > maxBatchEntries) {
       throw ValidationFailure(
@@ -290,9 +320,7 @@ class SymptomsRepository {
       (b) => b.entries.replace(entries.map((e) => e._toWire())),
     );
 
-    late final List<SymptomResponse> items;
-
-    await cachedWrite<CreateSymptomsResponse>(
+    return cachedWrite<List<SymptomResponse>>(
       store: _store,
       write: () async {
         final response = await _api.symptomsPost(
@@ -304,16 +332,16 @@ class SymptomsRepository {
             'The server returned an empty symptoms response.',
           );
         }
-        return body;
+        // Validated HERE, inside write() — see _requireValidItems and hazard
+        // 2 above for why this must not move back out to invalidateKeysFor.
+        return _requireValidItems(body);
       },
-      invalidateKeysFor: (created) {
-        items = _requireItems(created);
-        return _keysForCreatedItems(items);
-      },
-      invalidateKeysOnAmbiguousFailure: _fallbackInvalidationKeys(entries),
+      invalidateKeysFor: _keysForCreatedItems,
+      invalidateKeysOnAmbiguousFailure: _fallbackInvalidationKeys(
+        entries,
+        fallbackDay,
+      ),
     );
-
-    return items;
   }
 }
 
@@ -330,19 +358,47 @@ String _batchSizeMessage(int count) {
       '${SymptomsRepository.maxBatchEntries} entries';
 }
 
-/// Unwraps [CreateSymptomsResponse.items], which the contract guarantees is
-/// always present (`IReadOnlyList<SymptomResponse> Items`, non-nullable) even
-/// though the generated Dart model makes it `T?` (§C.0.2 — every generated
-/// property is). A `null` here means the server sent a malformed 201, which
-/// is a broken contract, not an empty save — DL-2's rule applies: a loud
-/// [ServerFailure], never a silent `?? const []` that would tell the caller
-/// "you created nothing" about a batch that may well have committed.
-List<SymptomResponse> _requireItems(CreateSymptomsResponse created) {
+/// Unwraps and FULLY validates [CreateSymptomsResponse.items] — that the list
+/// itself is present, AND that every item's `occurredOn` is present — so that
+/// everything downstream can treat both as guaranteed. **Called from INSIDE
+/// the `write:` closure, not from `invalidateKeysFor`** (fix round 1, I-2):
+/// a throw here is caught by `cachedWrite`'s own `on Failure catch`
+/// (`cached_query.dart`), which tests it for ambiguity exactly like any other
+/// failure — and since a malformed 201 body means the rows were, in fact,
+/// just committed, that IS ambiguous, so [SymptomsRepository.createBatch]'s
+/// `invalidateKeysOnAmbiguousFailure` fires for it. Thrown from
+/// `invalidateKeysFor` instead (this function's first shipped location) sits
+/// OUTSIDE `cachedWrite`'s `try` entirely — success has already been decided
+/// by the time that callback runs — so it neither reaches the ambiguous
+/// handler NOR lets any OTHER, perfectly valid item in the same batch
+/// invalidate: a write KNOWN to have committed left with a 100%-stale cache,
+/// which is worse than the silent skip this loud guard exists to replace.
+///
+/// [CreateSymptomsResponse.items] and each item's [SymptomResponse.occurredOn]
+/// are non-nullable on the contract (`IReadOnlyList<SymptomResponse> Items`;
+/// `DateOnly OccurredOn`) even though the generated Dart model makes both
+/// `T?` (§C.0.2). A `null` in either place is therefore a broken-contract
+/// state, not an empty save or an unlucky row — DL-2's rule: a loud
+/// [ServerFailure], never a silent `?? const []`/skip that would tell the
+/// caller "you created nothing" (or leave one day's cache stale) about a
+/// batch that has, in fact, just committed. The two cases get DISTINCT
+/// messages (fix round 1, M-3) — they are different broken-contract shapes
+/// and a caller inspecting `Failure.message` should be able to tell them
+/// apart.
+List<SymptomResponse> _requireValidItems(CreateSymptomsResponse created) {
   final items = created.items;
   if (items == null) {
     throw const ServerFailure(
-      'The server returned an empty symptoms response.',
+      'The server returned a symptoms response with no items.',
     );
+  }
+  for (final item in items) {
+    if (item.occurredOn == null) {
+      throw const ServerFailure(
+        "The server created a symptom with no occurredOn — the day's cache "
+        'cannot be safely invalidated.',
+      );
+    }
   }
   return items.toList(growable: false);
 }
@@ -351,45 +407,69 @@ List<SymptomResponse> _requireItems(CreateSymptomsResponse created) {
 /// carries (DL-4 — a batch may span more than one day, and the server derives
 /// each row's day independently, so one date is not enough).
 ///
-/// A `null` `occurredOn` on a returned row is a broken-contract state
-/// (`SymptomResponse.OccurredOn` is `DateOnly`, never null, on the wire) —
-/// DL-2's rule applies here too: a loud [ServerFailure] rather than silently
-/// skipping that row's invalidation, which would leave a day's cache stale
-/// with no signal that anything went wrong.
+/// [items] must already be [_requireValidItems]'s output: the `!` below is
+/// safe ONLY because that function has already rejected every null
+/// `occurredOn`, and this function does not re-check — re-validating here
+/// would put the check back in two places to drift apart, and this function
+/// (used as `invalidateKeysFor`) only ever runs after `write()` — which is
+/// exactly where that validation now lives — has already succeeded.
 List<String> _keysForCreatedItems(List<SymptomResponse> items) {
   final keys = <String>{};
   for (final item in items) {
-    final occurredOn = item.occurredOn;
-    if (occurredOn == null) {
-      throw const ServerFailure(
-        "The server created a symptom with no occurredOn — the day's cache "
-        'cannot be safely invalidated.',
-      );
-    }
-    keys.addAll(CacheKeys.keysForDate(occurredOn.toDateTime()));
+    keys.addAll(CacheKeys.keysForDate(item.occurredOn!.toDateTime()));
   }
   return keys.toList(growable: false);
 }
 
-/// The best a client can name for S-6's ambiguous-failure invalidation
-/// (`lumen-build.md:1145`) when the write itself never returned: every
-/// [CacheKeys.keysForDate] for every DISTINCT, CLIENT-SUPPLIED
-/// [SymptomEntryDraft.occurredAt] in [entries].
+/// S-6's ambiguous-failure invalidation list (`lumen-build.md:1145`) for a
+/// write whose outcome `cachedWrite` could not confirm.
 ///
-/// An entry whose `occurredAt` is `null` (asking the server for its own
-/// `now`) contributes nothing — the client has no server-confirmed day for
-/// it, and D-12 (`test/core/locale/formatting_guard_test.dart`) forbids
-/// guessing one from the device clock. That is a real, narrow gap (a batch
-/// made ENTIRELY of `occurredAt: null` entries that then fails ambiguously
-/// invalidates nothing), accepted and documented here rather than closed
-/// with a device-clock guess that could just as easily invalidate the WRONG
-/// day.
-List<String> _fallbackInvalidationKeys(List<SymptomEntryDraft> entries) {
+/// For each entry: if [SymptomEntryDraft.occurredAt] is explicit, THAT day's
+/// keys; if it was left `null` (asking the server for its own `now`),
+/// [fallbackDay]'s keys instead — **never nothing** (fix round 1, C-1).
+/// [fallbackDay] is a required, server-confirmed "today"
+/// (`sessionTodayProvider`) — the same shape
+/// `CheckinRepository.quickCheckin`'s `fallbackDay` already uses in
+/// production for the IDENTICAL case (screen 9 draws no date affordance
+/// either, `checkin_repository.dart:79-84`). It is NOT the device clock D-12
+/// forbids and NOT a guess: it is the one value in this whole call the server
+/// has already confirmed.
+///
+/// **This closes the gap the first version of this function left.** Screen
+/// 12's mockup draws no date affordance at all
+/// (`Screens/screen_12_symptom_form.html`), so on the traffic T20 will
+/// actually send, EVERY entry's `occurredAt` is `null` — a version of this
+/// function that contributed no key for the null case invalidated NOTHING
+/// for the survey's most-likely-bad-outcome path (2N indistinguishable rows
+/// after a re-save) on the only traffic shape that exists.
+///
+/// **Known residual imprecision (M-2).** [CacheKeys.keysForDate] reads a
+/// `DateTime`'s civil `year`/`month`/`day` with no timezone conversion of its
+/// own, while the SERVER derives the stored day in the user's PROFILE
+/// timezone (`SymptomService.cs:526`, `dayResolver.ToUserDay`). Normalising
+/// an explicit `occurredAt` to UTC first (below) at least makes this
+/// function's answer independent of whether the caller built a local- or
+/// UTC-flavoured `DateTime` for the SAME instant; it does not, and cannot,
+/// reproduce the server's profile-timezone conversion without a second round
+/// trip that this fallback path — reached only after the network has already
+/// failed once — cannot afford to make. A batch whose entries sit within a
+/// few hours of the user's local midnight may therefore invalidate a
+/// neighbouring day instead of, or in addition to, the true one.
+/// Over-invalidation costs a wasted re-fetch; under-invalidation is the S-6
+/// hazard this function exists to close — so this is the direction to err in
+/// when the two cannot both be had.
+List<String> _fallbackInvalidationKeys(
+  List<SymptomEntryDraft> entries,
+  DateTime fallbackDay,
+) {
   final keys = <String>{};
   for (final entry in entries) {
     final occurredAt = entry.occurredAt;
-    if (occurredAt == null) continue;
-    keys.addAll(CacheKeys.keysForDate(occurredAt));
+    keys.addAll(
+      CacheKeys.keysForDate(
+        occurredAt == null ? fallbackDay : occurredAt.toUtc(),
+      ),
+    );
   }
   return keys.toList(growable: false);
 }

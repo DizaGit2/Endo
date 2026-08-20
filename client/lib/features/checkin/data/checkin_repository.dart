@@ -59,23 +59,39 @@ class CheckinRepository {
   /// `day` is absent (defensive — the contract does not promise it is
   /// omittable) or if the write's outcome is ambiguous (see below).
   ///
-  /// **`cachedWrite`'s own `invalidateKeys` is evaluated eagerly, before
-  /// `write` runs** (`cached_query.dart:210`), so it cannot see the
-  /// response's `day` at all — this method invalidates by hand afterward,
-  /// the shape `cycle_repository.dart:276-280`'s delete-404 path already
-  /// uses for the same reason.
+  /// **`cachedWrite`'s own static `invalidateKeys` parameter is evaluated
+  /// eagerly, before `write` runs** (`cached_query.dart:249`), so passing it
+  /// still could not see the response's `day` at all — this method
+  /// invalidates by hand afterward, the shape `cycle_repository.dart:276-280`
+  /// (soft-delete 404) already uses for the same reason. **P4b-T19 later
+  /// added a SECOND, deferred option, `invalidateKeysFor`**
+  /// (`cached_query.dart:250`), computed FROM the write's own result — the
+  /// shape this method's own `saved.day ?? fallbackDay` fallback below is
+  /// hand-rolling. This repository predates that parameter and has not been
+  /// migrated to it; the two invalidation paths below remain hand-rolled on
+  /// purpose until that migration happens, not because the parameter could
+  /// not serve them.
   ///
   /// **Any [Failure] reaching this method — from `cachedWrite`'s own
   /// `on DioException` mapping, OR from the empty-body guard below, which
-  /// THROWS INSIDE the write closure and therefore escapes `cachedWrite`'s
-  /// catch entirely (it only catches `DioException`,
-  /// `cached_query.dart:214`) — invalidates [fallbackDay]'s keys before
-  /// rethrowing.** Both cases are ambiguous: a timed-out write may have
-  /// committed server-side, and a malformed-200 response almost certainly
-  /// did. Over-invalidation is safe by design (`cache_keys.dart`'s own file
-  /// header: the next read just re-fetches); under-invalidation is the bug
-  /// that ships silently and leaves a committed write stale for the rest of
-  /// the 5-minute TTL.
+  /// throws a bare [ServerFailure] INSIDE the `write` closure — invalidates
+  /// [fallbackDay]'s keys before rethrowing.** Corrected at P4b-T19 fix round
+  /// 1 (I-4): `cachedWrite` now ALSO catches a directly-thrown [Failure]
+  /// (`cached_query.dart:264`), so the empty-body guard's [ServerFailure]
+  /// no longer "escapes cachedWrite's catch entirely" — it IS caught there,
+  /// tested for ambiguity, and (being a [ServerFailure]) would invalidate
+  /// whatever THIS call site names via `invalidateKeysOnAmbiguousFailure`.
+  /// This call does not pass that parameter, so nothing invalidates via
+  /// `cachedWrite`'s own path either way — the `on Failure catch (_)` below,
+  /// unconditional on EVERY [Failure] rather than only the ambiguous ones,
+  /// is what actually performs the invalidation. Both the timeout and the
+  /// malformed-200 cases are ambiguous enough to invalidate anyway: a
+  /// timed-out write may have committed server-side, and a malformed-200
+  /// response almost certainly did — and even a genuine rejection costs
+  /// nothing extra to invalidate. Over-invalidation is safe by design
+  /// (`cache_keys.dart`'s own file header: the next read just re-fetches);
+  /// under-invalidation is the bug that ships silently and leaves a
+  /// committed write stale for the rest of the 5-minute TTL.
   Future<QuickCheckinResponse> quickCheckin({
     required int? pain,
     required int? mood,

@@ -86,6 +86,11 @@ Map<String, dynamic> _wireEntry(CreateSymptomsRequest request, int index) {
   return entries[index] as Map<String, dynamic>;
 }
 
+/// A server-confirmed "today" for tests that need SOME [DateTime] to satisfy
+/// `createBatch`'s now-required `fallbackDay` but are not testing
+/// `fallbackDay`'s own behaviour (fix round 1, C-1).
+final _anyFallbackDay = DateTime.utc(2026, 1, 10);
+
 void main() {
   late MockLumenApiApi api;
   late MockCacheStore store;
@@ -224,6 +229,7 @@ void main() {
             occurredAt: DateTime.utc(2026, 4, 20, 8),
           ),
         ],
+        fallbackDay: _anyFallbackDay,
       );
 
       final entry = _wireEntry(_capturedRequest(api), 0);
@@ -255,6 +261,7 @@ void main() {
             occurredAt: DateTime.utc(2026, 4, 20, 8),
           ),
         ],
+        fallbackDay: _anyFallbackDay,
       );
 
       final entry = _wireEntry(_capturedRequest(api), 0);
@@ -275,6 +282,7 @@ void main() {
         entries: [
           _draft(intensity: 0, occurredAt: DateTime.utc(2026, 4, 20, 8)),
         ],
+        fallbackDay: _anyFallbackDay,
       );
 
       final entry = _wireEntry(_capturedRequest(api), 0);
@@ -286,6 +294,102 @@ void main() {
       expect(entry['intensity'], 0);
     });
 
+    test('an explicit null occurredAt/notes is OMITTED from the wire, not sent '
+        'as an explicit null (fix round 1, I-1)', () async {
+      when(
+        () => api.symptomsPost(
+          createSymptomsRequest: any(named: 'createSymptomsRequest'),
+        ),
+      ).thenAnswer(apiSuccess(createSymptomsResponseFixture()));
+
+      await repo.createBatch(
+        entries: [_draft(occurredAt: null, notes: null)],
+        fallbackDay: _anyFallbackDay,
+      );
+
+      final entry = _wireEntry(_capturedRequest(api), 0);
+      expect(
+        entry.containsKey('occurredAt'),
+        isFalse,
+        reason:
+            'null asks the server for its own single "now" for the '
+            'whole batch',
+      );
+      expect(entry.containsKey('notes'), isFalse);
+    });
+
+    test('an explicit occurredAt/notes value reaches the wire unchanged — '
+        'occurredAt is a FOURTH silently-defaulted field (fix round 1, I-1): '
+        'a dropped mapper line here would silently re-date a whole entry onto '
+        'today', () async {
+      when(
+        () => api.symptomsPost(
+          createSymptomsRequest: any(named: 'createSymptomsRequest'),
+        ),
+      ).thenAnswer(apiSuccess(createSymptomsResponseFixture()));
+
+      await repo.createBatch(
+        entries: [
+          _draft(
+            occurredAt: DateTime.utc(2021, 2, 3, 8, 30),
+            notes: 'sharp on the left side',
+          ),
+        ],
+        fallbackDay: _anyFallbackDay,
+      );
+
+      final entry = _wireEntry(_capturedRequest(api), 0);
+      expect(entry['occurredAt'], '2021-02-03T08:30:00.000Z');
+      expect(entry['notes'], 'sharp on the left side');
+    });
+
+    test('painTypes/triggers reach the wire as given — the empty-list DEFAULT '
+        'is still PRESENT (never omitted, so a dropped mapper line is '
+        'visible), and an explicit non-empty list is not dropped or '
+        'substituted (fix round 1, I-1)', () async {
+      when(
+        () => api.symptomsPost(
+          createSymptomsRequest: any(named: 'createSymptomsRequest'),
+        ),
+      ).thenAnswer(
+        apiSuccess(
+          createSymptomsResponseFixture(
+            items: [symptomResponseFixture(), symptomResponseFixture()],
+          ),
+        ),
+      );
+
+      await repo.createBatch(
+        entries: [
+          _draft(occurredAt: DateTime.utc(2026, 4, 20, 8)),
+          _draft(
+            occurredAt: DateTime.utc(2026, 4, 20, 8),
+            painTypes: const ['cramping', 'sharp'],
+            triggers: const ['stress'],
+          ),
+        ],
+        fallbackDay: _anyFallbackDay,
+      );
+
+      final request = _capturedRequest(api);
+      final defaultEntry = _wireEntry(request, 0);
+      expect(
+        defaultEntry.containsKey('painTypes'),
+        isTrue,
+        reason:
+            'the DEFAULT empty list is a present, explicit [] — not '
+            'an omitted field, which is what a dropped mapper line would '
+            'produce',
+      );
+      expect(defaultEntry['painTypes'], <String>[]);
+      expect(defaultEntry.containsKey('triggers'), isTrue);
+      expect(defaultEntry['triggers'], <String>[]);
+
+      final classifiedEntry = _wireEntry(request, 1);
+      expect(classifiedEntry['painTypes'], <String>['cramping', 'sharp']);
+      expect(classifiedEntry['triggers'], <String>['stress']);
+    });
+
     // ── R-18 batch bounds — refused client-side, no chunking ───────────
 
     test('a single entry (the floor) reaches the network', () async {
@@ -295,7 +399,7 @@ void main() {
         ),
       ).thenAnswer(apiSuccess(createSymptomsResponseFixture()));
 
-      await repo.createBatch(entries: [_draft()]);
+      await repo.createBatch(entries: [_draft()], fallbackDay: _anyFallbackDay);
 
       verify(
         () => api.symptomsPost(
@@ -319,6 +423,7 @@ void main() {
 
       final created = await repo.createBatch(
         entries: List.generate(50, (_) => _draft()),
+        fallbackDay: _anyFallbackDay,
       );
 
       expect(created, hasLength(50));
@@ -334,7 +439,7 @@ void main() {
       'ValidationFailure keyed "entries" reusing the server\'s own message',
       () async {
         final failure = await repo
-            .createBatch(entries: const [])
+            .createBatch(entries: const [], fallbackDay: _anyFallbackDay)
             .then<Object?>((v) => v, onError: (Object e) => e);
 
         expect(failure, isA<ValidationFailure>());
@@ -353,7 +458,10 @@ void main() {
     test('a 51-entry batch is refused CLIENT-SIDE — no network call, no '
         'chunking, a ValidationFailure keyed "entries"', () async {
       final failure = await repo
-          .createBatch(entries: List.generate(51, (_) => _draft()))
+          .createBatch(
+            entries: List.generate(51, (_) => _draft()),
+            fallbackDay: _anyFallbackDay,
+          )
           .then<Object?>((v) => v, onError: (Object e) => e);
 
       expect(failure, isA<ValidationFailure>());
@@ -384,8 +492,21 @@ void main() {
         ),
       );
 
+      // Both entries carry an EXPLICIT occurredAt (fix round 1, I-6): with
+      // both null (this test's original shape) the fallback list is empty
+      // regardless of the logic under test, so a broken ambiguity gate could
+      // never turn this verifyNever red — a vacuous assertion the reviewer's
+      // invalidate-on-every-failure mutation caught. A real date makes the
+      // fallback list non-empty, so THIS test now also reds if that gate
+      // breaks, not only the dedicated control below.
       final failure = await repo
-          .createBatch(entries: [_draft(), _draft(intensity: 99)])
+          .createBatch(
+            entries: [
+              _draft(occurredAt: DateTime.utc(2026, 4, 20, 8)),
+              _draft(intensity: 99, occurredAt: DateTime.utc(2026, 4, 20, 8)),
+            ],
+            fallbackDay: _anyFallbackDay,
+          )
           .then<Object?>((v) => v, onError: (Object e) => e);
 
       expect(failure, isA<ValidationFailure>());
@@ -420,6 +541,7 @@ void main() {
           _draft(occurredAt: DateTime.utc(2026, 4, 20, 8)),
           _draft(occurredAt: DateTime.utc(2026, 5, 3, 8)),
         ],
+        fallbackDay: _anyFallbackDay,
       );
 
       final invalidated = verify(() => store.invalidate(captureAny())).captured;
@@ -435,6 +557,9 @@ void main() {
         ]),
       );
     });
+
+    // ── Malformed responses — validated INSIDE write(), so a throw here is
+    // ── AMBIGUOUS, not a bare rethrow (fix round 1, I-2/I-5) ────────────
 
     test('a response item with a null occurredOn is a loud ServerFailure — '
         'never a silently-skipped day', () async {
@@ -465,42 +590,116 @@ void main() {
         apiSuccess(createSymptomsResponseFixture(items: [malformed])),
       );
 
-      await expectLater(
-        repo.createBatch(entries: [_draft()]),
-        throwsA(isA<ServerFailure>()),
+      final failure = await repo
+          .createBatch(entries: [_draft()], fallbackDay: _anyFallbackDay)
+          .then<Object?>((v) => v, onError: (Object e) => e);
+
+      expect(failure, isA<ServerFailure>());
+      expect(
+        (failure! as ServerFailure).message,
+        "The server created a symptom with no occurredOn — the day's cache "
+        'cannot be safely invalidated.',
       );
     });
 
-    test('a response with no items list is a loud ServerFailure', () async {
+    test('a response with no items list is a loud ServerFailure, with its '
+        'OWN message distinct from the "no body at all" case (fix round 1, '
+        'M-3)', () async {
       when(
         () => api.symptomsPost(
           createSymptomsRequest: any(named: 'createSymptomsRequest'),
         ),
       ).thenAnswer(apiSuccess(CreateSymptomsResponse((b) => b)));
 
-      await expectLater(
-        repo.createBatch(entries: [_draft()]),
-        throwsA(isA<ServerFailure>()),
+      final failure = await repo
+          .createBatch(entries: [_draft()], fallbackDay: _anyFallbackDay)
+          .then<Object?>((v) => v, onError: (Object e) => e);
+
+      expect(failure, isA<ServerFailure>());
+      expect(
+        (failure! as ServerFailure).message,
+        'The server returned a symptoms response with no items.',
       );
     });
 
-    test('a 201 with no body at all is a typed ServerFailure', () async {
-      when(
-        () => api.symptomsPost(
-          createSymptomsRequest: any(named: 'createSymptomsRequest'),
-        ),
-      ).thenAnswer(
-        (_) async => Response<CreateSymptomsResponse>(
-          requestOptions: RequestOptions(path: '/symptoms'),
-          statusCode: 201,
-        ),
-      );
+    test(
+      'a 201 with no body at all is a typed ServerFailure, with its OWN '
+      'message distinct from the "no items" case (fix round 1, M-3)',
+      () async {
+        when(
+          () => api.symptomsPost(
+            createSymptomsRequest: any(named: 'createSymptomsRequest'),
+          ),
+        ).thenAnswer(
+          (_) async => Response<CreateSymptomsResponse>(
+            requestOptions: RequestOptions(path: '/symptoms'),
+            statusCode: 201,
+          ),
+        );
 
-      await expectLater(
-        repo.createBatch(entries: [_draft()]),
-        throwsA(isA<ServerFailure>()),
-      );
-    });
+        final failure = await repo
+            .createBatch(entries: [_draft()], fallbackDay: _anyFallbackDay)
+            .then<Object?>((v) => v, onError: (Object e) => e);
+
+        expect(failure, isA<ServerFailure>());
+        expect(
+          (failure! as ServerFailure).message,
+          'The server returned an empty symptoms response.',
+        );
+      },
+    );
+
+    test(
+      'a malformed response (null occurredOn) is validated INSIDE write(), '
+      'so cachedWrite treats it as AMBIGUOUS and invalidates the fallback '
+      'keys even though the batch is KNOWN to have committed (fix round 1, '
+      'I-2/I-5 — placing this guard after write() returned invalidated '
+      'NOTHING here, not even the other valid rows in the same batch)',
+      () async {
+        final malformed = SymptomResponse(
+          (b) => b
+            ..id = 'symptom-abc123'
+            ..symptomCode = 'bloating'
+            ..intensity = 3
+            ..region = 'lower_abdomen'
+            ..occurredAt = DateTime.utc(2026, 4, 20, 8)
+            ..createdAt = DateTime.utc(2026, 4, 20, 8)
+            ..updatedAt = DateTime.utc(2026, 4, 20, 8),
+        );
+
+        when(
+          () => api.symptomsPost(
+            createSymptomsRequest: any(named: 'createSymptomsRequest'),
+          ),
+        ).thenAnswer(
+          apiSuccess(createSymptomsResponseFixture(items: [malformed])),
+        );
+
+        final failure = await repo
+            .createBatch(
+              entries: [_draft(occurredAt: DateTime.utc(2026, 4, 20, 8))],
+              fallbackDay: _anyFallbackDay,
+            )
+            .then<Object?>((v) => v, onError: (Object e) => e);
+
+        expect(failure, isA<ServerFailure>());
+        final invalidated = verify(
+          () => store.invalidate(captureAny()),
+        ).captured;
+        expect(
+          invalidated,
+          unorderedEquals(<String>[
+            'GET:/cycle/day/2026-04-20',
+            'GET:/symptoms?day=2026-04-20',
+            'GET:/cycle/calendar?month=2026-04',
+          ]),
+          reason:
+              'the batch was, in fact, just committed — leaving the '
+              'cache fully stale here is the exact I-2 defect fix round 1 '
+              'closes',
+        );
+      },
+    );
 
     // ── Ambiguous-failure invalidation (item 3 / S-6) ───────────────────
 
@@ -519,6 +718,7 @@ void main() {
               _draft(occurredAt: DateTime.utc(2026, 4, 20, 8)),
               _draft(occurredAt: DateTime.utc(2026, 5, 3, 8)),
             ],
+            fallbackDay: _anyFallbackDay,
           )
           .then<Object?>((v) => v, onError: (Object e) => e);
 
@@ -555,6 +755,7 @@ void main() {
       final failure = await repo
           .createBatch(
             entries: [_draft(occurredAt: DateTime.utc(2026, 4, 20, 8))],
+            fallbackDay: _anyFallbackDay,
           )
           .then<Object?>((v) => v, onError: (Object e) => e);
 
@@ -562,9 +763,9 @@ void main() {
       verifyNever(() => store.invalidate(any()));
     });
 
-    test('an entry whose occurredAt is null contributes NO key to the '
-        'ambiguous-failure fallback — a documented gap, never a device-clock '
-        'guess (D-12)', () async {
+    test('C-1: an all-null-occurredAt batch — the ONLY shape T20 can actually '
+        'send, since screen 12 draws no date affordance — falls back to '
+        'fallbackDay on an ambiguous failure, never to nothing', () async {
       when(
         () => api.symptomsPost(
           createSymptomsRequest: any(named: 'createSymptomsRequest'),
@@ -572,11 +773,55 @@ void main() {
       ).thenAnswer(apiNetworkFailure());
 
       final failure = await repo
-          .createBatch(entries: [_draft(occurredAt: null)])
+          .createBatch(
+            entries: [_draft(occurredAt: null), _draft(occurredAt: null)],
+            fallbackDay: DateTime.utc(2026, 4, 20),
+          )
           .then<Object?>((v) => v, onError: (Object e) => e);
 
       expect(failure, isA<NetworkFailure>());
-      verifyNever(() => store.invalidate(any()));
+      final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      expect(
+        invalidated,
+        unorderedEquals(<String>[
+          'GET:/cycle/day/2026-04-20',
+          'GET:/symptoms?day=2026-04-20',
+          'GET:/cycle/calendar?month=2026-04',
+        ]),
+      );
+    });
+
+    test('a MIXED batch falls back PER ENTRY: an explicit occurredAt keeps its '
+        'own day, a null occurredAt uses fallbackDay', () async {
+      when(
+        () => api.symptomsPost(
+          createSymptomsRequest: any(named: 'createSymptomsRequest'),
+        ),
+      ).thenAnswer(apiNetworkFailure());
+
+      final failure = await repo
+          .createBatch(
+            entries: [
+              _draft(occurredAt: DateTime.utc(2026, 5, 3, 8)),
+              _draft(occurredAt: null),
+            ],
+            fallbackDay: DateTime.utc(2026, 4, 20),
+          )
+          .then<Object?>((v) => v, onError: (Object e) => e);
+
+      expect(failure, isA<NetworkFailure>());
+      final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      expect(
+        invalidated,
+        unorderedEquals(<String>[
+          'GET:/cycle/day/2026-05-03',
+          'GET:/symptoms?day=2026-05-03',
+          'GET:/cycle/calendar?month=2026-05',
+          'GET:/cycle/day/2026-04-20',
+          'GET:/symptoms?day=2026-04-20',
+          'GET:/cycle/calendar?month=2026-04',
+        ]),
+      );
     });
   });
 }

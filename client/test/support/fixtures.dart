@@ -21,13 +21,13 @@
 
 import 'package:built_collection/built_collection.dart';
 import 'package:lumen/api/model/baseline_response.dart';
+import 'package:lumen/api/model/create_symptoms_response.dart';
 import 'package:lumen/api/model/cycle_calendar_day.dart';
 import 'package:lumen/api/model/cycle_calendar_response.dart';
 import 'package:lumen/api/model/cycle_day_log_response.dart';
 import 'package:lumen/api/model/cycle_day_response.dart';
 import 'package:lumen/api/model/cycle_event_response.dart';
 import 'package:lumen/api/model/cycle_phase_availability_response.dart';
-import 'package:lumen/api/model/create_symptoms_response.dart';
 import 'package:lumen/api/model/cycle_settings_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/goal_selection.dart';

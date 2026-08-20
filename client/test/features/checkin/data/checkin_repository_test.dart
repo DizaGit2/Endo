@@ -365,9 +365,11 @@ void main() {
     });
 
     test('a malformed 200 (empty body) throws a typed Failure INSIDE the '
-        'write closure — this escapes cachedWrite\'s own `on DioException` '
-        'catch entirely (cached_query.dart:214), and this repository must '
-        'still invalidate before the failure reaches the caller', () async {
+        'write closure — cachedWrite now catches that too (on Failure, '
+        'cached_query.dart:264) but invalidates nothing there since this '
+        'call site passes no invalidateKeysOnAmbiguousFailure, so this '
+        'repository\'s own on-Failure wrapper must still invalidate before '
+        'the failure reaches the caller', () async {
       when(
         () => api.checkinQuickPost(
           quickCheckinRequest: any(named: 'quickCheckinRequest'),
@@ -396,10 +398,13 @@ void main() {
         invalidated,
         unorderedEquals(_fallbackKeys),
         reason:
-            'the empty-body guard throws INSIDE write(), bypassing '
-            'cachedWrite\'s DioException-only catch — a repository that '
-            'copied that guard without a broader catch of its own would '
-            'invalidate NOTHING here, exactly the L3 gap the survey named',
+            'the empty-body guard throws INSIDE write() — cachedWrite '
+            '(P4b-T19) now catches that too, but only invalidates keys THIS '
+            'call site opts into via invalidateKeysOnAmbiguousFailure, '
+            'which quickCheckin does not pass — a repository that relied on '
+            'cachedWrite alone here, without this method\'s own on-Failure '
+            'wrapper, would invalidate NOTHING, exactly the L3 gap the '
+            'survey named',
       );
     });
 
