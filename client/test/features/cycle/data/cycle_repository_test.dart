@@ -19,8 +19,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/cycle_calendar_response.dart';
 import 'package:lumen/api/model/cycle_day_response.dart';
+import 'package:lumen/api/model/cycle_day_log_response.dart';
 import 'package:lumen/api/model/cycle_event_response.dart';
 import 'package:lumen/api/model/date.dart';
+import 'package:lumen/api/model/log_cycle_day_request.dart';
 import 'package:lumen/api/model/log_cycle_event_request.dart';
 import 'package:lumen/api/serializers.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
@@ -68,6 +70,31 @@ Map<String, dynamic> _wireMap(LogCycleEventRequest request) {
   return json.decode(json.encode(encoded)) as Map<String, dynamic>;
 }
 
+/// The captured `POST /cycle/day/{date}` body the repository put on the wire.
+LogCycleDayRequest _capturedDayRequest(MockLumenApiApi api) {
+  return verify(
+        () => api.cycleDayDatePost(
+          date: any(named: 'date'),
+          logCycleDayRequest: captureAny(named: 'logCycleDayRequest'),
+        ),
+      ).captured.last
+      as LogCycleDayRequest;
+}
+
+/// [request], serialized exactly as it would go on the wire.
+///
+/// The whole day-log touched-flag design is only observable HERE: a field the
+/// caller did not touch must be **missing from this map**, because absence is
+/// what the MERGE endpoint reads as "leave the stored value alone"
+/// (`CycleDayService.MergeScales` assigns only `if (pain is { } value)`).
+Map<String, dynamic> _wireDayMap(LogCycleDayRequest request) {
+  final encoded = standardSerializers.serializeWith(
+    LogCycleDayRequest.serializer,
+    request,
+  );
+  return json.decode(json.encode(encoded)) as Map<String, dynamic>;
+}
+
 DioException _notFound404({String path = '/cycle/events/evt-1'}) {
   final options = RequestOptions(path: path);
   return DioException(
@@ -91,6 +118,7 @@ void main() {
           ..occurredOn = Date(2026, 1, 1),
       ),
     );
+    registerFallbackValue(LogCycleDayRequest((b) => b..pain = 1));
   });
 
   setUp(() {
@@ -583,6 +611,396 @@ void main() {
           occurredOn: Date(2026, 4, 20),
           flowIntensity: null,
           notes: null,
+        ),
+        throwsA(isA<ServerFailure>()),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /cycle/day/{date} — MERGE (P4b-T16b)
+  //
+  // The OPPOSITE endpoint to `logEvent` above, and the whole reason this group
+  // is written the way it is. `/cycle/events` clears by omission;
+  // `/cycle/day/{date}` LEAVES ALONE by omission
+  // (`CycleDayService.UpsertDayAsync` -> `MergeScales`, and the note column is
+  // assigned only when the trimmed note is non-empty). So on THIS endpoint
+  // "omit the field" is the safe answer, and the danger is sending a field the
+  // user never touched.
+  //
+  // `touchedPain` / `touchedMood` / `touchedNotes` are therefore the ONLY
+  // thing that decides what goes on the wire, and they are never re-derived
+  // from whether the value happens to be null. The matrix below varies the two
+  // inputs INDEPENDENTLY - untouched+null, untouched+set, touched+null,
+  // touched+set - because a suite that only ever supplies "untouched AND null"
+  // together cannot tell the guard from the serializer, and deleting either
+  // one would leave it green (the defect P4b-T18's own review found).
+  // -------------------------------------------------------------------------
+
+  group('logDay', () {
+    void stubDayPost({CycleDayLogResponse? body}) {
+      when(
+        () => api.cycleDayDatePost(
+          date: any(named: 'date'),
+          logCycleDayRequest: any(named: 'logCycleDayRequest'),
+        ),
+      ).thenAnswer(apiSuccess(body ?? cycleDayLogFixture()));
+    }
+
+    test('posts to the ROUTE date - the day is the path, never a body field '
+        '(there is no `day`/`date` member on LogCycleDayRequest at all)', () async {
+      stubDayPost();
+
+      await repo.logDay(
+        date: DateTime(2026, 4, 20),
+        pain: 4,
+        mood: null,
+        notes: null,
+        touchedPain: true,
+        touchedMood: false,
+        touchedNotes: false,
+      );
+
+      // ONE verify: a second one would find the interaction already
+      // consumed and fail with "No matching calls".
+      final captured = verify(
+        () => api.cycleDayDatePost(
+          date: captureAny(named: 'date'),
+          logCycleDayRequest: captureAny(named: 'logCycleDayRequest'),
+        ),
+      ).captured;
+      expect(captured.first, Date(2026, 4, 20));
+
+      final wire = _wireDayMap(captured.last as LogCycleDayRequest);
+      expect(wire.keys, unorderedEquals(<String>['pain']));
+    });
+
+    // -- the touched-flag matrix, both inputs varied independently ----------
+
+    test('UNTOUCHED + null - the field is absent from the wire', () async {
+      stubDayPost();
+
+      await repo.logDay(
+        date: DateTime(2026, 4, 20),
+        pain: null,
+        mood: null,
+        notes: null,
+        touchedPain: false,
+        touchedMood: false,
+        touchedNotes: true,
+      );
+
+      final wire = _wireDayMap(_capturedDayRequest(api));
+      expect(wire.containsKey('pain'), isFalse);
+      expect(wire.containsKey('mood'), isFalse);
+    });
+
+    test('UNTOUCHED + SET - the field is STILL absent. This is the case a '
+        'guard re-derived from nullability (`if (pain != null)`) would get '
+        'wrong, and it is the only case that can tell the two apart', () async {
+      stubDayPost();
+
+      await repo.logDay(
+        date: DateTime(2026, 4, 20),
+        // Values are present - a stale seed the user never edited - and must
+        // not travel. This is S-2 dissolved: a stale rehydration that is
+        // never SENT cannot be a lost update.
+        pain: 8,
+        mood: 2,
+        notes: 'a note the user never touched',
+        touchedPain: false,
+        touchedMood: false,
+        touchedNotes: false,
+      );
+
+      final wire = _wireDayMap(_capturedDayRequest(api));
+      expect(
+        wire,
+        isEmpty,
+        reason:
+            'nothing was touched, so nothing may be asserted - every one of '
+            'these three values would OVERWRITE newer server state',
+      );
+    });
+
+    test('TOUCHED + null - the field is absent, and in particular is NOT '
+        'defaulted to 0 (S-4: `pain: _pain ?? 0` would fabricate a real '
+        '"none today" that D-08 makes permanently indistinguishable from a '
+        'logged one)', () async {
+      stubDayPost();
+
+      await repo.logDay(
+        date: DateTime(2026, 4, 20),
+        pain: null,
+        mood: null,
+        notes: 'something',
+        touchedPain: true,
+        touchedMood: true,
+        touchedNotes: true,
+      );
+
+      final wire = _wireDayMap(_capturedDayRequest(api));
+      expect(wire.containsKey('pain'), isFalse);
+      expect(wire.containsKey('mood'), isFalse);
+      expect(wire['pain'], isNot(0));
+      expect(wire['mood'], isNot(0));
+      expect(wire['notes'], 'something');
+    });
+
+    test('TOUCHED + SET - the field travels, and `pain: 0` travels as the '
+        'integer 0 (D-08: 0 is a real datum that OVERWRITES a stored 8)', () async {
+      stubDayPost();
+
+      await repo.logDay(
+        date: DateTime(2026, 4, 20),
+        pain: 0,
+        mood: 1,
+        notes: null,
+        touchedPain: true,
+        touchedMood: true,
+        touchedNotes: false,
+      );
+
+      final wire = _wireDayMap(_capturedDayRequest(api));
+      expect(wire['pain'], 0);
+      expect(wire['mood'], 1);
+      expect(wire.containsKey('notes'), isFalse);
+    });
+
+    test('the three flags are INDEPENDENT - touching only mood sends only '
+        'mood, even when pain and notes hold values', () async {
+      stubDayPost();
+
+      await repo.logDay(
+        date: DateTime(2026, 4, 20),
+        pain: 7,
+        mood: 3,
+        notes: 'kept',
+        touchedPain: false,
+        touchedMood: true,
+        touchedNotes: false,
+      );
+
+      final wire = _wireDayMap(_capturedDayRequest(api));
+      expect(wire.keys, unorderedEquals(<String>['mood']));
+      expect(wire['mood'], 3);
+    });
+
+    test('S-1 - an EMPTY notes controller the user never touched does not '
+        'send an empty string', () async {
+      stubDayPost();
+
+      await repo.logDay(
+        date: DateTime(2026, 4, 20),
+        pain: 5,
+        mood: null,
+        notes: '',
+        touchedPain: true,
+        touchedMood: false,
+        touchedNotes: false,
+      );
+
+      final wire = _wireDayMap(_capturedDayRequest(api));
+      expect(wire.containsKey('notes'), isFalse);
+      expect(wire['notes'], isNot(''));
+    });
+
+    test('a TOUCHED empty note is sent verbatim - the guard is the flag '
+        'alone, never the value. (On THIS endpoint the server trims it to '
+        'absent text and leaves the stored note alone; the same string on '
+        '`/cycle/events` would destroy the ciphertext, which is why the two '
+        'editors are separate tasks.)', () async {
+      stubDayPost();
+
+      await repo.logDay(
+        date: DateTime(2026, 4, 20),
+        pain: 5,
+        mood: null,
+        notes: '',
+        touchedPain: true,
+        touchedMood: false,
+        touchedNotes: true,
+      );
+
+      final wire = _wireDayMap(_capturedDayRequest(api));
+      expect(wire['notes'], '');
+    });
+
+    // -- cache -------------------------------------------------------------
+
+    test('invalidates exactly the three date-derived keys for the ROUTE date '
+        'on success', () async {
+      stubDayPost();
+
+      await repo.logDay(
+        date: DateTime(2026, 4, 20),
+        pain: 4,
+        mood: null,
+        notes: null,
+        touchedPain: true,
+        touchedMood: false,
+        touchedNotes: false,
+      );
+
+      final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      expect(invalidated, unorderedEquals(_threeDateKeys));
+    });
+
+    test('an AMBIGUOUS failure (the write may have committed) invalidates '
+        'the same three keys - S-6, closed with cachedWrite own '
+        'invalidateKeysOnAmbiguousFailure rather than a hand-rolled catch',
+        () async {
+      when(
+        () => api.cycleDayDatePost(
+          date: any(named: 'date'),
+          logCycleDayRequest: any(named: 'logCycleDayRequest'),
+        ),
+      ).thenAnswer(apiNetworkFailure());
+
+      await expectLater(
+        repo.logDay(
+          date: DateTime(2026, 4, 20),
+          pain: 4,
+          mood: null,
+          notes: null,
+          touchedPain: true,
+          touchedMood: false,
+          touchedNotes: false,
+        ),
+        throwsA(isA<NetworkFailure>()),
+      );
+
+      final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      expect(invalidated, unorderedEquals(_threeDateKeys));
+    });
+
+    test('a 400 invalidates NOTHING - the server rejected before writing, so '
+        'the cache is still correct', () async {
+      // Positive control in the same test, on the same store.
+      stubDayPost();
+      await repo.logDay(
+        date: DateTime(2026, 4, 20),
+        pain: 4,
+        mood: null,
+        notes: null,
+        touchedPain: true,
+        touchedMood: false,
+        touchedNotes: false,
+      );
+      verify(() => store.invalidate(any())).called(_threeDateKeys.length);
+
+      when(
+        () => api.cycleDayDatePost(
+          date: any(named: 'date'),
+          logCycleDayRequest: any(named: 'logCycleDayRequest'),
+        ),
+      ).thenAnswer(
+        apiValidationProblem(
+          fields: {
+            'request': ['at least one of pain, mood or notes is required'],
+          },
+        ),
+      );
+
+      await expectLater(
+        repo.logDay(
+          date: DateTime(2026, 4, 20),
+          pain: null,
+          mood: null,
+          notes: '',
+          touchedPain: true,
+          touchedMood: false,
+          touchedNotes: true,
+        ),
+        throwsA(isA<ValidationFailure>()),
+      );
+      verifyNever(() => store.invalidate(any()));
+    });
+
+    // -- response ----------------------------------------------------------
+
+    test('returns the 200 body - the STORED row, which carries fields this '
+        'call never sent (a notes-only write comes back with the day existing '
+        'pain and mood)', () async {
+      stubDayPost(
+        body: cycleDayLogFixture(pain: 8, mood: 2, notes: 'stored note'),
+      );
+
+      final saved = await repo.logDay(
+        date: DateTime(2026, 4, 20),
+        pain: null,
+        mood: null,
+        notes: 'stored note',
+        touchedPain: false,
+        touchedMood: false,
+        touchedNotes: true,
+      );
+
+      expect(saved.pain, 8);
+      expect(saved.mood, 2);
+      expect(saved.notes, 'stored note');
+    });
+
+    test('a 400 arrives as a ValidationFailure keyed by field, including the '
+        'cross-field `request` key the empty-body rule uses', () async {
+      when(
+        () => api.cycleDayDatePost(
+          date: any(named: 'date'),
+          logCycleDayRequest: any(named: 'logCycleDayRequest'),
+        ),
+      ).thenAnswer(
+        apiValidationProblem(
+          fields: {
+            'request': ['at least one of pain, mood or notes is required'],
+            'date': ['date must not be in the future'],
+          },
+        ),
+      );
+
+      final failure = await repo
+          .logDay(
+            date: DateTime(2099, 4, 20),
+            pain: 4,
+            mood: null,
+            notes: null,
+            touchedPain: true,
+            touchedMood: false,
+            touchedNotes: false,
+          )
+          .then<Object?>((value) => value, onError: (Object error) => error);
+
+      expect(failure, isA<ValidationFailure>());
+      expect((failure! as ValidationFailure).requestMessages, <String>[
+        'at least one of pain, mood or notes is required',
+      ]);
+      expect(
+        (failure as ValidationFailure).messageFor('date'),
+        'date must not be in the future',
+      );
+    });
+
+    test('a 200 with no body is a typed server failure', () async {
+      when(
+        () => api.cycleDayDatePost(
+          date: any(named: 'date'),
+          logCycleDayRequest: any(named: 'logCycleDayRequest'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<CycleDayLogResponse>(
+          requestOptions: RequestOptions(path: '/cycle/day/2026-04-20'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(
+        repo.logDay(
+          date: DateTime(2026, 4, 20),
+          pain: 4,
+          mood: null,
+          notes: null,
+          touchedPain: true,
+          touchedMood: false,
+          touchedNotes: false,
         ),
         throwsA(isA<ServerFailure>()),
       );

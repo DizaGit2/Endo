@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/api/api/lumen_api_api.dart';
 import 'package:lumen/api/model/cycle_calendar_response.dart';
+import 'package:lumen/api/model/cycle_day_log_response.dart';
 import 'package:lumen/api/model/cycle_day_response.dart';
 import 'package:lumen/api/model/cycle_event_response.dart';
 import 'package:lumen/api/model/date.dart';
+import 'package:lumen/api/model/log_cycle_day_request.dart';
 import 'package:lumen/api/model/log_cycle_event_request.dart';
 import 'package:lumen/core/cache/built_json_codec.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
@@ -18,23 +20,32 @@ import 'package:lumen/core/network/api_client.dart';
 
 /// The `/cycle/*` surface T15–T17 and T23 build screens 10, 11, 8 and 14 on.
 ///
-/// Four operations, deliberately not five or six:
+/// Five operations, deliberately not six:
 /// - [getCalendarMonth] — `GET /cycle/calendar?from&to`, month-bucketed.
 /// - [getDay]           — `GET /cycle/day/{date}`.
+/// - [logDay]           — `POST /cycle/day/{date}`, the day-log **MERGE**
+///                        (P4b-T16b). Screen 11's day-log editor is its only
+///                        caller.
 /// - [logEvent]         — `POST /cycle/events`, the FULL UPSERT this class
 ///                        exists to make safe. **Ruling R-10: only T16
 ///                        (screen 11) calls it.**
 /// - [deleteEvent]      — `DELETE /cycle/events/{id}` (D-13 soft-delete).
 ///
-/// **`POST /cycle/day/{date}` (the day-log MERGE write) and
-/// `POST /cycle/phase-override` are deliberately NOT here.** T14's brief
-/// enumerates exactly the four operations above; the day-log write belongs to
-/// whichever of T15/T16 needs it first. Screen 14 (phase correction) is
-/// T23's, not T17's — `lumen-build.md` is the authority (`:1132`) — but this
-/// class still would not host the phase-override write even once T23 lands:
-/// R-08 defers the actual write to P6 entirely, so T23 ships screen 14 as the
-/// documented unavailable state and writes nothing in P4b.
-/// `ARCHITECTURE.md` §C.0.1 calls `POST /cycle/phase-override` *"the most
+/// **[logDay] and [logEvent] are the two OPPOSITE write rules in this phase,
+/// and this class is where the difference has to be visible.** On [logEvent] an
+/// omitted field is **CLEARED**; on [logDay] an omitted field is **LEFT
+/// UNCHANGED**. Both take `required`-but-nullable parameters, and they do so
+/// for mirror-image reasons: [logEvent] because a caller must never forget to
+/// re-send a field it means to keep, [logDay] because a caller must never
+/// forget to state whether the user actually touched one. Read each method's
+/// own doc before writing a call site; they are not interchangeable.
+///
+/// **`POST /cycle/phase-override` is deliberately NOT here.** Screen 14 (phase
+/// correction) is T23's, not T17's — `lumen-build.md` is the authority
+/// (`:1132`) — but this class still would not host the phase-override write
+/// even once T23 lands: R-08 defers the actual write to P6 entirely, so T23
+/// ships screen 14 as the documented unavailable state and writes nothing in
+/// P4b. `ARCHITECTURE.md` §C.0.1 calls `POST /cycle/phase-override` *"the most
 /// dangerous field on the P4a surface"*, on a par with [logEvent], and giving
 /// it a home before the screen that owns it exists (in a phase where it does
 /// not even write) would be guessing at a shape nobody has designed against.
@@ -151,6 +162,128 @@ class CycleRepository {
       toJson: (value) => toCacheJson(CycleDayResponse.serializer, value),
       fromJson: (map) => fromCacheJson(CycleDayResponse.serializer, map),
       ttl: CacheKeys.ttl,
+    );
+  }
+
+  // ── logDay ─────────────────────────────────────────────────────────────────
+
+  /// Calls `POST /cycle/day/{date}` — the day-log write behind screen 11's
+  /// editor (P4b-T16b). Returns the 200 body, which is the **stored** row.
+  ///
+  /// **MERGE**, the exact opposite of [logEvent] (`ARCHITECTURE.md` §C.0.1).
+  /// Verified at the source rather than inherited: `CycleDayService`'s
+  /// `MergeScales` assigns `row.Pain`/`row.Mood` only `if (pain is { } value)`
+  /// — never a falsiness test, so `pain: 0` OVERWRITES a stored 8 (D-08) —
+  /// and `UpsertDayAsync` writes `row.NotesEnc` only when the trimmed note is
+  /// non-empty, echoing the stored note back otherwise. So on this endpoint:
+  ///
+  /// | wire                | stored column          |
+  /// |---------------------|------------------------|
+  /// | key absent          | **left unchanged**     |
+  /// | `notes: ""` / `" "` | **left unchanged**     |
+  /// | `pain: 0`           | overwritten with 0     |
+  ///
+  /// **There is therefore NO way to clear a day-log field**, and this method
+  /// deliberately offers none: `LogCycleDayRequest`'s generated serializer
+  /// omits every null member, so an explicit `null` is indistinguishable from
+  /// an absent key on the wire, and the server would read either as
+  /// "leave alone". A caller that wants to remove a logged pain or mood
+  /// cannot, in v1, by any route — see `LumenIntensityScale.allowClear`.
+  ///
+  /// **The three `touched*` flags are the only thing that decides what is
+  /// SENT, and they are never re-derived from whether the value is null.**
+  /// This is `CheckinRepository.quickCheckin`'s shape, on the same kind of
+  /// endpoint, for the same two reasons — and on this method it closes a
+  /// second hazard that one does not have, because screen 11's editor is
+  /// PREFILLED where screen 9's form is not:
+  ///
+  ///  1. **A value the user never touched is never asserted.** The editor is
+  ///     seeded from a day read that may have come out of a 5-minute-TTL
+  ///     cache. Under MERGE, an untouched field is omitted, so a stale seed
+  ///     cannot become a lost update — the freshness of the seed stops
+  ///     mattering rather than having to be established. (`cachedRead` has no
+  ///     `forceRefresh`, and `CacheResult.Fresh` also means "a cache hit
+  ///     inside the TTL", so "re-read until fresh" was never available.)
+  ///  2. **An empty, untouched notes box does not send `""`.** It sends
+  ///     nothing at all.
+  ///
+  /// `if (touchedPain) b.pain = pain;` — **not** `if (pain != null)`. The two
+  /// differ on exactly one input, "untouched but holding a value", which is
+  /// what every prefilled field is until the user edits it; that is the case
+  /// `cycle_repository_test.dart`'s matrix varies independently.
+  ///
+  /// A `touched` field whose value is `null` is still omitted — by the
+  /// serializer, not by a guard — and that is correct: the endpoint cannot
+  /// express a clear, so there is nothing else it could mean. What must never
+  /// happen is `pain ?? 0`, which would turn "the user took their answer
+  /// back" into a logged "none today" that D-08 makes permanently
+  /// indistinguishable from a real one, on an endpoint with no delete.
+  ///
+  /// [date] is the ROUTE date and is the only place the day appears —
+  /// `LogCycleDayRequest` has no `day` member at all. It is never re-derived
+  /// from the response.
+  ///
+  /// Cache: the three [CacheKeys.keysForDate] keys for [date], on success AND
+  /// on an ambiguous failure. `invalidateKeysOnAmbiguousFailure` is
+  /// `cachedWrite`'s own parameter (added at P4b-T19) rather than a
+  /// hand-rolled `on Failure catch`, and it fires only for
+  /// [NetworkFailure]/[ServerFailure] — the two shapes where the server may
+  /// have committed and the client cannot tell. A 400 invalidates nothing:
+  /// `CycleDayService` collects every error before the first write, so a
+  /// rejected request changed nothing and the cache is still correct.
+  ///
+  /// Errors, all as typed [Failure]s:
+  /// - **400** → [ValidationFailure] keyed `pain`, `mood`, `notes`, `date`
+  ///   (the future-day rule) or the cross-field `request` key
+  ///   (`at least one of pain, mood or notes is required`). There is **no
+  ///   backdate floor on this endpoint** — `CycleDayService` says so at the
+  ///   site: *"capped by today and NOTHING ELSE"* — so a five-year-old day is
+  ///   a legal write.
+  /// - **404** → the caller has no live `users` row (never existed, or
+  ///   crypto-shredded), not "no such day": an unlogged day is a 200 on the
+  ///   GET and a legal target for this POST.
+  Future<CycleDayLogResponse> logDay({
+    required DateTime date,
+    required int? pain,
+    required int? mood,
+    required String? notes,
+    required bool touchedPain,
+    required bool touchedMood,
+    required bool touchedNotes,
+  }) async {
+    final request = LogCycleDayRequest((b) {
+      // The guard is the FLAG, never the value. See this method's doc for the
+      // one input the two shapes disagree on, and why it is the only one that
+      // matters.
+      if (touchedPain) b.pain = pain;
+      if (touchedMood) b.mood = mood;
+      if (touchedNotes) b.notes = notes;
+    });
+
+    final keys = CacheKeys.keysForDate(date);
+
+    return cachedWrite<CycleDayLogResponse>(
+      store: _store,
+      write: () async {
+        final response = await _api.cycleDayDatePost(
+          date: date.toDate(),
+          logCycleDayRequest: request,
+        );
+        final data = response.data;
+        if (data == null) {
+          throw const ServerFailure(
+            'The server returned an empty day-log response.',
+          );
+        }
+        return data;
+      },
+      invalidateKeys: keys,
+      // S-6: a write that committed server-side and then timed out would
+      // otherwise leave all three keys fresh for the rest of the 5-minute
+      // TTL, so the screen re-reads pre-write data AND shows an error.
+      // Over-invalidation is free (the next read re-fetches); this is the
+      // failure that ships silently.
+      invalidateKeysOnAmbiguousFailure: keys,
     );
   }
 

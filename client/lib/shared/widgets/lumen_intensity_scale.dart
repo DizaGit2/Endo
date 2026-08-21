@@ -28,6 +28,21 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 /// return to "not recorded" on its own, and `POST /checkin/quick` has no clear
 /// affordance either. Every other tap behaves exactly as before.
 ///
+/// **…except where the endpoint cannot honour it — [allowClear] (P4b-T16b).**
+/// The clear gesture is correct for a form that has never been prefilled: the
+/// `null` it produces clears the FORM, and a field the caller then omits was
+/// never stored in the first place. On a PREFILLED editor over a MERGE
+/// endpoint it is a data lie. `POST /cycle/day/{date}` merges — an omitted or
+/// null field leaves the stored value UNCHANGED
+/// (`CycleDayService.MergeScales`) — and `LogCycleDayRequest`'s generated
+/// serializer omits every null member, so "clear my pain" is not expressible
+/// on that wire at all. A user who taps the selected stop there would see the
+/// row go blank, tap Save, get a 200, and find the old value back on the next
+/// read. Screen 11's day-log editor therefore passes `allowClear: false`; the
+/// gesture is SUPPRESSED rather than silently re-set, because a suppressed
+/// affordance is a limitation the user can see and a silent re-set is one
+/// they cannot.
+///
 /// ## No intermediate labels
 ///
 /// The anchors are fixed constants rather than parameters. There are exactly
@@ -51,6 +66,7 @@ class LumenIntensityScale extends StatelessWidget {
     required this.semanticsLabel,
     super.key,
     this.enabled = true,
+    this.allowClear = true,
   });
 
   /// The lowest selectable value.
@@ -88,6 +104,21 @@ class LumenIntensityScale extends StatelessWidget {
   /// Whether the stops accept taps. `false` while a write is in flight.
   final bool enabled;
 
+  /// Whether tapping the currently-selected stop clears it back to `null`.
+  ///
+  /// **Defaults to `true`, so no shipped call site moves.** Screens 9, 12 and
+  /// 13 all want the clear gesture: none of them prefills, so the `null` it
+  /// produces can only ever unwind a tap the user made in the same session.
+  ///
+  /// Pass `false` on a surface whose endpoint cannot express a clear — see
+  /// the class doc. With `false`, a tap on the selected stop is a **no-op**:
+  /// [onChanged] is not called at all, and in particular it is NOT called
+  /// with the same value again, which would look identical on screen while
+  /// still asserting the value the user was trying to take back. The stop
+  /// reports itself to assistive technology as having no action, rather than
+  /// staying a button whose activation silently does nothing.
+  final bool allowClear;
+
   /// How a value is announced. `null` is "Not recorded", never "0".
   static String describeValue(int? value) =>
       value == null ? 'Not recorded' : '$value out of $maxValue';
@@ -106,6 +137,16 @@ class LumenIntensityScale extends StatelessWidget {
     final previous = (current != null && current > minValue)
         ? current - 1
         : null;
+
+    // What a tap on [stop] does, or `null` when it does nothing. Written as
+    // one function rather than inline so the three cases — a different stop,
+    // the selected stop with clearing allowed, the selected stop without —
+    // are visibly exhaustive at the one place that decides them.
+    VoidCallback? tapFor(int stop) {
+      if (!enabled) return null;
+      if (current != stop) return () => onChanged(stop);
+      return allowClear ? () => onChanged(null) : null;
+    }
 
     return Semantics(
       container: true,
@@ -132,12 +173,11 @@ class LumenIntensityScale extends StatelessWidget {
                     // or any other shape that could collapse 0 into null.
                     selected: current == stop,
                     // Tapping the ALREADY-selected stop clears it to `null`
-                    // (the one gesture that can produce `null` from a tap);
-                    // every other stop still reports its own integer,
-                    // including 0.
-                    onTap: enabled
-                        ? () => onChanged(current == stop ? null : stop)
-                        : null,
+                    // (the one gesture that can produce `null` from a tap) —
+                    // unless [allowClear] is false, where that stop simply
+                    // has no action; every other stop still reports its own
+                    // integer, including 0.
+                    onTap: tapFor(stop),
                     colors: c,
                   ),
                 ),

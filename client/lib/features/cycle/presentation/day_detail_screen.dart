@@ -1,13 +1,24 @@
-// Screen 11 — the day detail (P4b-T16, READ SURFACE ONLY).
+// Screen 11 — the day detail (P4b-T16 read surface; P4b-T16b day-log editor).
 //
 // The drill-in from screen 10: "what did I log on April 7?" It reads two
-// endpoints (`GET /cycle/day/{date}`, `GET /symptoms?from&to`), renders what
-// it finds, and navigates nowhere. This is a SPLIT task — see the T16 brief
-// for the full reasoning — and this file writes nothing to the API. No
-// `POST`, no `DELETE`. The period-event editor and the day-log editor land
-// in T16b, after T18 has given `LumenBottomSheet`/`LumenIntensityScale`
-// their debut production caller and T20 has given the mockup's "Edit"
-// affordance a real destination.
+// endpoints (`GET /cycle/day/{date}`, `GET /symptoms?from&to`) and renders
+// what it finds.
+//
+// **P4b-T16b adds ONE affordance and no other behaviour**:
+// [kDayDetailEditLogLabel] opens the day-log editor
+// (`day_log_editor_screen.dart`, a `LumenBottomSheet` over this screen)
+// which owns `POST /cycle/day/{date}`. This file still issues no request
+// itself. The PERIOD-EVENT editor (`POST /cycle/events`) is a separate task,
+// T16c, and a separate sheet — the two endpoints have opposite write rules
+// and must not share a surface.
+//
+// **The T16 header's own precondition for that split is void, and is
+// corrected here rather than left to mislead.** It read *"T20 has given the
+// mockup's 'Edit' affordance a real destination"*. RULING T20-B: T19 cut
+// `PUT /symptoms/{id}`, so screen 12 is create-only and the symptom-row
+// `Edit` ships NOWHERE — it is booked for P6. T16b edits the DAY LOG (pain,
+// mood, note), which is a different row on a different endpoint. The T18 half
+// of that sentence was true and has happened.
 //
 // Cuts from the mockup, and why (T16 brief §4 has the full citations):
 //  * the `.dp` phase badge ("Luteal · Day 20") — CycleDayResponse carries no
@@ -28,9 +39,22 @@
 //    and renders the day-log's own `pain` (which the mockup draws no
 //    section for at all) alongside `mood`.
 //  * the Activity section — module is P5.
-//  * `Edit` and `+ Add to this day` — both point at screens that do not
-//    exist yet (screen 12/T20, the period-event editor/T16b). R-10 removes
-//    inert navigation rather than disabling it.
+//  * `Edit`, in the Symptoms section header — STAYS CUT after T16b, and the
+//    reason changed: it is not "no destination yet" any more, it is RULING
+//    T20-B. `PUT /symptoms/{id}` does not exist, so there is nothing an
+//    edit could send. Booked for P6.
+//  * `+ Add to this day` — STAYS CUT after T16b, and its reason got
+//    STRONGER. Screen 12 hard-codes `occurredAt: null`, i.e. the SERVER's
+//    now, so pointing a past day's affordance at it would silently log to
+//    today: a data-fabrication path, not merely inert navigation. The
+//    day-log editor below is a different button with different copy, in a
+//    different place, and is not this one revived.
+//
+// Section header colour, restated because T16b makes it live again: the
+// mockup's `.sl span:last-child` rule exists to colour a right-hand ACTION,
+// and only `Edit` was ever meant to be accent. T16b adds no action to any
+// section header — its affordance is a full-width control BELOW the
+// sections — so no header renders accent here and the rule stays dormant.
 //
 // Section header colour: the mockup's CSS (`.sl span:last-child`) happens to
 // colour "Mood & energy", "Activity" and "Note" accent too, because each is
@@ -45,7 +69,9 @@ import 'package:lumen/api/model/symptom_response.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/formatters/lumen_formats.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
+import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/features/cycle/application/day_detail_controller.dart';
+import 'package:lumen/features/cycle/presentation/day_log_editor_screen.dart';
 import 'package:lumen/shared/mood_labels.dart';
 import 'package:lumen/shared/symptom_vocabulary.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
@@ -55,8 +81,13 @@ import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 /// not draw a chip for) and never `side` (anatomical view, not a chip the
 /// mockup draws either). A value outside the ratified vocabulary — the
 /// mockup's own "After lunch" is the named example, in no ratified set —
-/// does not silently render: it is simply not in the label maps above, so
-/// it is dropped rather than shown as a raw code.
+/// does not silently render: it has no entry in the ratified label maps this
+/// file imports from `symptom_vocabulary.dart`, so it is dropped rather than
+/// shown as a raw code.
+///
+/// (Those maps used to be declared directly above this function; P4b-T19b
+/// promoted them to `symptom_vocabulary.dart` and left the word "above"
+/// behind. Corrected at P4b-T16b, the task that owns this file next.)
 List<String> _chipsFor(SymptomResponse symptom) {
   final chips = <String>[];
   final region = symptom.region;
@@ -74,6 +105,29 @@ List<String> _chipsFor(SymptomResponse symptom) {
   }
   return chips;
 }
+
+// ---------------------------------------------------------------------------
+// The day-log editor's affordance
+// ---------------------------------------------------------------------------
+
+/// The control that opens the day-log editor (P4b-T16b).
+///
+/// **AUTHORED.** Screen 11's mockup draws exactly two edit affordances — the
+/// Symptoms header's `Edit` and the dashed `+ Add to this day` — and BOTH
+/// stay cut (see this file's header). Nothing drawn is reusable, so this
+/// string, its geometry and its placement are all new. Queued for the T25 PO
+/// copy pass.
+///
+/// It names the three fields it writes rather than the row it writes them to:
+/// `pain`, `mood` and `notes` are exactly `LogCycleDayRequest`'s members, so
+/// the label cannot over-promise. In particular it does NOT say "symptoms" —
+/// those are a different table this button cannot touch — and it does not say
+/// "add to this day", which is the cut affordance's own words and a different
+/// (fabricating) destination.
+///
+/// The word "Edit" is honest on an empty day too: the sheet opens on whatever
+/// the day already holds, which may be nothing.
+const String kDayDetailEditLogLabel = 'Edit pain, mood and note';
 
 // ---------------------------------------------------------------------------
 // DayDetailScreen
@@ -100,47 +154,98 @@ class DayDetailScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: c.surface,
       body: SafeArea(
-        child: Stack(
-          children: [
-            view.when(
-              loading: () => Center(
-                child: CircularProgressIndicator(
-                  color: c.accent,
-                  semanticsLabel: 'Loading',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // The back chevron — SHIPS here, unlike screen 10: this is a
+            // pushed route inside the Cycle branch's own Navigator, so there
+            // is something to pop back to.
+            //
+            // **In the LAYOUT, not a `Positioned` over the scroll view.** It
+            // was an overlay through T16, which cost nothing while this was a
+            // read surface: nothing that scrolled under its 48x48 corner was
+            // tappable. P4b-T16b adds a tappable control to the scroll view,
+            // and P4b-T20b hit a real tap-miss with this exact overlay shape
+            // on screen 12 — so it converges onto screen 12's arrangement
+            // now, before there is anything to lose. The rendered result is
+            // the mockup's either way: the chevron at the top left with the
+            // content beginning below it.
+            //
+            // `semanticLabel` on the Icon (screen 10's `_MonthStep`
+            // precedent) — NOT `tooltip:`, which Material surfaces as a
+            // SEPARATE semantics `tooltip` field rather than the button's own
+            // `label`, and would leave this control announcing nothing. The
+            // WORD is `MaterialLocalizations`' own translated name for this
+            // control, not copy this screen invented (screen 12's precedent).
+            Padding(
+              padding: const EdgeInsets.only(left: 10),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  icon: Icon(
+                    Icons.chevron_left,
+                    semanticLabel: MaterialLocalizations.of(
+                      context,
+                    ).backButtonTooltip,
+                  ),
+                  color: c.muted,
+                  onPressed: () => _leaveDayDetail(context),
                 ),
               ),
-              // Brief §3: a failure in EITHER read surfaces the error state,
-              // never a partial screen — see DayDetailController's dartdoc
-              // for the combining rule this implements.
-              error: (error, _) => LumenErrorRetry(
-                message: error is Failure
-                    ? error.message
-                    : 'Something went wrong. Please try again.',
-                onRetry: () =>
-                    ref.invalidate(dayDetailControllerProvider(date)),
-              ),
-              data: (dayView) => _Body(date: date, view: dayView),
             ),
-            // The back chevron — SHIPS here, unlike screen 10: this is a
-            // pushed route inside the Cycle branch's own Navigator, so
-            // there is something to pop back to.
-            Positioned(
-              top: 0,
-              left: 0,
-              child: IconButton(
-                // `semanticLabel` on the Icon (screen 10's `_MonthStep`
-                // precedent) — NOT `tooltip:`, which Material surfaces as a
-                // SEPARATE semantics `tooltip` field, not the button's own
-                // `label`, and would leave this control announcing nothing.
-                icon: const Icon(Icons.chevron_left, semanticLabel: 'Back'),
-                color: c.muted,
-                onPressed: () => context.pop(),
+            Expanded(
+              child: view.when(
+                loading: () => Center(
+                  child: CircularProgressIndicator(
+                    color: c.accent,
+                    semanticsLabel: 'Loading',
+                  ),
+                ),
+                // Brief §3: a failure in EITHER read surfaces the error state,
+                // never a partial screen — see DayDetailController's dartdoc
+                // for the combining rule this implements.
+                error: (error, _) => LumenErrorRetry(
+                  message: error is Failure
+                      ? error.message
+                      : 'Something went wrong. Please try again.',
+                  onRetry: () =>
+                      ref.invalidate(dayDetailControllerProvider(date)),
+                ),
+                data: (dayView) => _Body(date: date, view: dayView),
               ),
             ),
           ],
         ),
       ),
     );
+  }
+}
+
+/// Leaves screen 11: pops when there is something to pop, and otherwise goes
+/// to the Cycle tab.
+///
+/// **`canPop`-guarded rather than a bare `context.pop()`, and this is a
+/// CONSISTENCY change, not a bug fix.** P4b-T21b's probe C MEASURED the bare
+/// pop this replaces: a cold link to `/cycle/day/2026-04-20` through the real
+/// route table renders this chevron with `context.canPop() == true`, and
+/// tapping it threw nothing. The reason is structural — `/cycle/day/:date` is
+/// registered as a CHILD `GoRoute` under `/cycle` inside the Cycle
+/// `StatefulShellBranch`, so go_router materialises the calendar page beneath
+/// it even on a cold deep link. Screen 12 and screen 13 each needed their
+/// guard for real (both are top-level routes and can genuinely be the stack
+/// root); this one is the third member of a house idiom, adopted so that the
+/// three logging screens answer "where does back go" the same way and a
+/// future route-table change cannot quietly make this the exception.
+///
+/// [Routes.cycle] rather than [Routes.home] — screen 12's fallback — because
+/// this screen's own branch root IS the cycle calendar it drills in from, so
+/// a user with no back stack lands where the ordinary pop would have taken
+/// them rather than in another tab.
+void _leaveDayDetail(BuildContext context) {
+  if (context.canPop()) {
+    context.pop();
+  } else {
+    context.go(Routes.cycle);
   }
 }
 
@@ -184,7 +289,9 @@ class _Body extends StatelessWidget {
     final truncated = view.symptomsTotal > view.symptoms.length;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 48, 20, 24),
+      // Top padding drops from 48 to 6: the chevron is in the layout now
+      // rather than an overlay this had to clear.
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -240,10 +347,59 @@ class _Body extends StatelessWidget {
             _NoteCard(notes: log!.notes!),
           ],
 
-          // No Activity section (module is P5); no `Edit` or `+ Add to this
-          // day` (both point at screens that do not exist yet — R-10).
+          // No Activity section (module is P5); no `Edit`, no `+ Add to this
+          // day` — see this file's header for why each stays cut.
+          const SizedBox(height: 16),
+          _EditLogButton(date: date),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The day-log editor's affordance
+// ---------------------------------------------------------------------------
+
+/// Opens the day-log editor for this day (P4b-T16b).
+///
+/// **Only rendered in the DATA state**, inside `_Body`, and deliberately so:
+/// the editor seeds itself from the day view this screen has already settled,
+/// so offering it while that read is loading or failed would open a form that
+/// silently claims the day is empty. A user who could not read the day cannot
+/// edit it; they retry the read first.
+///
+/// **Always rendered in the data state, including on an empty day** — the
+/// endpoint upserts, so a day with nothing on it is exactly as writable as
+/// one with a full log, and hiding the button there would leave the
+/// empty-state screen with no way forward at all.
+///
+/// Geometry is the mockup's `.add` button — full width, 11 px, muted, radius
+/// 11 — with one deliberate departure: a SOLID border where `.add` is dashed.
+/// That button is `+ Add to this day`, which stays cut and must not be
+/// mistaken for this one.
+class _EditLogButton extends StatelessWidget {
+  const _EditLogButton({required this.date});
+
+  final DateTime date;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).extension<LumenColors>()!;
+
+    return OutlinedButton(
+      onPressed: () => showDayLogEditor(context, date),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: c.muted,
+        side: BorderSide(color: c.border),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(11),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w400),
+        minimumSize: const Size.fromHeight(0),
+      ),
+      child: const Text(kDayDetailEditLogLabel),
     );
   }
 }

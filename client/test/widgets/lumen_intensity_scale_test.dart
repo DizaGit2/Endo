@@ -24,7 +24,10 @@
 // `ValueChanged<int?>`) — see the "clearing" group below. Before this, once
 // any stop was tapped the widget could never report `null` again on its own.
 
+import 'dart:ui' show Tristate;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/core/theme/lumen_theme.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
@@ -44,6 +47,7 @@ Future<void> _pumpScale(
   WidgetTester tester, {
   required int? value,
   bool enabled = true,
+  bool? allowClear,
   Brightness brightness = Brightness.light,
 }) {
   reported = <int?>[];
@@ -53,12 +57,23 @@ Future<void> _pumpScale(
     home: Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: LumenIntensityScale(
-          value: value,
-          enabled: enabled,
-          semanticsLabel: 'Pain level',
-          onChanged: reported.add,
-        ),
+        child: allowClear == null
+            // The DEFAULT construction — no `allowClear:` argument at all, so
+            // a test using it proves what a shipped call site that never
+            // mentions the parameter gets.
+            ? LumenIntensityScale(
+                value: value,
+                enabled: enabled,
+                semanticsLabel: 'Pain level',
+                onChanged: reported.add,
+              )
+            : LumenIntensityScale(
+                value: value,
+                enabled: enabled,
+                allowClear: allowClear,
+                semanticsLabel: 'Pain level',
+                onChanged: reported.add,
+              ),
       ),
     ),
   );
@@ -227,6 +242,115 @@ void main() {
       await tester.pump();
 
       expect(reported, <int?>[7]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // P4b-T16b — `allowClear: false`, the day-log editor's suppression
+  //
+  // `POST /cycle/day/{date}` MERGES and `LogCycleDayRequest`'s generated
+  // serializer omits every null, so an explicit clear is NOT EXPRESSIBLE on
+  // that wire: a cleared pain would simply be omitted and the server would
+  // leave the stored value exactly as it was. Offering the gesture there
+  // would be a data lie, so screen 11 passes `allowClear: false`.
+  //
+  // Both halves are asserted here, because only asserting the `false` half
+  // would let a mutation that hard-codes suppression (ignoring the parameter)
+  // pass while silently breaking screen 9.
+  // -------------------------------------------------------------------------
+
+  group('allowClear', () {
+    testWidgets('allowClear: false — tapping the currently-selected stop '
+        'reports NOTHING: not null, and not a silent re-set of the same '
+        'value either', (tester) async {
+      await _pumpScale(tester, value: 5, allowClear: false);
+
+      await tester.tap(find.text('5'));
+      await tester.pump();
+
+      expect(
+        reported,
+        isEmpty,
+        reason:
+            'a no-op, not a re-set: reporting 5 again would look identical '
+            'on screen and would still send a value the user was trying to '
+            'take back',
+      );
+    });
+
+    testWidgets('allowClear: false — tapping the currently-selected 0 also '
+        'reports nothing', (tester) async {
+      await _pumpScale(tester, value: 0, allowClear: false);
+
+      await tester.tap(find.text('0'));
+      await tester.pump();
+
+      expect(reported, isEmpty);
+    });
+
+    testWidgets('allowClear: false — every OTHER stop still reports its own '
+        'integer, including 0', (tester) async {
+      await _pumpScale(tester, value: 5, allowClear: false);
+
+      await tester.tap(find.text('7'));
+      await tester.pump();
+      await tester.tap(find.text('0'));
+      await tester.pump();
+
+      expect(reported, <int?>[7, 0]);
+    });
+
+    testWidgets('allowClear: false — a scale with NO value yet is fully '
+        'tappable; suppression applies to the selected stop alone', (
+      tester,
+    ) async {
+      await _pumpScale(tester, value: null, allowClear: false);
+
+      await tester.tap(find.text('0'));
+      await tester.pump();
+
+      expect(reported, <int?>[0]);
+    });
+
+    testWidgets('allowClear: false — the selected stop announces itself as '
+        'having no action, rather than staying a button whose activation '
+        'silently does nothing', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pumpScale(tester, value: 5, allowClear: false);
+
+      final node = tester.getSemantics(find.text('5')).getSemanticsData();
+      expect(node.flagsCollection.isEnabled, Tristate.isFalse);
+      expect(node.flagsCollection.isSelected, Tristate.isTrue);
+      expect(node.hasAction(SemanticsAction.tap), isFalse);
+
+      // Its neighbours are unaffected.
+      final neighbour = tester
+          .getSemantics(find.text('6'))
+          .getSemanticsData();
+      expect(neighbour.flagsCollection.isEnabled, Tristate.isTrue);
+      expect(neighbour.hasAction(SemanticsAction.tap), isTrue);
+      handle.dispose();
+    });
+
+    testWidgets('the DEFAULT is allowClear: true — a call site that never '
+        'mentions the parameter still clears (screen 9 does not move)', (
+      tester,
+    ) async {
+      await _pumpScale(tester, value: 5);
+
+      await tester.tap(find.text('5'));
+      await tester.pump();
+
+      expect(reported, <int?>[null]);
+    });
+
+    testWidgets('allowClear: true, passed explicitly, clears', (tester) async {
+      await _pumpScale(tester, value: 5, allowClear: true);
+
+      await tester.tap(find.text('5'));
+      await tester.pump();
+
+      expect(reported, <int?>[null]);
     });
   });
 

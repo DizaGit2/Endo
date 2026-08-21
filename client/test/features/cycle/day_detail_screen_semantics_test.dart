@@ -1,10 +1,22 @@
-// Semantics for screen 11 (P4b-T16, READ SURFACE ONLY).
+// Semantics for screen 11 (P4b-T16 read surface; P4b-T16b's one affordance).
 //
-// Screen 11 draws exactly ONE control — the back chevron (the period-event
-// and day-log editors are T16b). That makes the positive/negative controls
-// unusually sharp: `kAnyButtonSemantics` should find exactly 1 node on this
-// screen, always the back button, never a day cell's own content or a
-// symptom row.
+// **The button-count claim is INVERTED here, not loosened.** Through T16 this
+// screen drew exactly ONE control and the negative control read
+// `findsNWidgets(1)`. P4b-T16b adds the day-log editor's affordance, so the
+// count is now TWO — and the sharpness has to be preserved by NAMING both,
+// not by raising a number until it passes. The test below therefore asserts
+// the count AND identifies each button, so a third one (a revived `Edit`, a
+// symptom row that became tappable, a section header that announced itself)
+// still fails.
+//
+// The two controls, and nothing else, are:
+//   1. the back chevron;
+//   2. `kDayDetailEditLogLabel`, which opens the day-log editor sheet.
+//
+// Still CUT, and asserted as cut below: the mockup's `Edit` (RULING T20-B —
+// `PUT /symptoms/{id}` does not exist) and `+ Add to this day` (RULING
+// T16-K — screen 12 hard-codes the server's today, so a past day's affordance
+// pointed at it would silently log to the wrong day).
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +26,7 @@ import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/features/cycle/application/day_detail_controller.dart';
 import 'package:lumen/features/cycle/data/cycle_repository.dart';
 import 'package:lumen/features/cycle/presentation/day_detail_screen.dart';
+import 'package:lumen/features/cycle/presentation/day_log_editor_screen.dart';
 import 'package:lumen/features/symptoms/data/symptoms_repository.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:mocktail/mocktail.dart';
@@ -52,9 +65,10 @@ void main() {
     registerFallbackValue(DateTime(2026, 1, 1));
   });
 
-  group('the back button — the ONLY control on this screen', () {
+  group('the two controls on this screen, and nothing else', () {
     testWidgetsWithSemantics(
-      'is labeled "Back" and carries a real tap action',
+      'the back chevron carries a real tap action, named by '
+      'MaterialLocalizations rather than by hand-written copy',
       (tester) async {
         await _pump(
           tester,
@@ -67,6 +81,9 @@ void main() {
           ),
         );
 
+        // `backButtonTooltip` resolves to 'Back' under the `en` fallback the
+        // harness runs in, so the string is unchanged from T16 — what moved
+        // is where it comes from.
         expectLabeledButton(
           tester,
           find.widgetWithIcon(IconButton, Icons.chevron_left),
@@ -77,8 +94,47 @@ void main() {
     );
 
     testWidgetsWithSemantics(
-      'is the ONLY button on the whole screen — no day cell, no symptom '
-      'row, no section header announces itself as one',
+      'the chevron is IN THE LAYOUT, above the scroll view — nothing that '
+      'scrolls can come to rest under its corner and lose its taps',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            date: date,
+            log: cycleDayLogFixture(pain: 4, mood: 2, notes: 'A note.'),
+            symptoms: [symptomResponseFixture()],
+            symptomsTotal: 1,
+          ),
+        );
+
+        expect(
+          find.ancestor(
+            of: find.widgetWithIcon(IconButton, Icons.chevron_left),
+            matching: find.byType(Stack),
+          ),
+          findsNothing,
+          reason:
+              'a Positioned overlay is what T20b measured a real tap-miss '
+              'against on screen 12; the chevron is a Column child here',
+        );
+
+        final chevron = tester.getRect(
+          find.widgetWithIcon(IconButton, Icons.chevron_left),
+        );
+        final scroller = tester.getRect(find.byType(SingleChildScrollView));
+        expect(
+          chevron.bottom,
+          lessThanOrEqualTo(scroller.top + 0.5),
+          reason: 'the chevron and the scroll view must not overlap at all',
+        );
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'a fully-populated day announces exactly TWO buttons — the chevron and '
+      'the day-log editor. No day cell, no symptom row and no section header '
+      'announces itself as one, and neither cut affordance is back.',
       (tester) async {
         await _pump(
           tester,
@@ -93,11 +149,88 @@ void main() {
 
         expect(
           kAnyButtonSemantics,
-          findsNWidgets(1),
+          findsNWidgets(2),
           reason:
-              'only the back chevron should be a button; T16 writes nothing '
-              'and offers no other action (Edit/+Add are cut — R-10)',
+              'the back chevron and kDayDetailEditLogLabel, and nothing '
+              'else. If this went to 3, name the third one here rather than '
+              'raising the number.',
         );
+        expectLabeledButton(
+          tester,
+          find.widgetWithIcon(IconButton, Icons.chevron_left),
+          'Back',
+          exactLabel: true,
+        );
+        expectLabeledButton(
+          tester,
+          find.text(kDayDetailEditLogLabel),
+          kDayDetailEditLogLabel,
+        );
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'the mockup\'s two drawn edit affordances stay CUT — `Edit` (T20-B: '
+      'no PUT /symptoms/{id}) and `+ Add to this day` (T16-K: screen 12 '
+      'writes the SERVER\'s today, so a past day\'s button would fabricate '
+      'the date)',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            date: date,
+            log: cycleDayLogFixture(pain: 4, mood: 2, notes: 'A note.'),
+            symptoms: [symptomResponseFixture()],
+            symptomsTotal: 1,
+          ),
+        );
+
+        expect(find.text('Edit'), findsNothing);
+        expect(find.textContaining('Add to this day'), findsNothing);
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'the editor affordance is offered on an EMPTY day too — the endpoint '
+      'upserts, so a day with nothing on it is exactly as writable, and '
+      'hiding it there would leave the empty state with no way forward',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            date: date,
+            log: null,
+            symptoms: const [],
+            symptomsTotal: 0,
+          ),
+        );
+
+        expect(find.text('Nothing logged for this day.'), findsOneWidget);
+        expect(find.text(kDayDetailEditLogLabel), findsOneWidget);
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'tapping it opens the day-log editor sheet',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            date: date,
+            log: cycleDayLogFixture(pain: 4, mood: 2),
+            symptoms: const [],
+            symptomsTotal: 0,
+          ),
+        );
+
+        await tester.tap(find.text(kDayDetailEditLogLabel));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(DayLogEditorScreen), findsOneWidget);
+        expect(find.text(kDayLogEditorMergeNote), findsOneWidget);
       },
     );
   });

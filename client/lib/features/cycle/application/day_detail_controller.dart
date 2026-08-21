@@ -1,9 +1,12 @@
-// DayDetailController — screen 11's state (P4b-T16, READ SURFACE ONLY).
+// DayDetailController — screen 11's state (P4b-T16; P4b-T16b).
 //
 // Screen 11 is a drill-in from screen 10: "what did I log on April 7?" It
-// combines two independent reads into one honest view and writes nothing —
-// see the screen file's own header for why the write surfaces (the period-
-// event editor and the day-log editor) are a separate task, T16b.
+// combines two independent reads into one honest view. It still issues no
+// write of its own: P4b-T16b's day-log editor owns
+// `POST /cycle/day/{date}` and lives in `day_log_editor_controller.dart`.
+// The one thing that editor needs from here is [DayDetailController.applySavedLog]
+// — see its dartdoc. The period-event editor (`POST /cycle/events`, the
+// opposite write rule) is T16c and does not exist yet.
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -61,9 +64,11 @@ class DayDetailView {
 /// "loading build" branch (`lumen-build.md:993-997`), the same one
 /// `CycleCalendarController` uses: [build] performs a real `await` before
 /// there is anything to render, and screen 11 draws no control that could
-/// invoke a mutation before that `await` settles (it draws no mutation at
-/// all — this is the read surface). There is no synchronous chip-tap racing
-/// [build]'s own future here.
+/// invoke a mutation before that `await` settles. **P4b-T16b keeps that
+/// true**: screen 11's editor affordance opens a sheet whose own
+/// `DayLogEditorController` owns the write, and this class gained only
+/// [applySavedLog], which cannot be reached before [build] settles (its
+/// caller checks `hasValue` first).
 ///
 /// **A family, keyed by [date].** Riverpod 3's hand-written family shape
 /// (`AsyncNotifierProvider.family`, `misc.dart`'s `AsyncNotifierProviderFamily`)
@@ -133,6 +138,42 @@ class DayDetailController extends AsyncNotifier<DayDetailView> {
       // page length rather than to 0 means a malformed/absent `total` never
       // manufactures a FALSE truncation notice.
       symptomsTotal: symptomsResponse.total ?? items.length,
+    );
+  }
+
+  /// Replaces this day's [DayDetailView.log] with [log], leaving everything
+  /// else in the view alone (P4b-T16b).
+  ///
+  /// **The one write-adjacent method on this read controller, and it takes
+  /// the STORED row rather than a form's answers.** `POST /cycle/day/{date}`
+  /// answers with the row as the server holds it after merging — built from
+  /// the entity, not echoed from the request — so it is the freshest possible
+  /// value for this view, fresher than the re-read invalidating would cost.
+  /// `DayLogEditorController._refreshDependents` has the full reasoning for
+  /// why the day-log editor adopts here instead of invalidating: the editor
+  /// is a sheet sitting directly on top of the screen watching this
+  /// provider, so invalidating would drop that screen to a spinner behind the
+  /// scrim and re-issue two reads whose answer is already in hand.
+  ///
+  /// **[DayDetailView.symptoms] and [DayDetailView.symptomsTotal] are carried
+  /// over untouched** — a day-log write cannot create, change or remove a
+  /// `symptoms` row (different table, different endpoint, D-11) — and so is
+  /// [DayDetailView.date], which stays the route's own day and is never
+  /// re-derived from [log]'s echoed `day`.
+  ///
+  /// A no-op while this controller has no value: there is nothing to patch,
+  /// and the caller invalidates instead in that case rather than assembling a
+  /// half-built view here.
+  void applySavedLog(CycleDayLogResponse log) {
+    final current = state.value;
+    if (current == null) return;
+    state = AsyncData<DayDetailView>(
+      DayDetailView(
+        date: current.date,
+        log: log,
+        symptoms: current.symptoms,
+        symptomsTotal: current.symptomsTotal,
+      ),
     );
   }
 }
