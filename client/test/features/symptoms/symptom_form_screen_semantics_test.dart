@@ -700,18 +700,53 @@ void main() {
             'exists',
       );
 
-      // Positive control for the assertion above: once the write resolves,
-      // the very same gesture DOES pop. Without this the test could pass on a
-      // route that is simply un-poppable.
-      release.complete(
-        Response<CreateSymptomsResponse>(
+      // Positive control for the assertion above, on the SAME gesture: once
+      // the write resolves, `handlePopRoute()` DOES pop this route. Without
+      // it the assertion could pass on a route that is simply un-poppable,
+      // or in a harness where `handlePopRoute` reaches nothing at all.
+      //
+      // The write is released as a REJECTION, not a success (fix round 1):
+      // a successful save pops the screen from the CTA's own success handler
+      // via `context.pop()`, which would leave the gesture untested while
+      // LOOKING like proof — the previous version of this comment claimed
+      // exactly that and was false.
+      release.completeError(
+        DioException(
           requestOptions: RequestOptions(path: '/symptoms'),
-          statusCode: 201,
-          data: createSymptomsResponseFixture(),
+          type: DioExceptionType.badResponse,
+          response: Response<Map<String, dynamic>>(
+            requestOptions: RequestOptions(path: '/symptoms'),
+            statusCode: 400,
+            data: const <String, dynamic>{
+              'title': 'One or more validation errors occurred.',
+              'status': 400,
+              'detail': 'The request contained invalid data.',
+              'errors': <String, List<String>>{
+                'request': <String>['something was wrong'],
+              },
+            },
+          ),
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byType(SymptomFormScreen), findsNothing);
+      expect(
+        find.byType(SymptomFormScreen),
+        findsOneWidget,
+        reason:
+            'premise for the control below: the write has resolved and the '
+            'screen is idle again, still on the route',
+      );
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(
+        find.byType(SymptomFormScreen),
+        findsNothing,
+        reason:
+            'the identical gesture, with nothing in flight, pops — so the '
+            'assertion above is about PopScope refusing it, not about a '
+            'route that could never be popped',
+      );
     });
   });
 
@@ -849,6 +884,53 @@ void main() {
         expectLiveRegion(tester, 'a request may contain at most 50 entries');
       },
     );
+
+    testWidgets('the banner is PINNED in the footer, not carried away by the '
+        'scroll view (fix round 1, amending S9)', (tester) async {
+      when(
+        () => api.symptomsPost(
+          createSymptomsRequest: any(named: 'createSymptomsRequest'),
+        ),
+      ).thenAnswer(
+        apiValidationProblem(
+          fields: <String, List<String>>{
+            'request': <String>['something was wrong'],
+          },
+        ),
+      );
+
+      await _pumpScreen(tester, api: api);
+
+      await _tapStop(tester, kSymptomPainIntensityKey, 4);
+      await _tap(tester, find.text(kSymptomFormSaveLabel));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LumenErrorBanner), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: find.byType(LumenErrorBanner),
+          matching: find.byType(Scrollable),
+        ),
+        findsNothing,
+        reason:
+            'the user is AT the CTA when a failure arrives — that is the '
+            'control they just pressed — and this screen is several '
+            'viewports tall, so a banner inside the scroll view is close to '
+            'no message at all. It is the same class of message as the '
+            'block reason, which S7 already pins.',
+      );
+
+      // Positive control: the finder pair above CAN see a scroll ancestor,
+      // so "findsNothing" is about the banner's placement rather than about
+      // a probe that never matches anything.
+      expect(
+        find.ancestor(
+          of: find.text('Pelvis'),
+          matching: find.byType(Scrollable),
+        ),
+        findsWidgets,
+      );
+    });
 
     testWidgets('a batch-level `entries` rejection renders in the banner too', (
       tester,
@@ -1039,6 +1121,25 @@ void main() {
   // -------------------------------------------------------------------------
   // House rule
   // -------------------------------------------------------------------------
+
+  testWidgetsWithSemantics(
+    'the back affordance and the notes box both have accessible names',
+    (tester) async {
+      await _pumpScreen(tester, api: api);
+
+      // The chevron carries its name on the ICON, never on `tooltip:` —
+      // Material surfaces a tooltip as a SEPARATE semantics field, which
+      // would leave this control announcing nothing. The word is
+      // `MaterialLocalizations.backButtonTooltip`, the platform's own; 'Back'
+      // is what that resolves to under the test locale.
+      expectLabeledButton(tester, find.byType(IconButton), 'Back');
+
+      // The notes box passes `hint: ''` and its caption is `announce: false`,
+      // so `LumenInputField.label` is the ONLY thing that names it — nothing
+      // else in the tree would announce for it if that were dropped.
+      expectLabeledField(tester, find.byType(TextField), 'Notes');
+    },
+  );
 
   testWidgets('no dingbat glyphs anywhere on the screen', (tester) async {
     await _pumpScreen(tester, api: api);

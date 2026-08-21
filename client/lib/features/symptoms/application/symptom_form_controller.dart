@@ -232,24 +232,37 @@ class SymptomFormController extends Notifier<SymptomForm> {
   ///    and is where both routes to screen 12 start. [Ref.invalidate] never
   ///    CREATES a provider element, so this costs nothing when it is not
   ///    mounted.
-  ///  * **The day-detail controller for [day], only if it already exists.**
-  ///    `dayDetailControllerProvider` is an `autoDispose` FAMILY, and the
-  ///    check is what stops this from building a controller — and firing its
-  ///    two GETs — for a Cycle-tab screen nobody has opened. [Ref.exists] is
-  ///    the one way to ask that WITHOUT creating one. Only that day's
-  ///    controller is touched: the batch reached exactly one day, and
-  ///    invalidating others would re-fetch days this write cannot have
-  ///    changed.
+  ///  * **The day-detail controller for [day], unconditionally, for the same
+  ///    reason the dashboard is** — `invalidate` never creates. **No
+  ///    `ref.exists` guard here, and the absence is deliberate: one would be
+  ///    INERT.** Fix round 1 (traced through riverpod 3.3.2):
+  ///    `Ref.invalidate` reaches `ProviderContainer.invalidate`, which is
+  ///    `_pointerManager.readElement(provider)?.invalidateSelf(...)`
+  ///    (`provider_container.dart:1117-1122`) over
+  ///    `readPointer(provider)?.element` (`:499-501`) — and `exists`
+  ///    (`:1038-1047`) is that identical lookup returning a bool. So
+  ///    `if (ref.exists(p)) ref.invalidate(p);` is `ref.invalidate(p)` with
+  ///    the lookup done twice, and nothing observable distinguishes them. The
+  ///    first version of this method shipped that `if` with a dartdoc calling
+  ///    it the thing "that stops this from building a controller", which was
+  ///    both false and a contradiction of the dashboard bullet directly
+  ///    above. The guard the calendar below needs is real because that branch
+  ///    calls `ref.read`, which genuinely does create.
   ///
-  ///    **No `hasValue` half here, unlike the calendar below — deliberately.**
-  ///    That half exists on screen 9 because `CycleCalendarController
-  ///    .refresh()` falls back to `invalidateSelf()` when it has no value,
-  ///    which snaps the visible month back to today. `DayDetailController`
-  ///    has no `refresh()` and no such branch — it is one `build()` for one
-  ///    fixed date — so the only tool is `invalidate`, and invalidating a
-  ///    STILL-LOADING day view is strictly more correct than skipping it:
-  ///    that in-flight read was issued before this write committed and would
-  ///    otherwise land as pre-write data with nothing to correct it.
+  ///    Only that day's controller is touched: the batch reached exactly one
+  ///    day, and invalidating others would re-fetch days this write cannot
+  ///    have changed.
+  ///
+  ///    **No `hasValue` half here, unlike the calendar below — also
+  ///    deliberate.** That half exists on screen 9 because
+  ///    `CycleCalendarController.refresh()` falls back to `invalidateSelf()`
+  ///    when it has no value, which snaps the visible month back to today.
+  ///    `DayDetailController` has no `refresh()` and no such branch — it is
+  ///    one `build()` for one fixed date — so the only tool is `invalidate`,
+  ///    and invalidating a STILL-LOADING day view is strictly more correct
+  ///    than skipping it: that in-flight read was issued before this write
+  ///    committed and would otherwise land as pre-write data with nothing to
+  ///    correct it.
   ///  * **The cycle calendar, only if it already exists AND already has a
   ///    value** — screen 9's guard verbatim, for screen 9's reason: the same
   ///    `refresh()`, the same snap-back. A symptom changes that day's
@@ -261,11 +274,12 @@ class SymptomFormController extends Notifier<SymptomForm> {
   void _refreshDependents(DateTime day) {
     ref.invalidate(dashboardControllerProvider);
 
-    final dayDetail = dayDetailControllerProvider(day);
-    if (ref.exists(dayDetail)) {
-      ref.invalidate(dayDetail);
-    }
+    ref.invalidate(dayDetailControllerProvider(day));
 
+    // `ref.exists` IS load-bearing here and inert one line up — the
+    // difference is `ref.read` below, which creates the element (and fires
+    // `sessionTodayProvider` plus three month GETs) where `invalidate` never
+    // does.
     if (ref.exists(cycleCalendarControllerProvider)) {
       final calendarState = ref.read(cycleCalendarControllerProvider);
       if (calendarState.hasValue) {

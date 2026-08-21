@@ -225,15 +225,12 @@ class _FormBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
     final enabled = !form.submitting;
-    final bannerMessage = _bannerMessage(form.failure);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        if (bannerMessage != null) ...<Widget>[
-          LumenErrorBanner(message: bannerMessage),
-          const SizedBox(height: 16),
-        ],
+        // No failure banner here — it lives in the PINNED footer (fix round
+        // 1, amending S9's "at the top"). See [_Footer].
 
         // The mockup's `.tag` — 11 px, sage, uppercase, 1.5 px tracking.
         const LumenSectionLabel(
@@ -554,7 +551,31 @@ class _NotesFieldState extends State<_NotesField> {
 // The pinned footer
 // ---------------------------------------------------------------------------
 
-/// The block reason and the CTA — outside the scroll view, always on screen.
+/// The failure banner, the block reason and the CTA — outside the scroll
+/// view, always on screen.
+///
+/// **The banner is pinned here, not at the top of the form (fix round 1,
+/// amending T20b's own S9).** Three reasons, all of them S7's:
+///  * a failure banner and a block reason are the same class of message —
+///    "here is why the button did not do what you asked" — and S7 already
+///    ruled that class must not scroll away. Pinning one and not the other
+///    splits a rule the rest of this screen follows;
+///  * the user is by construction AT the CTA when a failure arrives, since
+///    that is the control they just pressed. This screen is several
+///    viewports tall, so a banner at the top is close to no message at all —
+///    the only remaining signal would be the CTA relabelling to `Try again`,
+///    because `blockReason` is null whenever `canSubmit` was true;
+///  * it keeps the live region adjacent to the retry control, so a screen
+///    reader user's next swipe after the announcement reaches `Try again`
+///    rather than the top of the form.
+///
+/// Per-row messages (`entries[N].intensity`) stay at their rows — that is
+/// correct and unaffected. **Auto-scrolling to the top on failure was
+/// considered and rejected**: it moves the user away from both the CTA and
+/// any per-row message, and discards their scroll position.
+///
+/// Footer height is the real cost, so the banner renders as its message and
+/// nothing else — no icon, no title, no dismiss control.
 class _Footer extends StatelessWidget {
   const _Footer({required this.form, required this.controller});
 
@@ -565,6 +586,7 @@ class _Footer extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
     final blockReason = form.blockReason;
+    final bannerMessage = _bannerMessage(form.failure);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 4, 22, 20),
@@ -572,6 +594,10 @@ class _Footer extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          if (bannerMessage != null) ...<Widget>[
+            LumenErrorBanner(message: bannerMessage),
+            const SizedBox(height: 10),
+          ],
           if (blockReason != null) ...<Widget>[
             // Rendered STRAIGHT from `SymptomForm.blockReason`, never composed
             // here — the four messages are named constants in
@@ -637,7 +663,7 @@ class _Footer extends StatelessWidget {
 // Failure -> message
 // ---------------------------------------------------------------------------
 
-/// What the banner at the top says, or `null` when nothing is wrong.
+/// What the pinned footer's banner says, or `null` when nothing is wrong.
 ///
 /// The WRITE precedent (`goals_screen.dart`/`quick_checkin_screen.dart`), not
 /// the read-failure generic-copy rule: the server's own `request`-keyed
