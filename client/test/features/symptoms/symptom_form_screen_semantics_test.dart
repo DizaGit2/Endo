@@ -1108,6 +1108,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(SymptomFormScreen), findsNothing);
+    // The POSITIVE CONTROL for the `canPop` guard added in T21b's fix round 1:
+    // with something to pop the chevron still POPS, landing back on the host
+    // it was pushed from. This router registers no `Routes.home` at all, so a
+    // guard that had flattened every exit into `go(Routes.home)` would land on
+    // go_router's unknown-route page instead and this would fail.
+    expect(find.text('host'), findsOneWidget);
     verifyNever(
       () => api.symptomsPost(
         createSymptomsRequest: any(named: 'createSymptomsRequest'),
@@ -1238,6 +1244,43 @@ void main() {
             'PUSHED, not `go`: screen 12 stays mounted underneath, which is '
             'what keeps its autoDispose form — and every unsent selection on '
             'it — alive while screen 13 writes into it',
+      );
+    });
+
+    testWidgets('is the LAST element of the form body — below the notes box, '
+        'and never between RELATED and Notes where it would split the input '
+        'flow with a navigation control', (tester) async {
+      await _pumpScreen(tester, api: api);
+
+      // Stated STRUCTURALLY, against the form body's own child list, rather
+      // than as a pixel comparison: "last" is the claim the position judgement
+      // actually made, and a `dy` ordering would also be satisfied by an
+      // affordance sitting anywhere below the notes box.
+      final Column body = tester.widget<Column>(
+        find
+            .descendant(
+              of: find.byType(SingleChildScrollView),
+              matching: find.byType(Column),
+            )
+            .first,
+      );
+      expect(
+        find.descendant(
+          of: find.byWidget(body.children.last),
+          matching: find.byKey(kSymptomBodyMapKey),
+        ),
+        findsOneWidget,
+        reason:
+            'the mockup draws this card last before the CTA; the notes box '
+            'has no mockup position at all, so "last" is the only reading of '
+            'the mockup that survives the notes box being added',
+      );
+
+      // And the notes box really is above it — the half of the ordering that
+      // the mockup does not state and this screen decided.
+      expect(
+        tester.getTopLeft(find.byKey(kSymptomBodyMapKey)).dy,
+        greaterThan(tester.getTopLeft(find.byType(LumenInputField)).dy),
       );
     });
 

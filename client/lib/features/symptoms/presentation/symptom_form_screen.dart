@@ -207,7 +207,9 @@ class SymptomFormScreen extends ConsumerWidget {
                     color: c.muted,
                     // S8 — frozen mid-write like every other control, so this
                     // is not a second way around the PopScope above.
-                    onPressed: form.submitting ? null : () => context.pop(),
+                    onPressed: form.submitting
+                        ? null
+                        : () => _leaveSymptomForm(context),
                   ),
                 ),
               ),
@@ -228,6 +230,36 @@ class SymptomFormScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// Leaves screen 12: pops when there is something to pop, and otherwise goes
+/// to [Routes.home].
+///
+/// **`canPop`-guarded rather than a bare `context.pop()`.** `pop` on the ROOT
+/// of the stack throws `GoError: There is nothing to pop`, and screen 12 can
+/// be that root two ways: a cold link straight to `/symptoms/new` (legal —
+/// it is a registered top-level location), and, since P4b-T21b,
+/// `BodyMapScreen._leave`'s own cold-link answer, which `go`es here — and
+/// `go` REPLACES, so screen 13's push-less entry becomes screen 12's
+/// push-less root. Screen 13 already answers the same question with the same
+/// shape; this is the second half of it, and without it screen 13's ruled
+/// hand-off would deliver the user to a chevron that crashes.
+///
+/// [Routes.home] rather than a route of this flow's own: it is the
+/// authenticated default the redirect already sends every signed-in user to
+/// (R-19), so it is the one destination guaranteed to exist under a task flow
+/// that was entered from nowhere. Nothing is saved or discarded on the way —
+/// the chevron never wrote, and this changes only where a user with no back
+/// stack lands.
+///
+/// Screen 11's own chevron has the same shape and is NOT touched here: its
+/// convergence is booked for P4b-T16b.
+void _leaveSymptomForm(BuildContext context) {
+  if (context.canPop()) {
+    context.pop();
+  } else {
+    context.go(Routes.home);
   }
 }
 
@@ -384,6 +416,13 @@ class _FormBody extends StatelessWidget {
         // the only reading of the mockup's own placement that survives the
         // addition. Putting it between RELATED and Notes would split this
         // screen's input flow with a navigation control.
+        //
+        // **Pinned**, since T21b's fix round 1: nothing asserted this position
+        // when it shipped, so a later edit could have moved the card anywhere
+        // in the form with every test still green. The claim under test is
+        // "LAST child of this Column", stated structurally rather than as a
+        // `dy` comparison — see `symptom_form_screen_semantics_test.dart`'s
+        // "is the LAST element of the form body".
         _BodyMapAffordance(enabled: enabled),
       ],
     );

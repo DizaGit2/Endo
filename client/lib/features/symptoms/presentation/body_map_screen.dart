@@ -15,7 +15,7 @@
 //    four of the eight have no hit zone and are reachable only here;
 //  * one stacked intensity block per placed region, in frozen vocabulary
 //    order (R2), which is screen 12's shipped `_IntensityBlock` pattern
-//    (`symptom_form_screen.dart:315-339`) applied to a different selection;
+//    (`symptom_form_screen.dart:368-392`) applied to a different selection;
 //  * the LIVE write into `SymptomForm.bodyMapPoints` on every change (R7);
 //  * the `Done` affordance, blocked with a stated reason while any placed
 //    region is unrated (R8).
@@ -168,7 +168,8 @@ const double kBodyMapMarkerRadius = 5;
 /// BACK GESTURE would keep every point they had just removed. R-15's toggle is
 /// itself the undo, so a screen whose every action is individually reversible
 /// has nothing to cancel — and the house does not confirm discards anyway
-/// (`symptom_form_screen.dart:147-148`).
+/// (its `PopScope`, `symptom_form_screen.dart:168-169`, blocks only a write
+/// in flight).
 ///
 /// **The honest consequence, stated (R8):** because the writes are live, an
 /// UNRATED placement is the one thing leaving by the system back gesture can
@@ -297,6 +298,13 @@ class _BodyMapScreenState extends ConsumerState<BodyMapScreen> {
   /// autoDispose form, screen 12 is the only surface that can save them, and
   /// `go` reaches it in the same frame — so the form keeps a listener
   /// throughout and is never torn down between the two screens.
+  ///
+  /// **`go` REPLACES**, so on that path screen 12 arrives as the ROOT of the
+  /// stack — which is why screen 12's own chevron is the same `canPop`-guarded
+  /// shape (`_leaveSymptomForm`, `symptom_form_screen.dart`). A hand-off into
+  /// a screen whose back affordance then throws would not be an answer to the
+  /// cold link, only a longer route to the same crash. The two screens now
+  /// share ONE exit idiom; screen 11's is booked for P4b-T16b.
   void _leave() {
     if (context.canPop()) {
       context.pop();
@@ -660,6 +668,17 @@ class _BodyMapPainter extends CustomPainter {
       if (zone == null) continue;
       // The zone's centre, and one radius for every marker regardless of
       // intensity (R4).
+      //
+      // **A known cosmetic, and a deliberate consequence of that rule:**
+      // `legs`'s zone spans BOTH legs, so its centre (60,177) falls in the
+      // gap the silhouette draws between them and the marker overlaps each
+      // inner edge rather than sitting on a leg. Every available correction
+      // invents something — nudging it onto one leg invents laterality, which
+      // R1 cut so completely that `side` is not a field this screen has, and
+      // a second `legs` zone would invent an anatomy the ratified vocabulary
+      // does not carry. "Paint at the zone's centre" is the rule; this is
+      // what it looks like for the one zone that spans a gap. Recorded for
+      // the design pass rather than patched here.
       canvas.drawCircle(zone.center, kBodyMapMarkerRadius, marker);
     }
   }

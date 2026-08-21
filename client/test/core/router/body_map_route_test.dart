@@ -183,7 +183,49 @@ void main() {
             'a bare context.pop() here asserts "there is nothing to pop" and '
             'the screen would be a dead end',
       );
+
+      // ONE TAP FURTHER, and it is the tap that matters. `go` REPLACES, so
+      // screen 12 has arrived as the ROOT of the stack — an assertion that
+      // stopped at the hand-off would be green while the very next thing the
+      // user touches throws `GoError: There is nothing to pop`. The hand-off
+      // is an answer to R11 only if the screen it hands to is not itself a
+      // dead end.
+      await _tap(tester, find.byIcon(Icons.chevron_left));
+
+      expect(
+        tester.takeException(),
+        isNull,
+        reason:
+            'screen 12\'s chevron is the SAME canPop-guarded shape as screen '
+            '13\'s _leave; a bare context.pop() on a replaced root throws',
+      );
+      expect(
+        find.byType(DashboardScreen),
+        findsOneWidget,
+        reason:
+            'with nothing to pop, screen 12 goes to Routes.home — the '
+            'authenticated default the redirect already sends every signed-in '
+            'user to',
+      );
+      expect(find.byType(SymptomFormScreen), findsNothing);
     });
+
+    testWidgets('the same dead end on the PRE-EXISTING path is closed too — a '
+        'cold link straight to /symptoms/new has nothing under it either, and '
+        'threw identically before this guard', (tester) async {
+      await _pumpProductionRouter(tester, initialLocation: Routes.symptomsNew);
+
+      await _tap(tester, find.byIcon(Icons.chevron_left));
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(DashboardScreen), findsOneWidget);
+    });
+
+    // The positive control for the same guard — that it did NOT flatten the
+    // ordinary path into a `go` — lives where the pushed stack already exists:
+    // `symptom_form_screen_semantics_test.dart`'s "the back affordance pops
+    // without saving", whose host route is `/host` and whose router registers
+    // no `/home` at all, so a `go(Routes.home)` there could not land on it.
 
     testWidgets('a point placed on a COLD LINK survives the hand-off to '
         'screen 12 — the form is autoDispose and there is no screen 12 '

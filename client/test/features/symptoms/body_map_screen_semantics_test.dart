@@ -22,8 +22,13 @@
 // rather than through a golden: `golden_app.dart`'s copy-insensitivity rules
 // 6-8 all concern `RenderParagraph`, so hand-drawn vector art has no
 // cross-platform protection in an image, and the one golden pair this screen
-// ships is of the EMPTY figure. Every claim about a marker is made here, where
-// it can be stated in numbers.
+// ships is of the EMPTY figure. Every claim about a marker is therefore made
+// here — and named, so the list can be checked rather than believed: its
+// CENTRE (`x`/`y`), its RADIUS, its COLOUR and its ALPHA (one `color:`
+// argument carries both), and how MANY are drawn. `PaintPattern.circle`
+// compares only what it is passed, so an argument left off is a property
+// nothing guards: colour and alpha were left off until T21b's fix round 1,
+// and a 20 %-alpha magenta marker passed the whole suite.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -438,11 +443,20 @@ void main() {
       // Drawn in `kRegionLabels` order, so pelvis precedes chest_shoulder.
       // The radius is stated as a LITERAL, not as kBodyMapMarkerRadius: an
       // assertion written against the constant it is checking cannot fail.
+      //
+      // `color:` is the OTHER half of R4 and has to be passed explicitly —
+      // `PaintPattern.circle` ignores a paint's colour entirely unless it is
+      // given one to compare, so a `0` and a `10` could be drawn in different
+      // colours, or at different alphas, under an assertion that named only
+      // the radius. `0xFFC25A36` is `lumenLight.accent` written out: the
+      // opaque `FF` is the "one flat opacity" half and the RGB is the "one
+      // colour" half, both stated as one number that a ramp cannot satisfy
+      // twice.
       expect(
         find.byKey(kBodyMapFigureKey),
         paints
-          ..circle(x: 60, y: 137, radius: 5.0)
-          ..circle(x: 60, y: 59, radius: 5.0),
+          ..circle(x: 60, y: 137, radius: 5.0, color: const Color(0xFFC25A36))
+          ..circle(x: 60, y: 59, radius: 5.0, color: const Color(0xFFC25A36)),
       );
     });
 
@@ -455,7 +469,8 @@ void main() {
 
       expect(
         find.byKey(kBodyMapFigureKey),
-        paints..circle(x: 60, y: 102, radius: 5.0),
+        paints
+          ..circle(x: 60, y: 102, radius: 5.0, color: const Color(0xFFC25A36)),
       );
       expect(
         find.byKey(kBodyMapFigureKey),
@@ -676,6 +691,25 @@ void main() {
   // -------------------------------------------------------------------------
 
   group('semantics', () {
+    testWidgetsWithSemantics('the summary node is named, LITERALLY, "Body '
+        'map" — every other test in this file locates it BY '
+        'kBodyMapFigureLabel, so the string would otherwise move with its own '
+        'assertion and could be renamed to anything at all', (tester) async {
+      await _pumpScreen(tester);
+
+      // Two statements, and both are needed. The first pins the CONSTANT'S
+      // TEXT — an authored, PO-unconfirmed string that is drawn nowhere, so
+      // unlike kBodyMapTitle / kBodyMapSectionLabel / kBodyMapRegionsLabel it
+      // has no golden glyph advance behind it either. The second proves those
+      // exact words reach the NODE, which is the only place a screen reader
+      // can find them.
+      expect(kBodyMapFigureLabel, 'Body map');
+      expect(
+        find.semantics.byLabel('Body map').evaluate().single.value,
+        '0 points placed',
+      );
+    });
+
     testWidgetsWithSemantics('the silhouette carries ONE summary node whose '
         'VALUE is the counter, and it is not a live region', (tester) async {
       await _pumpScreen(tester);
