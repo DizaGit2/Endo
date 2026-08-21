@@ -1,17 +1,16 @@
-// Semantics for screen 11 (P4b-T16 read surface; P4b-T16b's one affordance).
+// Semantics for screen 11 (P4b-T16 read surface; P4b-T16b's day-log
+// affordance; P4b-T16c's Period section and period-editor affordance).
 //
-// **The button-count claim is INVERTED here, not loosened.** Through T16 this
-// screen drew exactly ONE control and the negative control read
-// `findsNWidgets(1)`. P4b-T16b adds the day-log editor's affordance, so the
-// count is now TWO — and the sharpness has to be preserved by NAMING both,
-// not by raising a number until it passes. The test below therefore asserts
-// the count AND identifies each button, so a third one (a revived `Edit`, a
-// symptom row that became tappable, a section header that announced itself)
-// still fails.
+// **The button-count claim is RAISED BY NAMING, never by loosening.** Through
+// T16 this screen drew exactly ONE control; T16b made it TWO; T16c makes it
+// THREE. Each time, the sharpness is preserved by identifying every button, so
+// a fourth one (a revived `Edit`, a symptom row that became tappable, a section
+// header that announced itself) still fails.
 //
-// The two controls, and nothing else, are:
+// The three controls, and nothing else, are:
 //   1. the back chevron;
-//   2. `kDayDetailEditLogLabel`, which opens the day-log editor sheet.
+//   2. `kDayDetailEditLogLabel`, which opens the day-log editor sheet;
+//   3. `kDayDetailEditPeriodLabel`, which opens the period-event editor sheet.
 //
 // Still CUT, and asserted as cut below: the mockup's `Edit` (RULING T20-B —
 // `PUT /symptoms/{id}` does not exist) and `+ Add to this day` (RULING
@@ -26,7 +25,9 @@ import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/features/cycle/application/day_detail_controller.dart';
 import 'package:lumen/features/cycle/data/cycle_repository.dart';
 import 'package:lumen/features/cycle/presentation/day_detail_screen.dart';
+import 'package:lumen/api/model/cycle_event_response.dart';
 import 'package:lumen/features/cycle/presentation/day_log_editor_screen.dart';
+import 'package:lumen/features/cycle/presentation/period_editor_screen.dart';
 import 'package:lumen/features/symptoms/data/symptoms_repository.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:mocktail/mocktail.dart';
@@ -65,7 +66,7 @@ void main() {
     registerFallbackValue(DateTime(2026, 1, 1));
   });
 
-  group('the two controls on this screen, and nothing else', () {
+  group('the three controls on this screen, and nothing else', () {
     testWidgetsWithSemantics(
       'the back chevron carries a real tap action, named by '
       'MaterialLocalizations rather than by hand-written copy',
@@ -74,6 +75,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: null,
             symptoms: const [],
@@ -101,6 +103,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: cycleDayLogFixture(pain: 4, mood: 2, notes: 'A note.'),
             symptoms: [symptomResponseFixture()],
@@ -132,14 +135,23 @@ void main() {
     );
 
     testWidgetsWithSemantics(
-      'a fully-populated day announces exactly TWO buttons — the chevron and '
-      'the day-log editor. No day cell, no symptom row and no section header '
-      'announces itself as one, and neither cut affordance is back.',
+      'a fully-populated day announces exactly THREE buttons — the chevron, '
+      'the day-log editor and the period editor. No day cell, no symptom row, '
+      'no period row and no section header announces itself as one, and '
+      'neither cut affordance is back.',
       (tester) async {
         await _pump(
           tester,
           date,
           DayDetailView(
+            events: <CycleEventResponse>[
+              cycleEventFixture(
+                id: 'evt-1',
+                kind: 'period_start',
+                flowIntensity: 3,
+                notes: 'started overnight',
+              ),
+            ],
             date: date,
             log: cycleDayLogFixture(pain: 4, mood: 2, notes: 'A note.'),
             symptoms: [symptomResponseFixture()],
@@ -149,11 +161,12 @@ void main() {
 
         expect(
           kAnyButtonSemantics,
-          findsNWidgets(2),
+          findsNWidgets(3),
           reason:
-              'the back chevron and kDayDetailEditLogLabel, and nothing '
-              'else. If this went to 3, name the third one here rather than '
-              'raising the number.',
+              'the back chevron, kDayDetailEditLogLabel and '
+              'kDayDetailEditPeriodLabel, and nothing else. The period ROWS '
+              'are read-only and must not have become tappable. If this went '
+              'to 4, name the fourth one here rather than raising the number.',
         );
         expectLabeledButton(
           tester,
@@ -165,6 +178,11 @@ void main() {
           tester,
           find.text(kDayDetailEditLogLabel),
           kDayDetailEditLogLabel,
+        );
+        expectLabeledButton(
+          tester,
+          find.text(kDayDetailEditPeriodLabel),
+          kDayDetailEditPeriodLabel,
         );
       },
     );
@@ -179,6 +197,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: cycleDayLogFixture(pain: 4, mood: 2, notes: 'A note.'),
             symptoms: [symptomResponseFixture()],
@@ -200,6 +219,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: null,
             symptoms: const [],
@@ -209,6 +229,13 @@ void main() {
 
         expect(find.text('Nothing logged for this day.'), findsOneWidget);
         expect(find.text(kDayDetailEditLogLabel), findsOneWidget);
+        expect(
+          find.text(kDayDetailEditPeriodLabel),
+          findsOneWidget,
+          reason:
+              'a day with no period event is exactly the day a first one gets '
+              'logged on',
+        );
       },
     );
 
@@ -219,6 +246,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: cycleDayLogFixture(pain: 4, mood: 2),
             symptoms: const [],
@@ -233,6 +261,230 @@ void main() {
         expect(find.text(kDayLogEditorMergeNote), findsOneWidget);
       },
     );
+
+    testWidgetsWithSemantics(
+      'tapping the period affordance opens the PERIOD editor sheet, which is '
+      'a different sheet saying the OPPOSITE rule',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            events: const [],
+            date: date,
+            log: null,
+            symptoms: const [],
+            symptomsTotal: 0,
+          ),
+        );
+
+        await tester.tap(find.text(kDayDetailEditPeriodLabel));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(PeriodEditorScreen), findsOneWidget);
+        expect(find.byType(DayLogEditorScreen), findsNothing);
+        expect(find.text(kPeriodEditorUpsertNote), findsOneWidget);
+        expect(
+          find.text(kDayLogEditorMergeNote),
+          findsNothing,
+          reason:
+              'the two sheets state opposite rules and must never share copy',
+        );
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // The Period section (P4b-T16c) — the read the editor has no data without
+  // ---------------------------------------------------------------------------
+
+  group('the Period section', () {
+    testWidgetsWithSemantics(
+      'EMPTY STATE — a day with no cycle events renders no Period section at '
+      'all: no label, no row, no placeholder',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            events: const [],
+            date: date,
+            log: cycleDayLogFixture(pain: 4, mood: 2),
+            symptoms: const [],
+            symptomsTotal: 0,
+          ),
+        );
+
+        expect(find.text('PERIOD'), findsNothing);
+        for (final label in const <String>[
+          'Period start',
+          'Period end',
+          'Spotting',
+          'Light',
+          'Medium',
+          'Heavy',
+        ]) {
+          expect(find.text(label), findsNothing);
+        }
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'HAS-EVENT STATE — the section renders one row per event, in the '
+      'SERVER\'s order, with each event\'s own kind, flow chip and note',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            events: <CycleEventResponse>[
+              cycleEventFixture(
+                id: 'evt-end',
+                kind: 'period_end',
+                flowIntensity: 1,
+              ),
+              cycleEventFixture(
+                id: 'evt-start',
+                kind: 'period_start',
+                flowIntensity: 4,
+                notes: 'started overnight',
+              ),
+            ],
+            date: date,
+            log: null,
+            symptoms: const [],
+            symptomsTotal: 0,
+          ),
+        );
+
+        expect(find.text('PERIOD'), findsOneWidget);
+        expect(find.text('Period end'), findsOneWidget);
+        expect(find.text('Period start'), findsOneWidget);
+        expect(find.text('Spotting'), findsOneWidget); // flow level 1
+        expect(find.text('Heavy'), findsOneWidget); // flow level 4
+        expect(find.text('started overnight'), findsOneWidget);
+
+        // The order the server sent, not re-sorted here.
+        expect(
+          tester.getTopLeft(find.text('Period end')).dy,
+          lessThan(tester.getTopLeft(find.text('Period start')).dy),
+        );
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'a day with ONLY a period event is NOT the empty day — the section is '
+      'what says so',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            events: <CycleEventResponse>[
+              cycleEventFixture(id: 'evt-1', kind: 'period_start'),
+            ],
+            date: date,
+            log: null,
+            symptoms: const [],
+            symptomsTotal: 0,
+          ),
+        );
+
+        expect(find.text('Nothing logged for this day.'), findsNothing);
+        expect(find.text('Period start'), findsOneWidget);
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'an event with NO flow level draws no flow chip — "no level recorded" '
+      'and "the lowest level" are different facts and must not look alike',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            events: <CycleEventResponse>[
+              cycleEventFixture(id: 'evt-1', kind: 'period_start'),
+            ],
+            date: date,
+            log: null,
+            symptoms: const [],
+            symptomsTotal: 0,
+          ),
+        );
+
+        for (final label in const <String>[
+          'Spotting',
+          'Light',
+          'Medium',
+          'Heavy',
+          'None',
+        ]) {
+          expect(find.text(label), findsNothing);
+        }
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'T16-C — a Heavy flow renders as a bare chip: no warning, no alarm '
+      'chrome, no advisory copy anywhere on the screen',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            events: <CycleEventResponse>[
+              cycleEventFixture(
+                id: 'evt-1',
+                kind: 'period_start',
+                flowIntensity: 4,
+              ),
+            ],
+            date: date,
+            log: null,
+            symptoms: const [],
+            symptomsTotal: 0,
+          ),
+        );
+
+        expect(find.text('Heavy'), findsOneWidget);
+        for (final word in const <String>[
+          'heavy bleeding',
+          'doctor',
+          'clinician',
+          'concern',
+          'unusual',
+          'Warning',
+        ]) {
+          expect(find.textContaining(word), findsNothing);
+        }
+        expect(find.byIcon(Icons.warning), findsNothing);
+        expect(find.byIcon(Icons.warning_amber), findsNothing);
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'an event whose kind is outside the ratified three still renders, as '
+      'its RAW code — a row that exists must not vanish',
+      (tester) async {
+        await _pump(
+          tester,
+          date,
+          DayDetailView(
+            events: <CycleEventResponse>[
+              cycleEventFixture(id: 'evt-1', kind: 'ovulation'),
+            ],
+            date: date,
+            log: null,
+            symptoms: const [],
+            symptomsTotal: 0,
+          ),
+        );
+
+        expect(find.text('ovulation'), findsOneWidget);
+        expect(find.text('Nothing logged for this day.'), findsNothing);
+      },
+    );
   });
 
   group('no dingbats', () {
@@ -243,6 +495,7 @@ void main() {
         tester,
         date,
         DayDetailView(
+          events: const [],
           date: date,
           log: cycleDayLogFixture(pain: 4, mood: 2, notes: 'A note.'),
           symptoms: [
@@ -268,6 +521,7 @@ void main() {
         tester,
         date,
         DayDetailView(
+          events: const [],
           date: date,
           log: null,
           symptoms: const [],
@@ -288,6 +542,7 @@ void main() {
         tester,
         date,
         DayDetailView(
+          events: const [],
           date: date,
           log: null,
           symptoms: const [],
@@ -306,6 +561,7 @@ void main() {
         tester,
         date,
         DayDetailView(
+          events: const [],
           date: date,
           log: null,
           symptoms: const [],
@@ -327,6 +583,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: null,
             symptoms: const [],
@@ -347,6 +604,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: cycleDayLogFixture(pain: null, mood: null, notes: 'Hi.'),
             symptoms: const [],
@@ -368,6 +626,7 @@ void main() {
         tester,
         date,
         DayDetailView(
+          events: const [],
           date: date,
           log: cycleDayLogFixture(pain: 0, mood: null),
           symptoms: const [],
@@ -387,6 +646,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: null,
             symptoms: [symptomResponseFixture(intensity: 0)],
@@ -406,6 +666,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: null,
             symptoms: [symptomResponseFixture(intensity: null)],
@@ -426,6 +687,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: null,
             symptoms: [
@@ -450,6 +712,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: null,
             symptoms: [symptomResponseFixture()],
@@ -469,6 +732,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: null,
             symptoms: const [],
@@ -493,6 +757,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: null,
             symptoms: [symptomResponseFixture(symptomCode: 'bloating')],
@@ -517,6 +782,7 @@ void main() {
         tester,
         date,
         DayDetailView(
+          events: const [],
           date: date,
           log: null,
           symptoms: [
@@ -542,6 +808,7 @@ void main() {
         tester,
         date,
         DayDetailView(
+          events: const [],
           date: date,
           log: null,
           symptoms: [symptomResponseFixture(region: 'unspecified')],
@@ -562,6 +829,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: null,
             symptoms: [
@@ -676,6 +944,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: null,
             symptoms: [
@@ -714,6 +983,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: null,
             symptoms: [symptomResponseFixture(symptomCode: 'pain')],
@@ -751,6 +1021,7 @@ void main() {
             tester,
             date,
             DayDetailView(
+              events: const [],
               date: date,
               log: cycleDayLogFixture(pain: null, mood: entry.key),
               symptoms: const [],
@@ -781,6 +1052,7 @@ void main() {
           tester,
           date,
           DayDetailView(
+            events: const [],
             date: date,
             log: cycleDayLogFixture(pain: null, mood: 9),
             symptoms: const [],

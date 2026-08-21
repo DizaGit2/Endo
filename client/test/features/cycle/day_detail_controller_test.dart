@@ -11,6 +11,7 @@ import 'package:built_collection/built_collection.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lumen/api/model/cycle_event_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/symptom_list_response.dart';
 import 'package:lumen/api/model/symptom_response.dart';
@@ -231,6 +232,224 @@ void main() {
 
       final view = container.read(dayDetailControllerProvider(date)).value!;
       expect(view.symptomsTotal, 1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // events (P4b-T16c) — the read the period editor has no data without
+  // -------------------------------------------------------------------------
+
+  group('events', () {
+    test('carries the day\'s cycle events through unmodified, in the order '
+        'the server sent them', () async {
+      when(() => cycleRepo.getDay(any())).thenAnswer(
+        (_) async => Fresh(
+          cycleDayFixture(
+            events: <CycleEventResponse>[
+              cycleEventFixture(
+                id: 'evt-end',
+                kind: 'period_end',
+                flowIntensity: 2,
+              ),
+              cycleEventFixture(
+                id: 'evt-start',
+                kind: 'period_start',
+                flowIntensity: 4,
+                notes: 'heavy first day',
+              ),
+            ],
+          ),
+        ),
+      );
+      when(
+        () => symptomsRepo.getDay(any()),
+      ).thenAnswer((_) async => Fresh(symptomListResponseFixture()));
+
+      container = buildContainer();
+      await settle();
+
+      final view = container.read(dayDetailControllerProvider(date)).value!;
+      expect(view.events.map((e) => e.id), <String>['evt-end', 'evt-start']);
+      expect(view.events.first.flowIntensity, 2);
+      expect(view.events.last.notes, 'heavy first day');
+    });
+
+    test('a day with no events becomes an EMPTY list, never null — the '
+        'section\'s empty state is a list length, not a null check', () async {
+      when(
+        () => cycleRepo.getDay(any()),
+      ).thenAnswer((_) async => Fresh(cycleDayFixture()));
+      when(
+        () => symptomsRepo.getDay(any()),
+      ).thenAnswer((_) async => Fresh(symptomListResponseFixture()));
+
+      container = buildContainer();
+      await settle();
+
+      expect(
+        container.read(dayDetailControllerProvider(date)).value!.events,
+        isEmpty,
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // applySavedEvent / applyDeletedEvent (P4b-T16c)
+  //
+  // Every fixture below seeds a NON-EMPTY symptom list and a non-null log on
+  // purpose: T16b's mutation round found that "the adoption left the other
+  // members alone" and "the adoption wiped them" are the SAME assertion when
+  // those members are empty, and a mutant replacing them with `const []`
+  // survived the whole suite.
+  // -------------------------------------------------------------------------
+
+  group('applySavedEvent', () {
+    Future<DayDetailController> seeded(
+      List<CycleEventResponse> events,
+    ) async {
+      when(() => cycleRepo.getDay(any())).thenAnswer(
+        (_) async => Fresh(
+          cycleDayFixture(
+            log: cycleDayLogFixture(pain: 4, mood: 2, notes: 'day note'),
+            events: events,
+          ),
+        ),
+      );
+      when(() => symptomsRepo.getDay(any())).thenAnswer(
+        (_) async => Fresh(
+          symptomListResponseFixture(
+            items: [symptomResponseFixture(symptomCode: 'bloating')],
+          ),
+        ),
+      );
+      container = buildContainer();
+      await settle();
+      return container.read(dayDetailControllerProvider(date).notifier);
+    }
+
+    test('REPLACES the event with the same id, in place, leaving the rest of '
+        'the view alone', () async {
+      final notifier = await seeded(<CycleEventResponse>[
+        cycleEventFixture(id: 'evt-1', kind: 'period_start', flowIntensity: 1),
+        cycleEventFixture(id: 'evt-2', kind: 'spotting'),
+      ]);
+
+      notifier.applySavedEvent(
+        cycleEventFixture(
+          id: 'evt-1',
+          kind: 'period_start',
+          flowIntensity: 4,
+          notes: 'saved note',
+        ),
+      );
+
+      final view = container.read(dayDetailControllerProvider(date)).value!;
+      expect(view.events.map((e) => e.id), <String>['evt-1', 'evt-2']);
+      expect(view.events.first.flowIntensity, 4);
+      expect(view.events.first.notes, 'saved note');
+      expect(view.log?.pain, 4, reason: 'the day log is a different row');
+      expect(view.symptoms, hasLength(1));
+      expect(view.symptoms.single.symptomCode, 'bloating');
+      expect(view.symptomsTotal, 1);
+      expect(view.date, date);
+    });
+
+    test('APPENDS an event whose id is not on the day yet — a first period '
+        'event on a day that had none', () async {
+      final notifier = await seeded(const <CycleEventResponse>[]);
+
+      notifier.applySavedEvent(
+        cycleEventFixture(id: 'evt-new', kind: 'period_start'),
+      );
+
+      final view = container.read(dayDetailControllerProvider(date)).value!;
+      expect(view.events.map((e) => e.id), <String>['evt-new']);
+      expect(view.symptoms, hasLength(1));
+    });
+
+    test('does NOT re-derive the view\'s date from the saved event', () async {
+      final notifier = await seeded(const <CycleEventResponse>[]);
+
+      notifier.applySavedEvent(
+        cycleEventFixture(id: 'evt-new', occurredOn: Date(2020, 1, 1)),
+      );
+
+      expect(
+        container.read(dayDetailControllerProvider(date)).value!.date,
+        date,
+        reason:
+            'the route\'s own :date, never re-derived from a response body',
+      );
+    });
+  });
+
+  group('applyDeletedEvent', () {
+    test('removes exactly the deleted id and leaves every other member of '
+        'the view intact', () async {
+      when(() => cycleRepo.getDay(any())).thenAnswer(
+        (_) async => Fresh(
+          cycleDayFixture(
+            log: cycleDayLogFixture(pain: 4, mood: 2),
+            events: <CycleEventResponse>[
+              cycleEventFixture(id: 'evt-1', kind: 'period_start'),
+              cycleEventFixture(id: 'evt-2', kind: 'spotting'),
+            ],
+          ),
+        ),
+      );
+      when(() => symptomsRepo.getDay(any())).thenAnswer(
+        (_) async => Fresh(
+          symptomListResponseFixture(
+            items: [symptomResponseFixture(symptomCode: 'bloating')],
+          ),
+        ),
+      );
+      container = buildContainer();
+      await settle();
+
+      container
+          .read(dayDetailControllerProvider(date).notifier)
+          .applyDeletedEvent('evt-1');
+
+      final view = container.read(dayDetailControllerProvider(date)).value!;
+      expect(view.events.map((e) => e.id), <String>['evt-2']);
+      expect(view.log?.pain, 4);
+      expect(view.symptoms, hasLength(1));
+      expect(view.symptomsTotal, 1);
+    });
+  });
+
+  group('applySavedLog (P4b-T16b) keeps the events P4b-T16c added', () {
+    test('a day-log save leaves the day\'s cycle events exactly where they '
+        'were — different table, different endpoint', () async {
+      when(() => cycleRepo.getDay(any())).thenAnswer(
+        (_) async => Fresh(
+          cycleDayFixture(
+            events: <CycleEventResponse>[
+              cycleEventFixture(id: 'evt-1', kind: 'period_start'),
+            ],
+          ),
+        ),
+      );
+      when(() => symptomsRepo.getDay(any())).thenAnswer(
+        (_) async => Fresh(symptomListResponseFixture()),
+      );
+      container = buildContainer();
+      await settle();
+
+      container
+          .read(dayDetailControllerProvider(date).notifier)
+          .applySavedLog(cycleDayLogFixture(pain: 9, mood: 1));
+
+      final view = container.read(dayDetailControllerProvider(date)).value!;
+      expect(view.log?.pain, 9);
+      expect(
+        view.events.map((e) => e.id),
+        <String>['evt-1'],
+        reason:
+            'a `POST /cycle/day/{date}` cannot create, change or remove a '
+            'cycle_events row',
+      );
     });
   });
 }

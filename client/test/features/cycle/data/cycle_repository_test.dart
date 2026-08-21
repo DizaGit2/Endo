@@ -593,6 +593,109 @@ void main() {
       );
     });
 
+    test('S-1 AT THE WIRE — an EMPTY note travels as `"notes": ""`, present '
+        'and empty, and that is what ERASES the stored ciphertext. It is NOT '
+        'quietly dropped on its way out: `CycleService` trims it, finds it '
+        'empty, and assigns row.NotesEnc = null UNCONDITIONALLY. On '
+        'POST /cycle/day/{date} the same value is a no-op; here it is the '
+        'only way a user can remove a note.', () async {
+      when(
+        () => api.cycleEventsPost(
+          logCycleEventRequest: any(named: 'logCycleEventRequest'),
+        ),
+      ).thenAnswer(apiSuccess(cycleEventFixture()));
+
+      await repo.logEvent(
+        kind: 'period_start',
+        occurredOn: Date(2026, 4, 20),
+        flowIntensity: 2,
+        notes: '',
+      );
+
+      final wire = _wireMap(_capturedEventRequest(api));
+      expect(
+        wire.containsKey('notes'),
+        isTrue,
+        reason:
+            'an empty string is a VALUE, not an omission — and the two are '
+            'different requests even though the server clears on both',
+      );
+      expect(wire['notes'], '');
+      expect(
+        wire['flowIntensity'],
+        2,
+        reason: 'the other field is untouched by the note being emptied',
+      );
+    });
+
+    // -- S-6 / S-7, retrofitted at P4b-T16c with the first caller ----------
+
+    test('S-7 — the invalidation is keyed on the RESPONSE\'s own occurredOn, '
+        'not on the date the caller asked for', () async {
+      // The two are deliberately DIFFERENT here. They are identical in
+      // production (the server echoes the request's own upsert key), so a
+      // fixture that let them agree would make "keyed on the response" and
+      // "keyed on the request" the same assertion — the false-green shape
+      // this phase keeps finding.
+      when(
+        () => api.cycleEventsPost(
+          logCycleEventRequest: any(named: 'logCycleEventRequest'),
+        ),
+      ).thenAnswer(
+        apiSuccess(cycleEventFixture(occurredOn: Date(2026, 5, 9))),
+      );
+
+      await repo.logEvent(
+        kind: 'period_start',
+        occurredOn: Date(2026, 4, 20),
+        flowIntensity: null,
+        notes: null,
+      );
+
+      final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      expect(
+        invalidated,
+        containsAll(<String>[
+          'GET:/cycle/day/2026-05-09',
+          'GET:/symptoms?day=2026-05-09',
+          'GET:/cycle/calendar?month=2026-05',
+        ]),
+        reason:
+            'the row the server actually wrote is the one whose cached day '
+            'is now wrong',
+      );
+      expect(
+        invalidated,
+        containsAll(_threeDateKeys),
+        reason:
+            'the requested day was showing this event a moment ago, so its '
+            'keys are cleared too — the union, never one instead of the other',
+      );
+    });
+
+    test('an AMBIGUOUS failure (the write may have committed) invalidates the '
+        'requested day\'s three keys — S-6, through cachedWrite\'s own '
+        'invalidateKeysOnAmbiguousFailure', () async {
+      when(
+        () => api.cycleEventsPost(
+          logCycleEventRequest: any(named: 'logCycleEventRequest'),
+        ),
+      ).thenAnswer(apiNetworkFailure());
+
+      await expectLater(
+        repo.logEvent(
+          kind: 'period_start',
+          occurredOn: Date(2026, 4, 20),
+          flowIntensity: 2,
+          notes: 'a note',
+        ),
+        throwsA(isA<NetworkFailure>()),
+      );
+
+      final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      expect(invalidated, unorderedEquals(_threeDateKeys));
+    });
+
     test('a 200 with no body is a typed server failure', () async {
       when(
         () => api.cycleEventsPost(
@@ -1081,8 +1184,9 @@ void main() {
       }
     });
 
-    test('any OTHER failure propagates as the typed Failure and invalidates '
-        'nothing — the positive control against the 404 case above', () async {
+    test('an AMBIGUOUS failure (the delete may have committed) STILL '
+        'propagates, and invalidates occurredOn\'s three keys — S-6, '
+        'retrofitted at P4b-T16c with the first caller', () async {
       when(
         () => api.cycleEventsIdDelete(id: any(named: 'id')),
       ).thenAnswer(apiNetworkFailure<void>());
@@ -1090,6 +1194,31 @@ void main() {
       await expectLater(
         repo.deleteEvent(id: 'evt-1', occurredOn: Date(2026, 4, 20)),
         throwsA(isA<NetworkFailure>()),
+      );
+
+      final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      expect(
+        invalidated,
+        unorderedEquals(_threeDateKeys),
+        reason:
+            'a soft delete that committed and then timed out would otherwise '
+            'leave the event on screen for the rest of the 5-minute TTL',
+      );
+    });
+
+    test('a NON-ambiguous failure propagates and invalidates NOTHING — the '
+        'positive control the network case above cannot be', () async {
+      // A 401 is the sharpest available: the server is KNOWN not to have
+      // deleted anything, so the cache is still correct. (This test used to
+      // use a NetworkFailure; P4b-T16c's S-6 retrofit made that case
+      // invalidate, which is the point of the test above.)
+      when(() => api.cycleEventsIdDelete(id: any(named: 'id'))).thenAnswer(
+        apiValidationProblem<void>(statusCode: 401, title: 'Unauthorized'),
+      );
+
+      await expectLater(
+        repo.deleteEvent(id: 'evt-1', occurredOn: Date(2026, 4, 20)),
+        throwsA(isA<Failure>()),
       );
       verifyNever(() => store.invalidate(any()));
     });

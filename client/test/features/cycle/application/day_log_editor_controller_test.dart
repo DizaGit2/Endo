@@ -146,6 +146,7 @@ void main() {
   }) {
     final rows = symptoms ?? <SymptomResponse>[symptomResponseFixture()];
     return DayDetailView(
+      events: const [],
       date: date,
       log: log,
       symptoms: rows,
@@ -796,6 +797,7 @@ void main() {
       );
       gate.complete(
         DayDetailView(
+          events: const [],
           date: date,
           log: null,
           symptoms: const [],

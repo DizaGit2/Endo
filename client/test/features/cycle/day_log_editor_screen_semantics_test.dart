@@ -139,6 +139,7 @@ void main() {
         dayDetailControllerProvider(date).overrideWith(
           () => _SettledDayDetail(
             DayDetailView(
+              events: const [],
               date: date,
               log: log,
               symptoms: const [],

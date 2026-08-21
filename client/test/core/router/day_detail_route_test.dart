@@ -114,6 +114,7 @@ Future<void> _pumpProductionRouter(
       dayDetailControllerProvider(DateTime(2026, 4, 16)).overrideWith(
         () => _SettledDayDetail(
           DayDetailView(
+            events: const [],
             date: DateTime(2026, 4, 16),
             log: cycleDayLogFixture(pain: 4, mood: 2),
             symptoms: const [],

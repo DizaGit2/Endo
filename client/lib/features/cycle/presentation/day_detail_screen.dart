@@ -1,16 +1,30 @@
-// Screen 11 — the day detail (P4b-T16 read surface; P4b-T16b day-log editor).
+// Screen 11 — the day detail (P4b-T16 read surface; P4b-T16b day-log editor;
+// P4b-T16c period section + period editor).
 //
 // The drill-in from screen 10: "what did I log on April 7?" It reads two
 // endpoints (`GET /cycle/day/{date}`, `GET /symptoms?from&to`) and renders
 // what it finds.
 //
-// **P4b-T16b adds ONE affordance and no other behaviour**:
-// [kDayDetailEditLogLabel] opens the day-log editor
-// (`day_log_editor_screen.dart`, a `LumenBottomSheet` over this screen)
-// which owns `POST /cycle/day/{date}`. This file still issues no request
-// itself. The PERIOD-EVENT editor (`POST /cycle/events`) is a separate task,
-// T16c, and a separate sheet — the two endpoints have opposite write rules
-// and must not share a surface.
+// **This file still issues no request itself.** It carries TWO affordances,
+// each opening its own `LumenBottomSheet` over this screen, each owning ONE
+// endpoint:
+//
+//  * [kDayDetailEditLogLabel] -> `day_log_editor_screen.dart` ->
+//    `POST /cycle/day/{date}`, a MERGE (P4b-T16b).
+//  * [kDayDetailEditPeriodLabel] -> `period_editor_screen.dart` ->
+//    `POST /cycle/events`, a FULL UPSERT (P4b-T16c).
+//
+// **They are two sheets on purpose and must never become one.** The endpoints
+// have OPPOSITE write rules — an emptied field is a no-op on the first and an
+// ERASE on the second — and one Save writing both would be two requests, two
+// failure modes and one message for one user action, on an online-only client
+// with no write queue (S-9; the same reasoning R-11 used for screen 13).
+//
+// **The Period section is new, and its absence was the finding.** A re-survey
+// of all 38 mockups found Lumen had NO period-logging surface anywhere: a user
+// set `lastPeriodStart` once at onboarding and could never log a period again.
+// `DayDetailView` carried no `events` at all until P4b-T16c, although
+// `CycleDayResponse` always did.
 //
 // **The T16 header's own precondition for that split is void, and is
 // corrected here rather than left to mislead.** It read *"T20 has given the
@@ -39,16 +53,18 @@
 //    and renders the day-log's own `pain` (which the mockup draws no
 //    section for at all) alongside `mood`.
 //  * the Activity section — module is P5.
-//  * `Edit`, in the Symptoms section header — STAYS CUT after T16b, and the
-//    reason changed: it is not "no destination yet" any more, it is RULING
-//    T20-B. `PUT /symptoms/{id}` does not exist, so there is nothing an
-//    edit could send. Booked for P6.
-//  * `+ Add to this day` — STAYS CUT after T16b, and its reason got
-//    STRONGER. Screen 12 hard-codes `occurredAt: null`, i.e. the SERVER's
-//    now, so pointing a past day's affordance at it would silently log to
-//    today: a data-fabrication path, not merely inert navigation. The
-//    day-log editor below is a different button with different copy, in a
-//    different place, and is not this one revived.
+//  * `Edit`, in the Symptoms section header — STAYS CUT after T16b/T16c, and
+//    the reason changed: it is not "no destination yet" any more, it is
+//    RULING T20-B. `PUT /symptoms/{id}` does not exist, so there is nothing
+//    an edit could send. Booked for P6.
+//  * `+ Add to this day` — STAYS CUT, and its reason got STRONGER. Screen 12
+//    hard-codes `occurredAt: null`, i.e. the SERVER's now, so pointing a past
+//    day's affordance at it would silently log to today: a data-fabrication
+//    path, not merely inert navigation (RULING T16-K). The two editor buttons
+//    below are different buttons with different copy, in a different place,
+//    and neither is this one revived — note in particular that the period
+//    editor's `occurredOn` is THIS day, from the route, never the server's
+//    now, which is exactly the property the cut affordance lacks.
 //
 // Section header colour, restated because T16b makes it live again: the
 // mockup's `.sl span:last-child` rule exists to colour a right-hand ACTION,
@@ -65,6 +81,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lumen/api/model/cycle_event_response.dart';
 import 'package:lumen/api/model/symptom_response.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/formatters/lumen_formats.dart';
@@ -72,6 +89,8 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/features/cycle/application/day_detail_controller.dart';
 import 'package:lumen/features/cycle/presentation/day_log_editor_screen.dart';
+import 'package:lumen/features/cycle/presentation/period_editor_screen.dart';
+import 'package:lumen/features/cycle/presentation/period_vocabulary.dart';
 import 'package:lumen/shared/mood_labels.dart';
 import 'package:lumen/shared/symptom_vocabulary.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
@@ -128,6 +147,20 @@ List<String> _chipsFor(SymptomResponse symptom) {
 /// The word "Edit" is honest on an empty day too: the sheet opens on whatever
 /// the day already holds, which may be nothing.
 const String kDayDetailEditLogLabel = 'Edit pain, mood and note';
+
+/// The control that opens the period-event editor (P4b-T16c).
+///
+/// **AUTHORED**, like everything else about this surface: no mockup in the
+/// design system draws a period, flow or spotting control anywhere.
+///
+/// *"Log or edit"*, not *"Edit"*: unlike the day log — where the row is the day
+/// and always exists — a day may have no period event at all, and on a surface
+/// that has never existed before that is the COMMON case. A button reading
+/// "Edit" over a day with nothing to edit would be describing a row that is not
+/// there. It names the thing rather than the fields, because the sheet's three
+/// fields (type, flow, note) are one row's whole state and naming them would be
+/// longer without being more precise.
+const String kDayDetailEditPeriodLabel = 'Log or edit a period event';
 
 // ---------------------------------------------------------------------------
 // DayDetailScreen
@@ -285,7 +318,11 @@ class _Body extends StatelessWidget {
     // is the ground truth for what to render inside it. Neither one alone
     // is sufficient to decide the section is empty.
     final hasSymptomData = view.symptomsTotal > 0 || view.symptoms.isNotEmpty;
-    final hasAnything = hasPain || hasMood || hasNote || hasSymptomData;
+    // P4b-T16c: a day with ONLY a period event is not an empty day. Before
+    // `events` reached this view there was no way for it to say so.
+    final hasEvents = view.events.isNotEmpty;
+    final hasAnything =
+        hasPain || hasMood || hasNote || hasSymptomData || hasEvents;
     final truncated = view.symptomsTotal > view.symptoms.length;
 
     return SingleChildScrollView(
@@ -301,6 +338,26 @@ class _Body extends StatelessWidget {
           // The common case the mockup draws no state for at all (T16
           // brief §5): a 200 with `log: null` and empty collections.
           if (!hasAnything) const _EmptyDay(),
+
+          // **Period first** (P4b-T16c), ahead of the mockup's own three
+          // sections. This screen lives in the Cycle branch and a day's period
+          // status is the cycle's own headline datum; the mockup drew no
+          // section for it to be placed relative to, so there is no drawn
+          // order being departed from.
+          //
+          // Rendered in the SERVER's order — `CycleDayService` sorts by `Kind`,
+          // so it reads period_end, period_start, spotting. Not re-sorted here:
+          // re-deriving an ordering rule this client does not own is how the
+          // two drift.
+          if (hasEvents) ...[
+            const _SectionLabel('Period'),
+            const SizedBox(height: 5),
+            for (final event in view.events) ...[
+              _PeriodRow(event: event),
+              const SizedBox(height: 5),
+            ],
+            const SizedBox(height: 12),
+          ],
 
           if (hasSymptomData) ...[
             const _SectionLabel('Symptoms'),
@@ -350,7 +407,16 @@ class _Body extends StatelessWidget {
           // No Activity section (module is P5); no `Edit`, no `+ Add to this
           // day` — see this file's header for why each stays cut.
           const SizedBox(height: 16),
+          // The day-log button keeps the position it shipped in at T16b; the
+          // period button is added BELOW it rather than above, so no control
+          // already on this screen moves under the user. The two are visually
+          // identical because they are the same kind of thing — the difference
+          // that matters (MERGE vs FULL UPSERT) belongs on the sheet that
+          // behaves that way, where the user is about to act on it, not on a
+          // button label.
           _EditLogButton(date: date),
+          const SizedBox(height: 8),
+          _EditPeriodButton(date: date),
         ],
       ),
     );
@@ -400,6 +466,39 @@ class _EditLogButton extends StatelessWidget {
         minimumSize: const Size.fromHeight(0),
       ),
       child: const Text(kDayDetailEditLogLabel),
+    );
+  }
+}
+
+/// Opens the period-event editor for this day (P4b-T16c).
+///
+/// Same gate and same geometry as [_EditLogButton], for the same two reasons:
+/// only in the DATA state, because the editor seeds itself from the settled day
+/// view and a form opened over a failed read would silently claim the day has
+/// no period event; and ALWAYS within it, including on a day with no event at
+/// all, because that is precisely the day a first period event gets logged on.
+class _EditPeriodButton extends StatelessWidget {
+  const _EditPeriodButton({required this.date});
+
+  final DateTime date;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).extension<LumenColors>()!;
+
+    return OutlinedButton(
+      onPressed: () => showPeriodEditor(context, date),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: c.muted,
+        side: BorderSide(color: c.border),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(11),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w400),
+        minimumSize: const Size.fromHeight(0),
+      ),
+      child: const Text(kDayDetailEditPeriodLabel),
     );
   }
 }
@@ -548,6 +647,78 @@ class _SymptomRow extends StatelessWidget {
                 spacing: 4,
                 runSpacing: 4,
                 children: [for (final chip in chips) _Chip(chip)],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Period row
+// ---------------------------------------------------------------------------
+
+/// One `cycle_events` row as screen 11 reads it (P4b-T16c): its kind, its flow
+/// level if it has one, and its note if it has one.
+///
+/// **No clinical treatment of any level (RULING T16-C).** `Heavy` renders as a
+/// chip exactly like `Light` does — same colours, same size, no icon, no note,
+/// no warning. The C-15 red-flag note that level 4 would trigger needs
+/// clinician AND legal sign-off and ships nowhere in P4b.
+///
+/// A flow of `null` draws NO chip rather than a "none" chip: the column stores
+/// "no level recorded", which is a different fact from a recorded lowest level,
+/// and the two must not look alike.
+class _PeriodRow extends StatelessWidget {
+  const _PeriodRow({required this.event});
+
+  final CycleEventResponse event;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).extension<LumenColors>()!;
+    final flow = event.flowIntensity;
+    final notes = (event.notes ?? '').trim();
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.input,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _Dot(color: c.accent),
+                const SizedBox(width: 9),
+                Flexible(
+                  child: Text(
+                    periodKindLabel(event.kind),
+                    style: TextStyle(fontSize: 11, color: c.ink),
+                  ),
+                ),
+                if (flow != null) ...[
+                  const SizedBox(width: 6),
+                  _Chip(flowLabel(flow)),
+                ],
+              ],
+            ),
+            if (notes.isNotEmpty) ...[
+              const SizedBox(height: 5),
+              Text(
+                notes,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: c.muted,
+                  fontStyle: FontStyle.italic,
+                  height: 1.4,
+                ),
               ),
             ],
           ],

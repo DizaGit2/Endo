@@ -4,10 +4,17 @@
 //
 // Promoted from two private copies that had drifted: `dashboard_screen.dart`'s
 // `_kMoodLabels`/`_moodLabel` (fix round 1, M7) and `day_detail_screen.dart`'s
-// `_kMoodLabels` (still inline at its own `_MoodRow`). A third screen needing
-// this exact scale — screen 9's quick check-in — is what promotion is for
-// (the same threshold `LumenSelectableRow`'s own dartdoc names: two private
-// copies plus a third caller).
+// own inline map. A third screen needing this exact scale — screen 9's quick
+// check-in — is what promotion is for (the same threshold
+// `LumenSelectableRow`'s own dartdoc names: two private copies plus a third
+// caller).
+//
+// **Corrected at P4b-T16c.** This header used to say `day_detail_screen.dart`'s
+// copy was *"still inline at its own `_MoodRow`"*. It is not, and it never was
+// after this file landed: that promotion is precisely what removed it, and
+// `_kMoodLabels` exists nowhere in `client/lib` today. The sentence was false
+// on the commit that introduced it — a claim about a sibling file that nothing
+// re-checks when that file changes.
 
 /// `cycle_day_logs.mood`'s 4-member scale, `Codes[value - 1]` — the wire
 /// carries the integer 1-4 (mood is 1-based; contrast pain, which is

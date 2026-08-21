@@ -1,16 +1,24 @@
-// DayDetailController — screen 11's state (P4b-T16; P4b-T16b).
+// DayDetailController — screen 11's state (P4b-T16; P4b-T16b; P4b-T16c).
 //
 // Screen 11 is a drill-in from screen 10: "what did I log on April 7?" It
 // combines two independent reads into one honest view. It still issues no
-// write of its own: P4b-T16b's day-log editor owns
-// `POST /cycle/day/{date}` and lives in `day_log_editor_controller.dart`.
-// The one thing that editor needs from here is [DayDetailController.applySavedLog]
-// — see its dartdoc. The period-event editor (`POST /cycle/events`, the
-// opposite write rule) is T16c and does not exist yet.
+// write of its own. TWO editors write on top of it, on two endpoints with
+// OPPOSITE write rules, and each owns its own controller:
+//
+//  * `day_log_editor_controller.dart` — `POST /cycle/day/{date}`, a MERGE.
+//    It patches this view through [DayDetailController.applySavedLog].
+//  * `period_editor_controller.dart` — `POST /cycle/events`, a FULL UPSERT.
+//    It patches this view through [DayDetailController.applySavedEvent] and
+//    [DayDetailController.applyDeletedEvent].
+//
+// **They are two saves, never one.** Nothing here batches them and nothing
+// here makes one depend on the other; see `PeriodEditorController`'s own
+// dartdoc for the S-9 rule that says so in full.
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/api/model/cycle_day_log_response.dart';
+import 'package:lumen/api/model/cycle_event_response.dart';
 import 'package:lumen/api/model/symptom_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/features/cycle/data/cycle_repository.dart';
@@ -26,6 +34,7 @@ class DayDetailView {
   const DayDetailView({
     required this.date,
     required this.log,
+    required this.events,
     required this.symptoms,
     required this.symptomsTotal,
   });
@@ -39,6 +48,21 @@ class DayDetailView {
   /// pain/mood/note entry on. **Not the same thing as "nothing at all
   /// happened"** — [symptoms] is a separate, independently-empty list.
   final CycleDayLogResponse? log;
+
+  /// `GET /cycle/day/{date}`'s `events` — this day's `cycle_events` rows, in
+  /// the SERVER's own order (`CycleDayService` sorts them by `Kind`, which is
+  /// alphabetical: `period_end`, `period_start`, `spotting` — not a clinical
+  /// order). Empty on a day with no period event, never null.
+  ///
+  /// **`required`, not defaulted, and that is deliberate.** The only three
+  /// places a [DayDetailView] is built in production are [build],
+  /// [DayDetailController.applySavedLog] and
+  /// [DayDetailController.applySavedEvent], and two of those must carry this
+  /// list ACROSS an edit to a different row. A default of `const []` would
+  /// let either of them drop the day's events in silence — the exact shape
+  /// P4b-T16b's mutation round caught on [symptoms]. The cost is that every
+  /// test literal names it; that is the point.
+  final List<CycleEventResponse> events;
 
   /// The page `GET /symptoms?from={date}&to={date}&limit=100` returned,
   /// newest first (the server's own order). May be fewer rows than
@@ -132,6 +156,11 @@ class DayDetailController extends AsyncNotifier<DayDetailView> {
     return DayDetailView(
       date: date,
       log: dayResponse.log,
+      // `?.toList() ?? const []` for the same reason `items` gets it: every
+      // generated property is nullable (§C.0.2) even where the server always
+      // sends the key, and an absent collection means "none", not "unknown".
+      events:
+          dayResponse.events?.toList() ?? const <CycleEventResponse>[],
       symptoms: items,
       // `total` is nullable on the generated model (every property is,
       // §C.0.2) even though the server always sends it; falling back to the
@@ -171,6 +200,72 @@ class DayDetailController extends AsyncNotifier<DayDetailView> {
       DayDetailView(
         date: current.date,
         log: log,
+        events: current.events,
+        symptoms: current.symptoms,
+        symptomsTotal: current.symptomsTotal,
+      ),
+    );
+  }
+
+  /// Puts [saved] — the 200 body of `POST /cycle/events` — onto this day's
+  /// view, replacing the event it has the same [CycleEventResponse.id] as, or
+  /// appending it when the day has no such row yet (P4b-T16c).
+  ///
+  /// **Matched on `id`, not on `(kind, occurredOn)`.** The id is the row's
+  /// identity: it is stable across upserts, it survives a soft delete and the
+  /// revive that follows, and it is the only handle
+  /// `DELETE /cycle/events/{id}` accepts. Matching on the upsert key would
+  /// give the same answer today and would silently stop doing so the moment a
+  /// caller changed a `kind` — which posts to a DIFFERENT row and must append,
+  /// not overwrite the row the user was looking at.
+  ///
+  /// **An appended event goes to the END, and the list is not re-sorted.**
+  /// The server's order is alphabetical by `Kind`; re-deriving that here would
+  /// duplicate an ordering rule this client does not own, so a newly-created
+  /// event sits last until the next read re-orders it.
+  ///
+  /// [DayDetailView.log], [DayDetailView.symptoms],
+  /// [DayDetailView.symptomsTotal] and [DayDetailView.date] are carried over
+  /// untouched: a `cycle_events` write cannot change a `cycle_day_logs` row or
+  /// a `symptoms` row (different tables, different endpoints), and the date is
+  /// the route's own, never re-derived from a response body.
+  ///
+  /// A no-op while this controller has no value — the caller invalidates
+  /// instead in that case rather than assembling a half-built view here.
+  void applySavedEvent(CycleEventResponse saved) {
+    final current = state.value;
+    if (current == null) return;
+    final events = <CycleEventResponse>[...current.events];
+    final index = events.indexWhere((e) => e.id == saved.id);
+    if (index >= 0) {
+      events[index] = saved;
+    } else {
+      events.add(saved);
+    }
+    state = AsyncData<DayDetailView>(
+      DayDetailView(
+        date: current.date,
+        log: current.log,
+        events: events,
+        symptoms: current.symptoms,
+        symptomsTotal: current.symptomsTotal,
+      ),
+    );
+  }
+
+  /// Drops the event with [id] from this day's view (P4b-T16c).
+  ///
+  /// `DELETE /cycle/events/{id}` answers 204 with no body, so there is nothing
+  /// to adopt — the id the caller deleted is the whole patch. Everything else
+  /// in the view is carried over for [applySavedEvent]'s reasons.
+  void applyDeletedEvent(String id) {
+    final current = state.value;
+    if (current == null) return;
+    state = AsyncData<DayDetailView>(
+      DayDetailView(
+        date: current.date,
+        log: current.log,
+        events: current.events.where((e) => e.id != id).toList(),
         symptoms: current.symptoms,
         symptomsTotal: current.symptomsTotal,
       ),

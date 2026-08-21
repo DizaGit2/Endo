@@ -112,6 +112,7 @@ class _CountingDayDetail extends DayDetailController {
   Future<DayDetailView> build() async {
     counter.value++;
     return DayDetailView(
+      events: const [],
       date: date,
       log: null,
       symptoms: const [],

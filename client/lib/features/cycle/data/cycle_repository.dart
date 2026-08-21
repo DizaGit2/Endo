@@ -27,9 +27,13 @@ import 'package:lumen/core/network/api_client.dart';
 ///                        (P4b-T16b). Screen 11's day-log editor is its only
 ///                        caller.
 /// - [logEvent]         — `POST /cycle/events`, the FULL UPSERT this class
-///                        exists to make safe. **Ruling R-10: only T16
-///                        (screen 11) calls it.**
-/// - [deleteEvent]      — `DELETE /cycle/events/{id}` (D-13 soft-delete).
+///                        exists to make safe. **Ruling R-10 keeps it to ONE
+///                        writer, and as of P4b-T16c that writer exists:**
+///                        screen 11's period editor
+///                        (`PeriodEditorController.submit`). Screen 10 writes
+///                        nothing.
+/// - [deleteEvent]      — `DELETE /cycle/events/{id}` (D-13 soft-delete), whose
+///                        only caller is `PeriodEditorController.delete`.
 ///
 /// **[logDay] and [logEvent] are the two OPPOSITE write rules in this phase,
 /// and this class is where the difference has to be visible.** On [logEvent] an
@@ -330,12 +334,38 @@ class CycleRepository {
   ///   the user's account-creation day minus two years) reaches the user only
   ///   this way — no endpoint returns the account-creation date, so nothing
   ///   here can pre-check it (`survey/backend-endpoints.md:407`).
+  ///
+  /// **Cache: all three invalidation inputs, retrofitted at P4b-T16c with
+  /// this method's first caller (S-6/S-7).** From T14 until then this method
+  /// had no caller anywhere in `client/lib`, so nothing was exposed; the
+  /// retrofit ships in the same commit as the caller rather than before it.
+  ///
+  ///  * [CacheKeys.keysForDate] for the REQUESTED [occurredOn] — T4's named
+  ///    derivation, not re-implemented: a write to a day invalidates that
+  ///    day's own key AND its month bucket, because `eventCount`/`hasNotes`
+  ///    on the calendar row move too.
+  ///  * `invalidateKeysFor` for the day the SERVER says it wrote —
+  ///    `CycleEventResponse.occurredOn`, off the 200 (S-7). The two agree in
+  ///    production, because the echoed value IS the request's own upsert key;
+  ///    the union is passed anyway, because "they agree" is an assumption
+  ///    about the server and clearing an extra key costs one re-fetch. **The
+  ///    one thing this must never be keyed on is a SCREEN's route date**,
+  ///    which is a third value nobody on this side has checked against
+  ///    either.
+  ///  * `invalidateKeysOnAmbiguousFailure` for the requested day — a write
+  ///    that committed server-side and then timed out would otherwise leave
+  ///    the day fresh for the rest of the 5-minute TTL, so the screen shows
+  ///    an error over pre-write data and the user re-submits. On THIS
+  ///    endpoint that re-submit is a second FULL UPSERT, which is why the
+  ///    stale window matters more here than anywhere else in the phase. There
+  ///    is no response to derive keys from on that path, so the request's own
+  ///    day is the only date in hand.
   Future<CycleEventResponse> logEvent({
     required String kind,
     required Date occurredOn,
     required int? flowIntensity,
     required String? notes,
-  }) async {
+  }) {
     final request = LogCycleEventRequest(
       (b) => b
         ..kind = kind
@@ -344,9 +374,9 @@ class CycleRepository {
         ..notes = notes,
     );
 
-    late final CycleEventResponse body;
+    final requestedKeys = CacheKeys.keysForDate(occurredOn.toDateTime());
 
-    await cachedWrite(
+    return cachedWrite<CycleEventResponse>(
       store: _store,
       write: () async {
         final response = await _api.cycleEventsPost(
@@ -358,15 +388,20 @@ class CycleRepository {
             'The server returned an empty cycle-event response.',
           );
         }
-        body = data;
+        return data;
       },
-      // T4's named derivation, not re-implemented: a write to occurredOn
-      // invalidates that day's own key AND its month bucket, because
-      // eventCount / hasNotes on the calendar row move too.
-      invalidateKeys: CacheKeys.keysForDate(occurredOn.toDateTime()),
+      invalidateKeys: requestedKeys,
+      invalidateKeysFor: (saved) {
+        final day = saved.occurredOn;
+        // Every generated property is nullable (§C.0.2). A 200 that somehow
+        // carried no `occurredOn` leaves the static list to do the work
+        // rather than fabricating a date to key on.
+        return day == null
+            ? const <String>[]
+            : CacheKeys.keysForDate(day.toDateTime());
+      },
+      invalidateKeysOnAmbiguousFailure: requestedKeys,
     );
-
-    return body;
   }
 
   // ── deleteEvent ────────────────────────────────────────────────────────────
@@ -390,22 +425,34 @@ class CycleRepository {
   /// device's cache, and the 404 itself confirms the row no longer exists
   /// regardless of which call actually removed it.
   ///
-  /// Any other failure (network, 401, 5xx…) propagates as the typed [Failure]
+  /// **An AMBIGUOUS failure invalidates too, and still throws (S-6,
+  /// retrofitted at P4b-T16c with this method's first caller).** A soft
+  /// delete that committed and then lost its response leaves the row gone on
+  /// the server and present in the cache; without this the user is shown an
+  /// error over an event that no longer exists, for the rest of the
+  /// 5-minute TTL. `invalidateKeysOnAmbiguousFailure` fires only for
+  /// [NetworkFailure]/[ServerFailure] — the two shapes where the outcome is
+  /// genuinely unknown — so it does not overlap the [NotFoundFailure] branch
+  /// below, which is a KNOWN outcome treated as success.
+  ///
+  /// Any other failure (401, 400, 5xx…) propagates as the typed [Failure]
   /// `mapDioException` produces, and invalidates nothing.
   Future<void> deleteEvent({
     required String id,
     required Date occurredOn,
   }) async {
+    final keys = CacheKeys.keysForDate(occurredOn.toDateTime());
     try {
       await cachedWrite(
         store: _store,
         write: () async {
           await _api.cycleEventsIdDelete(id: id);
         },
-        invalidateKeys: CacheKeys.keysForDate(occurredOn.toDateTime()),
+        invalidateKeys: keys,
+        invalidateKeysOnAmbiguousFailure: keys,
       );
     } on NotFoundFailure {
-      for (final key in CacheKeys.keysForDate(occurredOn.toDateTime())) {
+      for (final key in keys) {
         await _store.invalidate(key);
       }
     }
