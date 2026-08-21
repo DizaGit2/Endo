@@ -12,6 +12,7 @@ import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.d
 import 'package:lumen/features/onboarding/presentation/welcome_screen.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
 import 'package:lumen/features/shell/presentation/tab_placeholder_screen.dart';
+import 'package:lumen/features/symptoms/presentation/body_map_screen.dart';
 import 'package:lumen/features/symptoms/presentation/symptom_form_screen.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:lumen/shared/widgets/lumen_scaffold.dart';
@@ -240,6 +241,16 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
   GoRoute(
     path: Routes.symptomsNew,
     builder: (_, _) => const SymptomFormScreen(),
+  ),
+  // Screen 13 (P4b-T21b). A SIBLING of screen 12, not a child of it: screen 12
+  // is a plain GoRoute rather than a shell, so a child route would still push
+  // onto the same root Navigator while implying a nesting that does not exist.
+  // Pushed from screen 12's body-map affordance (R-20), and popped back into
+  // it — screen 12 stays mounted underneath, which is what keeps its
+  // autoDispose form (and every unsent selection on it) alive.
+  GoRoute(
+    path: Routes.symptomsBodyMap,
+    builder: (_, _) => const BodyMapScreen(),
   ),
   StatefulShellRoute.indexedStack(
     builder: (_, _, navigationShell) =>

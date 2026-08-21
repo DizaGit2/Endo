@@ -96,6 +96,46 @@ void main() {
       expect(result.isPlaced('pelvis'), isFalse);
     });
 
+    test('setIntensity(null) un-rates a placed region WITHOUT removing it — '
+        'the tap-to-clear gesture LumenIntensityScale reports (P4b-T21b '
+        'widened the parameter to int? for exactly this)', () {
+      final rated = const BodyMapSelection()
+          .toggle('pelvis')
+          .setIntensity('pelvis', 7);
+
+      final cleared = rated.setIntensity('pelvis', null);
+
+      expect(
+        cleared.isPlaced('pelvis'),
+        isTrue,
+        reason:
+            'clearing a RATING is not removing a POINT — toggle is what '
+            'removes, and conflating the two would make a mis-tapped stop '
+            'delete the placement under it',
+      );
+      expect(cleared.intensities['pelvis'], isNull);
+      expect(cleared.pointCount, 1);
+      expect(cleared.blockReason, kBodyMapMissingIntensityMessage);
+      expect(
+        cleared.toDrafts(),
+        isEmpty,
+        reason: 'an unrated point is never emitted, and never defaulted to 0',
+      );
+    });
+
+    test('setIntensity(null) on an absent region is a no-op too', () {
+      final result = const BodyMapSelection().setIntensity('pelvis', null);
+
+      expect(result.intensities, isEmpty);
+      expect(
+        result.isPlaced('pelvis'),
+        isFalse,
+        reason:
+            'the nullable half must not become a back door that places a '
+            'region the user never marked',
+      );
+    });
+
     test('a code outside the frozen region vocabulary is never placed', () {
       // `unspecified` is deliberately absent from kRegionLabels and must never
       // be produced; a typo'd code must not become a phantom point at all.

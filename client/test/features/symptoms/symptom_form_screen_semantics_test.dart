@@ -35,15 +35,18 @@ import 'package:lumen/api/model/create_symptoms_request.dart';
 import 'package:lumen/api/model/create_symptoms_response.dart';
 import 'package:lumen/api/serializers.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/features/symptoms/application/symptom_form.dart';
 import 'package:lumen/features/symptoms/application/symptom_form_controller.dart';
 import 'package:lumen/features/symptoms/data/symptoms_repository.dart';
+import 'package:lumen/features/symptoms/presentation/body_map_screen.dart';
 import 'package:lumen/features/symptoms/presentation/symptom_form_screen.dart';
 import 'package:lumen/shared/symptom_vocabulary.dart';
 import 'package:lumen/shared/widgets/lumen_error_banner.dart';
 import 'package:lumen/shared/widgets/lumen_input_field.dart';
 import 'package:lumen/shared/widgets/lumen_intensity_scale.dart';
 import 'package:lumen/shared/widgets/lumen_selectable_chip.dart';
+import 'package:lumen/shared/widgets/lumen_selectable_row.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../../support/harness.dart';
@@ -116,6 +119,14 @@ Future<GoRouter> _pumpPushed(
         builder: (_, _) => const Scaffold(body: Center(child: Text('host'))),
       ),
       GoRoute(path: '/pushed', builder: (_, _) => const SymptomFormScreen()),
+      // Screen 13's REAL path constant, so the body-map affordance's push
+      // target is checked against the same string production registers
+      // (P4b-T21b). The production TABLE is exercised in
+      // `test/core/router/body_map_route_test.dart`.
+      GoRoute(
+        path: Routes.symptomsBodyMap,
+        builder: (_, _) => const BodyMapScreen(),
+      ),
     ],
   );
   addTearDown(router.dispose);
@@ -1147,12 +1158,125 @@ void main() {
     expectNoDingbats(tester, screen: 'SymptomFormScreen');
   });
 
-  testWidgets('the body-map hint card is CUT — it ships with screen 13 (T21)', (
-    tester,
-  ) async {
-    await _pumpScreen(tester, api: api);
+  // -------------------------------------------------------------------------
+  // The body-map affordance (P4b-T21b, R-20)
+  // -------------------------------------------------------------------------
+  //
+  // **This group REPLACES T20b's tripwire, which asserted
+  // `find.textContaining('body map')` is `findsNothing`.** That assertion
+  // guarded a ruling — "the hint card is cut until its destination exists" —
+  // which R-20 has now discharged by shipping both halves in one commit. The
+  // tripwire is INVERTED rather than deleted, because deleting it would leave
+  // nothing at all watching this position.
+  //
+  // Every claim below is stated as a LITERAL. An assertion written against
+  // `kSymptomBodyMapLabel` would move with the constant it is checking and
+  // could not fail — and copy that merely avoided the old tripwire's `body
+  // map` substring would have left `findsNothing` green while the ruling
+  // underneath it had changed. That is this phase's signature defect and it
+  // is T21b's named mutation target.
 
-    expect(find.textContaining('body map'), findsNothing);
+  group('the body-map affordance', () {
+    Future<Finder> visibleAffordance(WidgetTester tester) async {
+      final Finder affordance = find.byKey(kSymptomBodyMapKey);
+      await Scrollable.ensureVisible(
+        tester.element(affordance),
+        alignment: 0.5,
+      );
+      await tester.pumpAndSettle();
+      return affordance;
+    }
+
+    testWidgetsWithSemantics('renders, and announces the mockup\'s own copy', (
+      tester,
+    ) async {
+      await _pumpScreen(tester, api: api);
+
+      expectLabeledButton(
+        tester,
+        await visibleAffordance(tester),
+        'Tap body map for precise location',
+        exactLabel: true,
+      );
+    });
+
+    testWidgetsWithSemantics('is a LAUNCHER, not a toggle — it omits '
+        'SemanticsFlag.isSelected rather than announcing "not selected"', (
+      tester,
+    ) async {
+      await _pumpScreen(tester, api: api);
+
+      final SemanticsData data = tester
+          .getSemantics(await visibleAffordance(tester))
+          .getSemanticsData();
+      expect(
+        data.flagsCollection.isSelected,
+        Tristate.none,
+        reason:
+            'passing selected: false is the exact bug T18 shipped — a screen '
+            'reader then announces "not selected" for a control that was '
+            'never selectable',
+      );
+    });
+
+    testWidgets('navigates to screen 13', (tester) async {
+      await _pumpPushed(tester, api: api);
+
+      await tester.tap(await visibleAffordance(tester));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BodyMapScreen), findsOneWidget);
+      // `skipOffstage: false` is the assertion, not a workaround: an opaque
+      // pushed route takes screen 12 OFFSTAGE, and offstage-but-still-MOUNTED
+      // is exactly the property that matters here — a `go` would have
+      // unmounted it, dropping the last listener on the autoDispose form and
+      // taking every unsent selection with it.
+      expect(
+        find.byType(SymptomFormScreen, skipOffstage: false),
+        findsOneWidget,
+        reason:
+            'PUSHED, not `go`: screen 12 stays mounted underneath, which is '
+            'what keeps its autoDispose form — and every unsent selection on '
+            'it — alive while screen 13 writes into it',
+      );
+    });
+
+    testWidgets('is NOT a second IconButton — the freeze test above resolves '
+        'find.byType(IconButton) to a single widget, and a second one would '
+        'throw there rather than here', (tester) async {
+      await _pumpScreen(tester, api: api);
+
+      expect(find.byType(IconButton), findsOneWidget);
+    });
+
+    testWidgets('is frozen mid-write like every other control (S8)', (
+      tester,
+    ) async {
+      // Never completed — the in-flight state is the whole subject, exactly
+      // as in the freeze test above.
+      final release = Completer<Response<CreateSymptomsResponse>>();
+      when(
+        () => api.symptomsPost(
+          createSymptomsRequest: any(named: 'createSymptomsRequest'),
+        ),
+      ).thenAnswer(apiPending(release: release));
+
+      await _pumpScreen(tester, api: api);
+      await _tapStop(tester, kSymptomPainIntensityKey, 4);
+      await _tap(tester, find.text(kSymptomFormSaveLabel));
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      expect(
+        tester
+            .widget<LumenSelectableRow>(find.byKey(kSymptomBodyMapKey))
+            .enabled,
+        isFalse,
+        reason:
+            'navigating away mid-write would strand the batch: this screen '
+            'cannot be popped while submitting, and the affordance must not '
+            'be a second way around that',
+      );
+    });
   });
 }
 

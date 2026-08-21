@@ -29,10 +29,11 @@
 //    (S2/R11) and nothing is carried forward from screen 9 (R-13: a
 //    whole-day pain score is a different table and a different semantic from
 //    a per-symptom intensity).
-//  * the `✦ Tap body map for precise location` card — its destination is
-//    screen 13, which does not exist until T21, and R-10 removes inert
-//    navigation rather than disabling it. T21 ships the card and the route
-//    together (R-20).
+//  * the `✦ Tap body map for precise location` card — CUT at T20b because its
+//    destination did not exist yet, and R-10 removes inert navigation rather
+//    than disabling it. **It ships now**: P4b-T21b added screen 13 and this
+//    affordance in one commit, which is what R-20 requires. Only the `✦` is
+//    still cut — see [_BodyMapAffordance].
 //  * the mockup's 3-4 chips per row — a design sample, not the vocabulary.
 //    Every row renders in full; there is no "show more" affordance, because
 //    R-14's "progressive disclosure" is the chip->intensity one below, and
@@ -48,6 +49,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/symptoms/application/symptom_form.dart';
 import 'package:lumen/features/symptoms/application/symptom_form_controller.dart';
@@ -59,6 +61,7 @@ import 'package:lumen/shared/widgets/lumen_input_field.dart';
 import 'package:lumen/shared/widgets/lumen_intensity_scale.dart';
 import 'package:lumen/shared/widgets/lumen_section_label.dart';
 import 'package:lumen/shared/widgets/lumen_selectable_chip.dart';
+import 'package:lumen/shared/widgets/lumen_selectable_row.dart';
 
 /// The save affordance's label while a previous attempt failed.
 ///
@@ -72,6 +75,24 @@ const String kSymptomFormRetryLabel = 'Try again';
 
 /// The save affordance's label at rest — the mockup's own button copy.
 const String kSymptomFormSaveLabel = 'Save symptom';
+
+/// The body-map affordance's copy — the mockup's own card text, minus its
+/// leading `✦` (U+2726 is not in `kAllowedNonAsciiGlyphs`, so it becomes an
+/// Icon; the `●` on the dashboard's own quick-log tile set that precedent).
+///
+/// Ratified? No — extraction-verbatim from `screen_12_symptom_form.html`, like
+/// most of this screen's copy. It is not on T25's authored list because it is
+/// the mockup's own sentence rather than one this app invented.
+const String kSymptomBodyMapLabel = 'Tap body map for precise location';
+
+/// The key on the body-map affordance.
+///
+/// A row whose accessible name is its drawn copy can be found by that copy —
+/// but a test that located it by its words could not tell "the affordance was
+/// removed" from "its copy changed", which is exactly the tripwire failure
+/// this affordance's own test exists to prevent. The key finds the CONTROL;
+/// the test then states the words separately, as a literal.
+const Key kSymptomBodyMapKey = ValueKey<String>('symptom-body-map');
 
 /// The key on the pain row's intensity block.
 ///
@@ -350,7 +371,94 @@ class _FormBody extends StatelessWidget {
           errorMessage: _notesError(form),
           onChanged: controller.setNotes,
         ),
+
+        const SizedBox(height: 18),
+        // The body-map affordance (P4b-T21b, R-20). CUT at T20b because its
+        // destination did not exist; it ships in the same commit screen 13
+        // does, and this screen's `find.textContaining('body map') ==
+        // findsNothing` tripwire is inverted in the same commit.
+        //
+        // **Position.** The mockup draws this card as the LAST element before
+        // the save button, and that is where it is: the notes box has no
+        // mockup position at all (T20b added it), so "last before the CTA" is
+        // the only reading of the mockup's own placement that survives the
+        // addition. Putting it between RELATED and Notes would split this
+        // screen's input flow with a navigation control.
+        _BodyMapAffordance(enabled: enabled),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The body-map affordance
+// ---------------------------------------------------------------------------
+
+/// Opens screen 13 (`Routes.symptomsBodyMap`) — shipped in the same commit as
+/// its destination (R-20).
+///
+/// `context.push`, never `context.go`: `/symptoms/body-map` is a top-level
+/// non-shell route, so `go` would REPLACE this screen, tear down its
+/// autoDispose form and take every unsent selection with it. Pushing keeps
+/// screen 12 mounted underneath — which is also what keeps the provider screen
+/// 13 writes into alive while screen 13 is on top of it.
+///
+/// **A [LumenSelectableRow] with `selected: null`, not a second
+/// [IconButton].** Two reasons, and both are load-bearing:
+///  * `selected: null` omits `SemanticsFlag.isSelected` entirely rather than
+///    passing `false` and having a screen reader announce "not selected" for a
+///    control that was never selectable — the exact bug T18 shipped and
+///    `lumen_selectable_row.dart:79-92` documents. This is a LAUNCHER; it
+///    toggles nothing.
+///  * `symptom_form_screen_semantics_test.dart`'s freeze test does
+///    `tester.widget<IconButton>(find.byType(IconButton))`, which THROWS on
+///    multiple matches. A second `IconButton` here would redden that test as
+///    what reads like a freeze regression rather than as a widget choice.
+///
+/// **The mockup's colours do not survive the row.** Its card is
+/// `background: var(--sgs); color: var(--sg)` — sage on sage-soft — and
+/// [LumenSelectableRow] owns its own fill (`input`) and border (`border`),
+/// deliberately, so one screen cannot drift. On `--in` the mockup's sage text
+/// would measure **3.26:1** in light theme, under WCAG AA for 11 px body text;
+/// `ink` measures **12.3:1** and is what ships. The sage survives on the icon,
+/// where 3.26:1 clears SC 1.4.11's 3:1 non-text floor. This is a forced choice
+/// rather than a patch of a shipped pair: the mockup's pair does not exist on
+/// this container.
+class _BodyMapAffordance extends StatelessWidget {
+  const _BodyMapAffordance({required this.enabled});
+
+  /// False while a save is in flight (S8) — frozen like every other control,
+  /// so a user cannot navigate away mid-write and strand the batch.
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).extension<LumenColors>()!;
+
+    return LumenSelectableRow(
+      key: kSymptomBodyMapKey,
+      selected: null,
+      enabled: enabled,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      borderRadius: 10,
+      onTap: () => context.push(Routes.symptomsBodyMap),
+      child: Row(
+        children: <Widget>[
+          // The mockup's `✦` glyph is above U+007F and not on
+          // kAllowedNonAsciiGlyphs, so it becomes an Icon (a11y_guard.dart's
+          // dingbat rule). Mapped by this control's ROLE — "open the body
+          // map" — to the standing human figure, which is literally what the
+          // destination draws.
+          Icon(Icons.accessibility_new, size: 14, color: c.sage),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              kSymptomBodyMapLabel,
+              style: TextStyle(fontSize: 11, color: c.ink),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

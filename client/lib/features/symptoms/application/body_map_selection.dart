@@ -158,7 +158,8 @@ class BodyMapSelection {
     return BodyMapSelection(intensities: Map<String, int?>.unmodifiable(next));
   }
 
-  /// Rates an already-placed [region].
+  /// Rates an already-placed [region], or — with a `null` [intensity] — takes
+  /// its rating back, leaving the point placed and unrated.
   ///
   /// **A region that is not placed is a no-op** — the intensity affordance
   /// only exists underneath a placed point, so a call for an absent region is
@@ -167,7 +168,22 @@ class BodyMapSelection {
   /// 0-10 scale is the server's to validate — `NormalizeIntensity`'s range
   /// check against `Symptom.IntensityScale`, `SymptomService.cs:466-472` —
   /// and this file states no clinical bound of its own.
-  BodyMapSelection setIntensity(String region, int intensity) {
+  ///
+  /// **[intensity] is `int?`, and the nullable half is not decoration**
+  /// (widened at T21b, where it acquired its caller). `LumenIntensityScale`
+  /// reports `ValueChanged<int?>` and hands back `null` when the user taps the
+  /// stop that is already selected — the tap-to-clear gesture P4b-T18 added
+  /// precisely because a mis-tap was otherwise permanent and this endpoint has
+  /// no clear affordance. A non-nullable parameter here could not express that
+  /// gesture at all, so screen 13 would have had to reach around this class to
+  /// its public constructor to reproduce a state the class already models.
+  /// `SymptomFormController.setRelatedIntensity` — the shipped sibling this
+  /// whole class mirrors — already takes `int?` for the same reason.
+  ///
+  /// `null` here means "placed, not rated", exactly as it does in
+  /// [intensities]: it is [blockReason]'s objection and [toDrafts]' omission,
+  /// never a logged `0` (D-08).
+  BodyMapSelection setIntensity(String region, int? intensity) {
     if (!intensities.containsKey(region)) return this;
     final next = Map<String, int?>.of(intensities);
     next[region] = intensity;

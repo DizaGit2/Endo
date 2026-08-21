@@ -47,6 +47,25 @@ abstract final class Routes {
   /// its own `/symptoms/:id`, which this path leaves free.
   static const symptomsNew = '/symptoms/new';
 
+  /// Screen 13 (the body map) — a TOP-LEVEL, non-shell route (P4b-T21b).
+  ///
+  /// [symptomsNew]'s shape, for [symptomsNew]'s reasons: the mockup draws no
+  /// bottom nav, and this is a task flow pushed from screen 12 and popped back
+  /// into it. It is a SIBLING of `/symptoms/new` rather than a child of it —
+  /// a child route would nest screen 13's Navigator inside screen 12's, and
+  /// `/symptoms/new` is not itself a shell.
+  ///
+  /// **It writes nothing** (R-11: the batch is screen 12's, all-or-nothing),
+  /// so the path names a surface rather than a resource: `body-map`, not
+  /// `points`. Kebab-case matches nothing else in this file only because
+  /// nothing else in this file is two words.
+  ///
+  /// A COLD deep link here is legal and lands on the screen, with an empty
+  /// autoDispose form behind it — see [BodyMapScreen]'s own dartdoc for what
+  /// leaving then does, and `test/core/router/body_map_route_test.dart` for
+  /// the test that pins it.
+  static const symptomsBodyMap = '/symptoms/body-map';
+
   // ── The five bottom-nav tabs ───────────────────────────────────────────────
   // Order is CLAUDE.md's, and it is the order of the branches in the
   // `StatefulShellRoute.indexedStack` in [lumenRoutes] and of the destinations
