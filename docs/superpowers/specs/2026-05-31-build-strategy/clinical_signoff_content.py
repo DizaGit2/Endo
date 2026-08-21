@@ -757,6 +757,12 @@ ITEMS = [
             "hombro por irritación del nervio frénico**, que no es limpiamente anterior ni posterior. Si su respuesta "
             "es «registren dónde señala la paciente y no pregunten frente o espalda», es una respuesta válida y el "
             "selector se queda fuera.",
+            "**Segunda pregunta, dentro del mismo punto:** en la lista de ocho zonas **no hay ninguna para el "
+            "abdomen superior** (la zona por debajo de las costillas y por encima del ombligo). Hoy, en la "
+            "silueta, un toque en esa zona se registra como **«pecho u hombro»**, sencillamente porque es la "
+            "zona marcada más cercana. ¿Conviene añadir una zona de abdomen superior, conviene que esa franja "
+            "**no sea tocable** (y la paciente la elija de la lista escrita), o le parece aceptable que se "
+            "registre como «pecho u hombro»?",
         ],
     },
 ]

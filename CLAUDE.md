@@ -7,7 +7,7 @@ Lumen is a mobile app for tracking endometriosis symptoms, menstrual cycle phase
 The Lumen app is being built from these mockups in this same repo. The tokens/screens below remain the visual source of truth, but **implementation status never comes from this file**:
 
 - `backend/` — .NET 10 API (`Lumen.Api`/`Application`/`Domain`/`Infrastructure` + `tests/`); build with `dotnet build backend/Lumen.slnx`.
-- `client/` — Flutter app. **Always run flutter/dart with `PUB_CACHE=C:\pub_cache`** — the user-profile path contains a space, which breaks Dart native-asset build hooks ("hook.dill not found" → `flutter clean; flutter pub get` resets it).
+- `client/` — Flutter app. **Always run flutter/dart with `PUB_CACHE=C:\pub_cache`** — the user-profile path contains a space, which breaks Dart native-asset build hooks ("hook.dill not found" → `flutter clean; flutter pub get` resets it). **Read the last line of the output rather than trusting the exit code:** a `PUB_CACHE` value mangled by shell escaping (the backslash is easy to lose) makes the run die at *"Failed to update packages"* while the pipeline still reports **exit 0** — which reads as a clean `analyze` and is how a false green gets into a task report (verified 2026-08-21, P4b-T21a).
 - `deploy/` — Docker Compose dev stack (Caddy / Postgres / Keycloak / Vault): `docker compose -f deploy/docker-compose.yml up -d`.
 - `docs/superpowers/plans/lumen-build.md` — **the living build plan; its §1 ledger is the only authority for what is done and what runs next.** Process: `docs/superpowers/RUNBOOK.md`. Architecture: `docs/ARCHITECTURE.md`.
 - Root `index.html`, `screens.html`, `viewer.html`, `contact_sheet.html`, `flow_diagram.html` are design-system viewers/deliverables, not app code.

@@ -219,6 +219,8 @@ Screen 13 asks the user to mark **where** the pain is on a body silhouette. Each
 
 **The question, per region:** for `lower_abdomen`, `pelvis`, `lower_back`, `legs`, `bowel_rectal`, `bladder`, `vaginal`, `chest_shoulder` — **front only, back only, both, or should the app not ask at all?** Note `chest_shoulder` is in the vocabulary precisely because of **phrenic-nerve referred shoulder pain** (C-14), which is neither cleanly anterior nor posterior; and a *referred* pain location is where the patient **feels** it, which may be a fourth answer ("record where she points, do not ask front or back").
 
+**Second question, same item (added 2026-08-21 from T21a's review):** the 8 regions contain **no upper-abdomen / epigastric value**. The silhouette's torso is partitioned with no dead band, so a tap below the ribs and above the navel resolves to **`chest_shoulder`** — the nearest zone, not a claim we want to make silently. Should the vocabulary gain an upper-abdomen region, should that band be untappable (the user picks from the list instead), or is resolving it to `chest_shoulder` acceptable? Recorded rather than settled in geometry, per R10's *"no hit zone is always the safe answer"*.
+
 **Source:** none — this is an open ask, not a cited default. **Sign-off:** **OPEN; no PO-interim value. Blocks the front/back control only, not v1.**
 
 ---

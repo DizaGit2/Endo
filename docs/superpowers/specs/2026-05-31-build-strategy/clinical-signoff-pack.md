@@ -201,6 +201,8 @@ It matters more than it looks: the side value is **never shown back to the patie
 
 **The question:** for each region — `lower_abdomen`, `pelvis`, `lower_back`, `legs`, `bowel_rectal`, `bladder`, `vaginal`, `chest_shoulder` — should the app offer it on the **front**, the **back**, **both**, or **not ask at all**? Please note `chest_shoulder` is in the vocabulary because of **phrenic-nerve referred shoulder pain**, which is neither cleanly anterior nor posterior; if "record where she points, don't ask front or back" is the better clinical answer, that is a valid reply and the control stays out.
 
+**A second question under the same item.** The 8 regions include nothing for the **upper abdomen** (the area below the ribs and above the navel). On the body outline that area currently resolves to **chest/shoulder**, simply because it is the nearest marked zone. Should the list gain an upper-abdomen region, should that area not be tappable at all (the patient picks from the written list instead), or is chest/shoulder an acceptable answer there?
+
 **Source:** none — an open ask, not a cited default.
 **Sign-off / your ruling: ______________________  Name / date: ______________**
 
