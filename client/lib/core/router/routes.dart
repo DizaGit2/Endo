@@ -29,6 +29,24 @@ abstract final class Routes {
   /// in the shell's controller instead.
   static const onboarding = '/onboarding';
 
+  /// Screen 12 (the symptom form) — a TOP-LEVEL, non-shell route (P4b-T20b).
+  ///
+  /// **Outside the shell, and exactly one URL.** The mockup draws no bottom
+  /// nav, and this is a task flow you enter and leave — the same shape
+  /// [account] and [onboarding] already have, so it is not a new routing
+  /// pattern for this app. It is PUSHED (never `go`) from whichever tab the
+  /// user was in — today the Home branch's Symptom quick-log tile and screen
+  /// 9's "+ Add details" — so popping returns them to that branch with its
+  /// own back stack intact. Registering it under one tab instead would have
+  /// given the same screen two addresses with different back behaviour, which
+  /// is the problem R-19 exists to prevent.
+  ///
+  /// `/new` rather than a bare `/symptoms`: T19 cut `PUT` and `DELETE`, so
+  /// this screen is CREATE-ONLY, and `/symptoms` is the collection this app
+  /// has no browse surface for. Symptom edit is booked for P6 and will want
+  /// its own `/symptoms/:id`, which this path leaves free.
+  static const symptomsNew = '/symptoms/new';
+
   // ── The five bottom-nav tabs ───────────────────────────────────────────────
   // Order is CLAUDE.md's, and it is the order of the branches in the
   // `StatefulShellRoute.indexedStack` in [lumenRoutes] and of the destinations

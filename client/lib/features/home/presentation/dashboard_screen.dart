@@ -39,14 +39,17 @@
 //    P5 — a "quick log" row containing only "More" is not a quick-log row.
 //    **T18 adds the row back with its one real member**, Mood, together with
 //    screen 9 — the destination ships in the SAME commit, which is what R-20
-//    requires. Symptom and Activity remain absent until T20 and P5
-//    respectively; a one-tile "Quick log" row is not the same defect the cut
-//    row was: every tile IN it works.
+//    requires. **P4b-T20b adds the Symptom tile the same way**, together with
+//    screen 12 and its `/symptoms/new` route. Activity remains absent until
+//    P5; a two-tile "Quick log" row is not the same defect the cut row was:
+//    every tile IN it works.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/formatters/lumen_formats.dart';
+import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/core/time/greeting_clock.dart'
     show greetingTimeOfDayProvider;
@@ -199,7 +202,17 @@ class _LoadedBody extends ConsumerWidget {
             const SizedBox(height: 16),
             const LumenFieldLabel('Quick log'),
             const SizedBox(height: 8),
-            const Row(children: [Expanded(child: _MoodQuickLogTile())]),
+            // The mockup's `.qr` row at its 6 px gap. Symptom is FIRST, the
+            // mockup's own order. Activity and More are still absent — their
+            // destinations are P5 and later, and R-20 is what forbids
+            // shipping a tile ahead of one.
+            const Row(
+              children: [
+                Expanded(child: _SymptomQuickLogTile()),
+                SizedBox(width: 6),
+                Expanded(child: _MoodQuickLogTile()),
+              ],
+            ),
           ],
         ),
       ),
@@ -482,6 +495,57 @@ class _MoodCard extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
+// The Symptom quick-log tile (P4b-T20b, R-20)
+// ---------------------------------------------------------------------------
+
+/// Opens screen 12 (`Routes.symptomsNew`) — the second member of the mockup's
+/// quick-log row, shipped in the same commit as its destination (R-20).
+///
+/// `context.push`, never `context.go`: `/symptoms/new` is a top-level
+/// non-shell route, so `go` would REPLACE the Home branch instead of stacking
+/// over it and there would be nothing for screen 12's back affordance to
+/// return to.
+///
+/// Built on [LumenSelectableRow] with `selected: null` for the same reason
+/// [_MoodQuickLogTile] is: this is a LAUNCHER, never a toggle, so there is no
+/// selected state to announce.
+class _SymptomQuickLogTile extends StatelessWidget {
+  const _SymptomQuickLogTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).extension<LumenColors>()!;
+
+    return LumenSelectableRow(
+      selected: null,
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      borderRadius: 10,
+      onTap: () => context.push(Routes.symptomsNew),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // The mockup's `.qi` glyph, `●` — above U+007F and not on
+          // kAllowedNonAsciiGlyphs, so it becomes an Icon (a11y_guard.dart's
+          // dingbat rule). Mapped by this tile's ROLE — "open the symptom
+          // logger" — to `Icons.healing`, Material's general first-aid /
+          // ailment glyph.
+          //
+          // **`Icons.sick` is deliberately NOT used**, though it is the
+          // closer literal match: it draws a face with a thermometer, which
+          // asserts a state about the USER on a control that is only an entry
+          // point — the same "do not let an icon make a judgement the
+          // vocabulary withholds" rule screen 9's `_moodGlyph` follows for
+          // "Steady". A symptom logged at intensity 0 is a valid entry here.
+          Icon(Icons.healing, size: 16, color: c.accent),
+          const SizedBox(height: 2),
+          Text('Symptom', style: TextStyle(fontSize: 9, color: c.ink)),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The Mood quick-log tile (P4b-T18, R-20)
 // ---------------------------------------------------------------------------
 
@@ -495,9 +559,9 @@ class _MoodCard extends StatelessWidget {
 /// as every other row in the app for free, and its unselected colours
 /// (`c.input`/`c.border`) already match the mockup's idle `.q` exactly.
 ///
-/// A bare `Row` with one `Expanded` child in the caller, rather than sizing
-/// this tile itself — T20 adds a Symptom tile beside it, and the row is
-/// already shaped to take a second `Expanded` sibling without restructuring.
+/// A bare `Row` with `Expanded` children in the caller, rather than sizing
+/// this tile itself — which is what let P4b-T20b add [_SymptomQuickLogTile]
+/// beside it without restructuring anything here.
 class _MoodQuickLogTile extends StatelessWidget {
   const _MoodQuickLogTile();
 

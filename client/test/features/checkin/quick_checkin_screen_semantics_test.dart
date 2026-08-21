@@ -364,8 +364,68 @@ void main() {
           .getSemantics(find.text('Low'))
           .getSemanticsData();
       expect(lowSemantics.flagsCollection.isEnabled, Tristate.isFalse);
+
+      // …and so is "+ Add details" (P4b-T20b). It performs the SAME write
+      // the CTA does, so leaving it live mid-flight would be a second route
+      // to a duplicate check-in.
+      expect(
+        tester
+            .widget<TextButton>(
+              find.ancestor(
+                of: find.text(kQuickCheckinAddDetailsLabel),
+                matching: find.byType(TextButton),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
     },
   );
+
+  // -------------------------------------------------------------------------
+  // "+ Add details" — R-13's save-first route into screen 12 (P4b-T20b)
+  // -------------------------------------------------------------------------
+  //
+  // The NAVIGATION half (save-first, and no navigation on a failed save) is
+  // proven against the real route table in
+  // `test/core/router/symptom_form_route_test.dart` — this sheet has no
+  // GoRouter above it here. What belongs in this file is the control itself.
+
+  group('"+ Add details"', () {
+    testWidgetsWithSemantics('ships as a labelled button, gated exactly like '
+        'the Save CTA', (tester) async {
+      await _pumpScreen(tester, api: api);
+
+      // Nothing touched yet: announced, but disabled and with no tap action
+      // — never a live button that silently does nothing.
+      expectLabeledButton(
+        tester,
+        find.text(kQuickCheckinAddDetailsLabel),
+        kQuickCheckinAddDetailsLabel,
+        requireTapAction: false,
+      );
+      expect(
+        tester
+            .getSemantics(find.text(kQuickCheckinAddDetailsLabel))
+            .getSemanticsData()
+            .flagsCollection
+            .isEnabled,
+        Tristate.isFalse,
+      );
+
+      // The CTA is disabled in this state too — the two move together,
+      // because "+ Add details" ALWAYS saves first (R-13) and so has
+      // nothing to do until there is a check-in to save.
+      await tester.tap(find.text('5'));
+      await tester.pump();
+
+      expectLabeledButton(
+        tester,
+        find.text(kQuickCheckinAddDetailsLabel),
+        kQuickCheckinAddDetailsLabel,
+      );
+    });
+  });
 
   // -------------------------------------------------------------------------
   // Failure surface

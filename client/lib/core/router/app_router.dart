@@ -12,6 +12,7 @@ import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.d
 import 'package:lumen/features/onboarding/presentation/welcome_screen.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
 import 'package:lumen/features/shell/presentation/tab_placeholder_screen.dart';
+import 'package:lumen/features/symptoms/presentation/symptom_form_screen.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:lumen/shared/widgets/lumen_scaffold.dart';
 
@@ -186,10 +187,14 @@ class _RouterRefreshNotifier extends ChangeNotifier {
 ///
 /// Two shapes live here, and the split is the whole point:
 ///
-/// - **Outside the shell** — splash, welcome, account, onboarding. These are
-///   pre-app surfaces: the mockups for screens 1–7 have no bottom nav, and a
-///   user part-way through onboarding must not be handed a nav bar that lets
-///   them wander off. Screen 31 (profile) is NOT out here — see below.
+/// - **Outside the shell** — splash, welcome, account, onboarding, and (since
+///   P4b-T20b) screen 12 at [Routes.symptomsNew]. The first four are pre-app
+///   surfaces: the mockups for screens 1–7 have no bottom nav, and a user
+///   part-way through onboarding must not be handed a nav bar that lets them
+///   wander off. Screen 12 is out here for a different reason — it is a task
+///   flow pushed from inside a branch and popped back into it — but the same
+///   test applies: its mockup draws no bottom nav either. Screen 31 (profile)
+///   is NOT out here — see below.
 /// - **Inside the shell** — the five bottom-nav tabs, as branches of a
 ///   [StatefulShellRoute.indexedStack] in CLAUDE.md's order. `indexedStack`
 ///   (rather than a plain [ShellRoute] over an [IndexedStack] of tab roots)
@@ -224,6 +229,17 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
   GoRoute(
     path: Routes.onboarding,
     builder: (_, _) => const OnboardingShellScreen(),
+  ),
+  // Screen 12 (P4b-T20b). Out here WITH the pre-app surfaces rather than
+  // under a tab, and for a related reason: it is a task flow entered and left
+  // (the mockup draws no bottom nav), so it renders over the whole app and is
+  // PUSHED from whichever branch the user was in. `context.pop()` then returns
+  // them to that branch — the deciding property, since mounting it under one
+  // tab would either strand a user who arrived from another or give the screen
+  // two URLs with divergent back behaviour.
+  GoRoute(
+    path: Routes.symptomsNew,
+    builder: (_, _) => const SymptomFormScreen(),
   ),
   StatefulShellRoute.indexedStack(
     builder: (_, _, navigationShell) =>

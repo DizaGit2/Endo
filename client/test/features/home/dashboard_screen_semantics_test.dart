@@ -13,6 +13,7 @@
 import 'dart:async';
 import 'dart:ui' show Tristate;
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/date.dart';
@@ -478,22 +479,23 @@ void main() {
       expect(find.textContaining('Typical for phase'), findsNothing);
     });
 
-    testWidgets(
-      'P4b-T18: the "Quick log" row ships with its one real member, Mood '
-      '— Symptom (T20) and Activity (P5) are still absent, and shipping '
-      'them without a destination is what R-20 forbids, not a row with '
-      'ONE working tile in it',
-      (tester) async {
-        await _pump(tester, () => _FreshDashboard(_view()));
+    testWidgets('P4b-T20b: the "Quick log" row now ships its two real members, '
+        'Symptom and Mood — Activity (P5) is still absent, and shipping it '
+        'without a destination is what R-20 forbids, not a row whose every '
+        'tile works', (tester) async {
+      await _pump(tester, () => _FreshDashboard(_view()));
 
-        // LumenFieldLabel DRAWS its text uppercased ("QUICK LOG") — the
-        // sentence-case string is what it ANNOUNCES, a separate Semantics
-        // value, not what a plain `find.text` search sees.
-        expect(find.text('QUICK LOG'), findsOneWidget);
-        expect(find.text('Symptom'), findsNothing);
-        expect(find.text('Activity'), findsNothing);
-      },
-    );
+      // LumenFieldLabel DRAWS its text uppercased ("QUICK LOG") — the
+      // sentence-case string is what it ANNOUNCES, a separate Semantics
+      // value, not what a plain `find.text` search sees.
+      expect(find.text('QUICK LOG'), findsOneWidget);
+      // T18 asserted this findsNothing. **The flip is the intended
+      // signal**, not a broken test: T20b ships screen 12 and the
+      // `/symptoms/new` route in the same commit as this tile, which is
+      // exactly what R-20 asks for.
+      expect(find.text('Symptom'), findsOneWidget);
+      expect(find.text('Activity'), findsNothing);
+    });
 
     testWidgets('the Mood CARD\'s "MOOD" label and the Mood TILE\'s "Mood" '
         'label are both present, distinguishably cased', (tester) async {
@@ -521,18 +523,21 @@ void main() {
 
   group('interactive affordances (R-20)', () {
     testWidgetsWithSemantics(
-      'the loaded dashboard offers EXACTLY ONE button — the Mood tile — '
-      'no tile ships without its destination',
+      'the loaded dashboard offers EXACTLY TWO buttons — the Symptom and '
+      'Mood tiles — no tile ships without its destination',
       (tester) async {
         await _pump(tester, () => _FreshDashboard(_view()));
 
         expect(
           kAnyButtonSemantics,
-          findsNWidgets(1),
+          findsNWidgets(2),
           reason:
-              'screen 8 ships with exactly the Mood tile (T18) until T20 '
-              'adds Symptom together with its destination (R-20); any '
-              'OTHER button here today would point at nothing',
+              'screen 8 ships with exactly the Mood tile (T18) and the '
+              'Symptom tile (T20b, together with screen 12 and its route); '
+              'any OTHER button here today would point at nothing — '
+              'Activity has no destination until P5. The count moved from '
+              '1 to 2 rather than being deleted, the same way T18 moved it '
+              'from 0 to 1.',
         );
       },
     );
@@ -553,6 +558,56 @@ void main() {
         );
       },
     );
+  });
+
+  // ---------------------------------------------------------------------
+  // The Symptom quick-log tile (P4b-T20b)
+  // ---------------------------------------------------------------------
+  //
+  // Where it NAVIGATES to is proven against the real route table in
+  // `test/core/router/symptom_form_route_test.dart` — a plain `pumpApp` has
+  // no GoRouter to push into. What belongs here is the tile itself.
+
+  group('the Symptom quick-log tile', () {
+    testWidgetsWithSemantics('is a labelled, tappable button', (tester) async {
+      await _pump(tester, () => _FreshDashboard(_view()));
+
+      expectLabeledButton(tester, find.text('Symptom'), 'Symptom');
+    });
+
+    testWidgetsWithSemantics(
+      'announces no selected state at all — a pure launcher, not a toggle',
+      (tester) async {
+        await _pump(tester, () => _FreshDashboard(_view()));
+
+        final data = tester
+            .getSemantics(find.text('Symptom'))
+            .getSemanticsData();
+        expect(
+          data.flagsCollection.isSelected,
+          Tristate.none,
+          reason:
+              'the same defect M-3 fixed on the Mood tile: `selected: '
+              'false` would announce "not selected" for a control that was '
+              'never selectable',
+        );
+      },
+    );
+
+    testWidgets('its glyph does not judge the user — Icons.healing, never '
+        'Icons.sick', (tester) async {
+      await _pump(tester, () => _FreshDashboard(_view()));
+
+      expect(find.byIcon(Icons.healing), findsOneWidget);
+      expect(
+        find.byIcon(Icons.sick),
+        findsNothing,
+        reason:
+            'a face with a thermometer asserts a state about the USER on a '
+            'control that is only an entry point — a symptom logged at '
+            'intensity 0 is a valid entry here',
+      );
+    });
   });
 
   // ---------------------------------------------------------------------

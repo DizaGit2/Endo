@@ -9,9 +9,10 @@
 // merely against the mockup. Read that file first.
 //
 // Cut from the mockup, and why:
-//  * `+ Add details` — its destination (screen 12) does not exist until T20,
-//    and R-20 forbids shipping an affordance without one. T20 ships the
-//    button together with screen 12 and R-13's save-first behaviour.
+//  * `+ Add details` — WAS cut at T18: its destination (screen 12) did not
+//    exist yet, and R-20 forbids shipping an affordance without one.
+//    **P4b-T20b ships it, together with screen 12 and R-13's save-first
+//    behaviour** — see [kQuickCheckinAddDetailsLabel].
 //  * the mockup's 0-9 pain row — D-08 corrects it to 0-10 (eleven stops);
 //    see `LumenIntensityScale`.
 //  * the mockup's "Luteal · Day 22" text dimmed behind the sheet — that is
@@ -20,7 +21,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/checkin/application/quick_checkin_controller.dart';
 import 'package:lumen/shared/mood_labels.dart';
@@ -41,6 +44,25 @@ import 'package:lumen/shared/widgets/lumen_selectable_row.dart';
 /// second, duplicate tap could come from, and the retry trap's "exactly one
 /// request" assertion is meaningful against it.
 const String kQuickCheckinRetryLabel = 'Try again';
+
+/// The mockup's `.more` affordance, verbatim — the route from a 15-second
+/// check-in into screen 12's fuller form (P4b-T20b).
+///
+/// **It SAVES THE CHECK-IN FIRST (R-13), and does not navigate at all if that
+/// save fails.** Screen 12 opens EMPTY — nothing is carried across, because a
+/// whole-day pain score and a per-symptom intensity are different tables with
+/// different meanings — so leaving this sheet is the only chance the pain and
+/// mood the user just entered will ever be written. `POST /checkin/quick` has
+/// no clear affordance and nothing on screen 12 would say the answer was
+/// lost.
+///
+/// **Gated exactly like the Save CTA** (`!canSubmit || submitting`), for a
+/// consequence of the above rather than for symmetry: this control's whole
+/// behaviour is "save, then go", so offering it with nothing to save would
+/// mean either a dead tap or a silent second meaning ("go without saving").
+/// The dashboard's own Symptom quick-log tile is the route to screen 12 for a
+/// user who has no check-in to make.
+const String kQuickCheckinAddDetailsLabel = '+ Add details';
 
 /// Screen 9's content, hosted inside a [LumenBottomSheet] by
 /// `showLumenBottomSheet`. Not a route — it is a modal, opened from the
@@ -155,8 +177,72 @@ class QuickCheckinScreen extends ConsumerWidget {
                     ),
             ),
           ),
+          // The mockup's `.more`: a full-width, borderless, muted 11 px
+          // button under the CTA.
+          const SizedBox(height: 8),
+          _AddDetailsButton(form: form, controller: controller),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// "+ Add details" — R-13's save-first route into screen 12 (P4b-T20b)
+// ---------------------------------------------------------------------------
+
+/// See [kQuickCheckinAddDetailsLabel] for the ruling this implements.
+class _AddDetailsButton extends StatelessWidget {
+  const _AddDetailsButton({required this.form, required this.controller});
+
+  final QuickCheckinForm form;
+  final QuickCheckinController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).extension<LumenColors>()!;
+
+    return TextButton(
+      onPressed: (!form.canSubmit || form.submitting)
+          ? null
+          : () async {
+              // Captured BEFORE the await: this widget lives inside the
+              // sheet's own route, and the pop below starts tearing that
+              // subtree down, so `context` must not be used to look either
+              // one up afterwards.
+              final NavigatorState navigator = Navigator.of(context);
+              final GoRouter router = GoRouter.of(context);
+
+              final bool saved = await controller.submit();
+
+              // R-13's whole point: a FAILED save does not navigate. The
+              // sheet stays exactly as it is, with the banner and the
+              // same-button retry — leaving would discard the answer
+              // silently, and this endpoint has no clear affordance.
+              if (!saved) return;
+              if (!context.mounted) return;
+
+              // Dismiss FIRST, then push. The sheet is an imperative route on
+              // the ROOT navigator (`showLumenBottomSheet`'s
+              // `useRootNavigator: true`) and `/symptoms/new` is a top-level
+              // go_router page on that same navigator; pushing while the
+              // sheet is still up would leave a live modal sitting over — or
+              // under — a full-screen route, with its scrim still swallowing
+              // taps.
+              navigator.pop();
+              router.push(Routes.symptomsNew);
+            },
+      style: TextButton.styleFrom(
+        foregroundColor: c.muted,
+        // The mockup's `.more` is muted in BOTH states; Material's default
+        // disabled foreground is the theme's `onSurface` at 38%, which is a
+        // different hue entirely.
+        disabledForegroundColor: c.muted.withValues(alpha: 0.4),
+        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w400),
+        minimumSize: const Size.fromHeight(0),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+      ),
+      child: const Text(kQuickCheckinAddDetailsLabel),
     );
   }
 }

@@ -1,6 +1,11 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/time/server_today.dart';
+import 'package:lumen/features/cycle/application/cycle_calendar_controller.dart';
+import 'package:lumen/features/cycle/application/day_detail_controller.dart';
+import 'package:lumen/features/home/application/dashboard_controller.dart';
 import 'package:lumen/features/symptoms/application/symptom_batch_assembler.dart';
 import 'package:lumen/features/symptoms/application/symptom_form.dart';
 import 'package:lumen/features/symptoms/data/symptoms_repository.dart';
@@ -132,6 +137,15 @@ class SymptomFormController extends Notifier<SymptomForm> {
     state = form.copyWith(submitting: true, clearSubmission: true);
 
     Failure? rejected;
+    // The day the batch landed on, captured inside the `try` below and read
+    // again by [_refreshDependents] (P4b-T20b). Screen 12 draws no date
+    // affordance, so every entry's `occurredAt` is null and the server dates
+    // the whole batch by its own `now` — which is the same civil day
+    // `sessionTodayProvider` just confirmed. Held as a local rather than
+    // re-read after the await: a second read could, in principle, answer a
+    // different day across midnight, and the screens to refresh are the ones
+    // for the day this write actually reached.
+    DateTime? savedDay;
     try {
       // R12 — the server-confirmed "today", exactly as
       // `quick_checkin_controller.dart:204,212` reads it. `Date.toDateTime()`
@@ -141,9 +155,10 @@ class SymptomFormController extends Notifier<SymptomForm> {
       // `symptoms_repository.dart`'s own documented M-2 regression, and the
       // dedicated R12 test in `symptom_form_controller_test.dart`).
       final today = await ref.read(sessionTodayProvider.future);
+      savedDay = today.toDateTime();
       await ref
           .read(symptomsRepositoryProvider)
-          .createBatch(entries: drafts, fallbackDay: today.toDateTime());
+          .createBatch(entries: drafts, fallbackDay: savedDay);
     } on Failure catch (failure) {
       rejected = failure;
     } catch (_) {
@@ -186,8 +201,77 @@ class SymptomFormController extends Notifier<SymptomForm> {
     // exactly as they were, the `QuickCheckinController` precedent: the
     // controller is `autoDispose`, so the screen closing tears the whole
     // form down rather than this method resetting it.
+    if (savedDay != null) _refreshDependents(savedDay);
+
     state = state.copyWith(submitting: false, clearSubmission: true);
     return true;
+  }
+
+  /// Tells the screens that already show [day] to re-fetch (S12, P4b-T20b).
+  ///
+  /// **Why this is here at all.** `SymptomsRepository.createBatch` invalidates
+  /// the CACHE keys for every day it wrote, but an already-mounted
+  /// `ref.watch`-based controller does not re-read its repository because a
+  /// cache entry changed — it has to be invalidated itself. Without this the
+  /// save succeeds and the user pops back to a dashboard, a day view or a
+  /// calendar still rendering the pre-write day, with nothing on screen
+  /// saying so. **This is invisible to any test that only asserts the POST**,
+  /// which is why T20a's report flagged it as an open gap rather than
+  /// closing it: the decision needs to know which SCREENS exist, and a
+  /// headless unit has no business knowing that.
+  ///
+  /// It lives on the controller rather than on the screen for the same reason
+  /// `QuickCheckinController._refreshDependents` does: the refresh belongs to
+  /// the successful write, not to whatever widget happened to trigger it, and
+  /// [day] is only knowable here — it is the value [submit] just read from
+  /// [sessionTodayProvider] and handed to the repository.
+  ///
+  /// **What is refreshed, and under what guard:**
+  ///
+  ///  * **The dashboard, unconditionally.** It renders today's own pain/mood
+  ///    and is where both routes to screen 12 start. [Ref.invalidate] never
+  ///    CREATES a provider element, so this costs nothing when it is not
+  ///    mounted.
+  ///  * **The day-detail controller for [day], only if it already exists.**
+  ///    `dayDetailControllerProvider` is an `autoDispose` FAMILY, and the
+  ///    check is what stops this from building a controller — and firing its
+  ///    two GETs — for a Cycle-tab screen nobody has opened. [Ref.exists] is
+  ///    the one way to ask that WITHOUT creating one. Only that day's
+  ///    controller is touched: the batch reached exactly one day, and
+  ///    invalidating others would re-fetch days this write cannot have
+  ///    changed.
+  ///
+  ///    **No `hasValue` half here, unlike the calendar below — deliberately.**
+  ///    That half exists on screen 9 because `CycleCalendarController
+  ///    .refresh()` falls back to `invalidateSelf()` when it has no value,
+  ///    which snaps the visible month back to today. `DayDetailController`
+  ///    has no `refresh()` and no such branch — it is one `build()` for one
+  ///    fixed date — so the only tool is `invalidate`, and invalidating a
+  ///    STILL-LOADING day view is strictly more correct than skipping it:
+  ///    that in-flight read was issued before this write committed and would
+  ///    otherwise land as pre-write data with nothing to correct it.
+  ///  * **The cycle calendar, only if it already exists AND already has a
+  ///    value** — screen 9's guard verbatim, for screen 9's reason: the same
+  ///    `refresh()`, the same snap-back. A symptom changes that day's
+  ///    `symptomCount` and therefore whether the cell draws a dot at all, so
+  ///    an open calendar is genuinely out of date after this write.
+  ///
+  /// Fire-and-forget, like screen 9's: the calendar screen (if mounted) shows
+  /// its own refresh treatment, and [submit] does not await it.
+  void _refreshDependents(DateTime day) {
+    ref.invalidate(dashboardControllerProvider);
+
+    final dayDetail = dayDetailControllerProvider(day);
+    if (ref.exists(dayDetail)) {
+      ref.invalidate(dayDetail);
+    }
+
+    if (ref.exists(cycleCalendarControllerProvider)) {
+      final calendarState = ref.read(cycleCalendarControllerProvider);
+      if (calendarState.hasValue) {
+        unawaited(ref.read(cycleCalendarControllerProvider.notifier).refresh());
+      }
+    }
   }
 }
 
