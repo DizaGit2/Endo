@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Contenido en español del documento de revisión clínica para el especialista.
-Fuente de verdad de los valores: clinical-signoff-pack.md (C-01 … C-15, PO-interim
+Fuente de verdad de los valores: clinical-signoff-pack.md (C-01 … C-16, PO-interim
 2026-07-14). Aquí solo se traduce y se explica sin jerga técnica.
 
 Convención de marcado: **texto** = negrita. Los bloques de `decision` pueden ser
@@ -11,14 +11,15 @@ str (párrafo), ("bullets", [...]), ("numbered", [...]),
 
 META = {
     "title": "Revisión clínica para el especialista",
-    "subtitle": "Quince decisiones médicas que necesitan su validación antes de incorporarse a la aplicación",
+    "subtitle": "Dieciséis decisiones médicas que necesitan su validación antes de incorporarse a la aplicación",
     "for": "Especialista en ginecología / endocrinología reproductiva (los puntos C-09 y C-11 los revisará además un bioestadístico).",
     "from": "Carolina, responsable del producto Lumen, y el equipo de desarrollo.",
-    "date": "20 de agosto de 2026",
-    "version": "1.0 (primera ronda de revisión)",
-    "status": "Todas las decisiones de este documento son **provisionales**: las fijó Carolina como punto de partida, "
+    "date": "21 de agosto de 2026",
+    "version": "1.1 (primera ronda; el punto C-16 se añadió el 21 de agosto de 2026)",
+    "status": "Las decisiones de este documento son **provisionales**: las fijó Carolina como punto de partida, "
               "apoyándose en guías clínicas publicadas. **Ninguna ha sido validada todavía por un médico.** "
-              "Solo se incorporará a la aplicación lo que usted apruebe.",
+              "Solo se incorporará a la aplicación lo que usted apruebe. **El punto C-16 es la excepción: no lleva "
+              "decisión provisional, porque Carolina prefirió no inventar una respuesta a una pregunta clínica.**",
 }
 
 INTRO = [
@@ -41,7 +42,7 @@ INTRO = [
           "que indique; lo que no, se quedará fuera hasta resolverlo con usted."),
 
     ("h", "Cómo está organizado este documento y cómo responder"),
-    ("p", "Hay **quince puntos**, agrupados en cuatro bloques (A. el ciclo y sus fases; B. hormonas y análisis; "
+    ("p", "Hay **dieciséis puntos**, agrupados en cuatro bloques (A. el ciclo y sus fases; B. hormonas y análisis; "
           "C. lo que la aplicación calcula y muestra; D. población, catálogos y seguridad). Cada punto tiene la misma "
           "estructura:"),
     ("numbered", [
@@ -97,9 +98,9 @@ SECTIONS = [
               "el médico. Los puntos C-09 y C-11 los revisará además un bioestadístico; si la parte estadística escapa "
               "a su ámbito, céntrese en el contenido clínico."},
     {"key": "D", "title": "Bloque D · Población, catálogos y seguridad",
-     "intro": "Estos cuatro puntos definen a quién va dirigida la aplicación y qué pasa cuando no hay menstruación, la "
+     "intro": "Estos cinco puntos definen a quién va dirigida la aplicación y qué pasa cuando no hay menstruación, la "
               "lista de medicamentos, el vocabulario de estadios, cirugías y síntomas, y —el más importante— los avisos "
-              "de seguridad ante síntomas de alarma."},
+              "de seguridad ante síntomas de alarma, y el mapa corporal."},
 ]
 
 ITEMS = [
@@ -722,8 +723,43 @@ ITEMS = [
             "¿La **redacción** le parece lo bastante clara y prudente: ni alarmista ni tranquilizadora en exceso?",
         ],
     },
+    {
+        "code": "C-16", "section": "D",
+        "title": "Mapa corporal: ¿cada zona va en la vista de frente, en la de espalda, o en ambas?",
+        "short": "Mapa corporal: frente / espalda",
+        "tags": ["Formulario de síntomas", "Mapa corporal", "Informe para el médico"],
+        "decision_label": "Aquí NO hay decisión provisional de Carolina",
+        "usage": [
+            "En la pantalla del **mapa corporal**, la paciente marca sobre una silueta **dónde le duele**. Cada marca "
+            "guarda dos cosas: la **zona anatómica** (las ocho que usted ya revisó en el punto C-14) y el **lado**: "
+            "**frente** o **espalda**.",
+            "Las zonas están ratificadas. **El reparto entre frente y espalda no lo está**, y no hemos encontrado "
+            "ninguna fuente publicada que lo establezca.",
+            "Importa más de lo que parece: ese dato **nunca se le muestra de vuelta a la paciente**, y la primera "
+            "versión **no permite corregir ni borrar** un síntoma ya registrado. Un valor equivocado se escribe una "
+            "sola vez, de forma invisible, y ya no se puede arreglar. Más adelante estas marcas se dibujarán como un "
+            "**mapa de calor sobre una figura humana**, que es donde un reparto equivocado se convertiría en una "
+            "afirmación anatómica visible.",
+        ],
+        "decision": [
+            ("note", "Este es el único punto del documento **sin una decisión provisional**. Carolina consideró que "
+                     "es una pregunta clínica y prefirió no inventar una respuesta."),
+            "**Mientras usted no lo resuelva, la versión 1 sale con una sola silueta, sin selector de "
+            "frente/espalda, y no guarda ningún lado.** Así no se almacena nada sin validar y no se cierra "
+            "ninguna puerta: cuando usted responda, se añade el selector y nada de lo ya guardado queda mal.",
+        ],
+        "sources": "Ninguna: es una pregunta abierta, no un valor tomado de la literatura.",
+        "question": [
+            "Para cada zona —**bajo vientre, pelvis, zona lumbar (espalda baja), piernas, intestinal/rectal, vejiga, "
+            "vaginal, pecho u hombro**—, ¿la aplicación debería ofrecerla en la vista **de frente**, en la de "
+            "**espalda**, en **ambas**, o **no preguntar el lado** en esa zona?",
+            "Tenga en cuenta que **«pecho u hombro»** está en el vocabulario precisamente por el **dolor referido de "
+            "hombro por irritación del nervio frénico**, que no es limpiamente anterior ni posterior. Si su respuesta "
+            "es «registren dónde señala la paciente y no pregunten frente o espalda», es una respuesta válida y el "
+            "selector se queda fuera.",
+        ],
+    },
 ]
-
 CLOSING = {
     "summary_title": "Resumen de sus respuestas",
     "summary_intro": "Para facilitar la revisión, le pedimos que traslade aquí su respuesta a cada punto. Si marcó "

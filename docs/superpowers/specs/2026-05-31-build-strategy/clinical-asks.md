@@ -208,6 +208,19 @@ GLP-1 agonists (metabolic) included per the C-08 routing decision. Seed each row
 Fever fires at the lower 38.0 °C cutoff (the PID *urgent* marker is 38.3 °C/101 °F). Footer stays locale-agnostic; keep the "≈2.5 cm" clot size in every locale.
 **Source:** ACOG (HMB/AUB/PID FAQs); NHS/Mayo (ectopic); NIDDK (urinary retention); Mayo (bowel obstruction); NICE NG12 + BJGP (safety-netting). **Sign-off:** **PO-interim 2026-07-14; clinician + legal (L-04) sign-off pending (see clinical-signoff-pack.md C-15).**
 
+### C-16 Body-map front/back membership (OPEN — no PO-interim value)
+**NEW 2026-08-21, raised by P4b-T21 (screen 13, the body map). This is the only row in this document with no PO-interim value: the product owner deliberately declined to invent one.**
+
+Screen 13 asks the user to mark **where** the pain is on a body silhouette. Each placed point stores an anatomical `region` **and** a `side` — `front` or `back`. The 8 regions are ratified (C-14 vocab review); **`side` is not**: no source anywhere assigns a region to a view.
+
+**Why this cannot be a design decision.** `side` is defined as *anatomical* in three shipped sources (`Symptom.cs`, `symptoms_repository.dart`, `ARCHITECTURE.md §37/§51`), the app **never displays it back**, and v1 has no edit or delete for a symptom row — so a wrong value is **written once, invisible, and uncorrectable**. `ARCHITECTURE.md:37` names the P6/P7 **heatmap** as the consumer that will act on it, so drawing `lower_back` on an anterior figure *is* the anatomical claim, made in pixels rather than in a reviewable table. Reframing `side` as "the view the user was looking at" does not avoid the claim — it relocates it into a later phase that has no way to know it was deferred.
+
+**Shipping meanwhile (build-plan R-21):** v1 ships **one silhouette, no front/back control, and `side: null` on every point** — a value the server already defaults to. Nothing unratified is written and nothing is foreclosed.
+
+**The question, per region:** for `lower_abdomen`, `pelvis`, `lower_back`, `legs`, `bowel_rectal`, `bladder`, `vaginal`, `chest_shoulder` — **front only, back only, both, or should the app not ask at all?** Note `chest_shoulder` is in the vocabulary precisely because of **phrenic-nerve referred shoulder pain** (C-14), which is neither cleanly anterior nor posterior; and a *referred* pain location is where the patient **feels** it, which may be a fourth answer ("record where she points, do not ask front or back").
+
+**Source:** none — this is an open ask, not a cited default. **Sign-off:** **OPEN; no PO-interim value. Blocks the front/back control only, not v1.**
+
 ---
 
 **Engineer's note:** none of the above is implemented until the relevant row is **clinician-signed** (PO-interim is not clinician sign-off). Until then the phase's gap-register blocker stays open. Seed all values via migration with `valid_from` + a provenance/citation field; Admin (P10) maintains them with `admin_audit_log` before/after.

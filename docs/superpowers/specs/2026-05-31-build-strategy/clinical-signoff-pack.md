@@ -1,4 +1,4 @@
-# Lumen — Clinician Sign-off Pack (C-01 … C-15)
+# Lumen — Clinician Sign-off Pack (C-01 … C-16)
 
 **For:** a reproductive endocrinologist / OB-GYN **and** a biostatistician (C-09/C-11).
 **From:** Lumen product owner. **Prepared:** 2026-07-14.
@@ -189,6 +189,20 @@ Category enum (PO): **{hormonal, pain, supplement, bleeding, metabolic}**. GLP-1
 Fever fires at the lower **38.0 °C** cutoff (the PID *urgent* marker is 38.3 °C). Footer stays locale-agnostic; keep the "≈2.5 cm" clot size in every locale.
 **Source:** ACOG (HMB, AUB, PID FAQs); NHS/Mayo (ectopic); NIDDK (urinary retention); Mayo (bowel obstruction); NICE NG12 + BJGP (safety-netting).
 **Sign-off (clinician) + legal review: ______________________  Name / date: ______________**
+
+### C-16 — Body-map front/back membership (OPEN — the one item with **no** PO-interim value)
+**Added 2026-08-21.** Every other item in this pack carries a PO-interim default for you to accept or amend. This one does not: the product owner judged it a clinical question and declined to invent an answer.
+
+One screen asks the patient to mark **where** it hurts on a body outline. Each mark stores a **region** (the 8 you reviewed under C-14) *and* a **side** — front or back. The regions are ratified; the front/back assignment is not, and no published source we could find assigns one.
+
+It matters more than it looks: the side value is **never shown back to the patient**, and version 1 has no way to edit or delete a logged symptom — so a wrong value is written once, invisibly, and cannot be corrected. A later version renders these marks as a **heatmap on a body figure**, which is where a wrong assignment would become a visible anatomical claim.
+
+**Until you rule, version 1 ships one outline with no front/back control and records no side at all** — nothing unratified is stored.
+
+**The question:** for each region — `lower_abdomen`, `pelvis`, `lower_back`, `legs`, `bowel_rectal`, `bladder`, `vaginal`, `chest_shoulder` — should the app offer it on the **front**, the **back**, **both**, or **not ask at all**? Please note `chest_shoulder` is in the vocabulary because of **phrenic-nerve referred shoulder pain**, which is neither cleanly anterior nor posterior; if "record where she points, don't ask front or back" is the better clinical answer, that is a valid reply and the control stays out.
+
+**Source:** none — an open ask, not a cited default.
+**Sign-off / your ruling: ______________________  Name / date: ______________**
 
 ---
 

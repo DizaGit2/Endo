@@ -514,7 +514,10 @@ def build_item(doc: Document, item: dict) -> None:
     for line in item["usage"]:
         para(doc, line, space_after=4)
 
-    label(doc, "Decisión provisional de Carolina (responsable del producto)")
+    # C-16 has no PO decision — the product owner deliberately declined to invent
+    # one — so an item may override this heading. Everything else is unchanged.
+    label(doc, item.get("decision_label",
+                        "Decisión provisional de Carolina (responsable del producto)"))
     for block in item["decision"]:
         if isinstance(block, str):
             para(doc, block, space_after=4)
