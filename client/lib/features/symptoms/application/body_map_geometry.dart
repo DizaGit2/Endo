@@ -16,8 +16,10 @@ import 'dart:ui';
 //   torso    : M46 38 Q60 34 74 38 L82 76 Q86 110 80 140
 //              L74 200 L66 202 L62 150 L58 150 L54 202
 //              L46 200 L40 140 Q34 110 38 76 Z
-//              -> shoulders at y=38, widest at y~109 (x 36.4..83.6),
-//                 leg split at y=150, feet at y~202
+//              -> shoulders at y=38; widest at y~102.6 (x 36.4..83.6) — the
+//                 torso quadratic `L82 76 Q86 110 80 140` reaches its
+//                 extremum at t=0.4, i.e. (83.6, 102.56), mirrored at
+//                 (36.4, 102.56); leg split at y=150, feet at y~202
 //   arms     : M40 60 L24 110 L28 140  /  M80 60 L96 110 L92 140
 //   accents  : (60,100) r7, (54,115) r5, (66,92) r4  -> all mid-torso
 //
@@ -37,9 +39,10 @@ import 'dart:ui';
 const Size kBodyMapUserSpace = Size(120, 220);
 
 /// WCAG 2.2 SC 2.5.8 (Target Size Minimum, AA), in logical pixels — the floor
-/// this project ruled it can claim conformance against (plan:1024, the
-/// tap-target ruling made at T9). Material's 48 is a design guideline, not a
-/// conformance requirement, and nothing in the harness gates tap size.
+/// this project ruled it can claim conformance against
+/// (`docs/superpowers/plans/lumen-build.md:1026`, the tap-target ruling made
+/// at T9). Material's 48 is a design guideline, not a conformance
+/// requirement, and nothing in the harness gates tap size.
 const double kBodyMapMinTapTarget = 24;
 
 /// The shortest the figure may be painted, in logical pixels, before a zone
@@ -50,10 +53,23 @@ const double kBodyMapMinTapTarget = 24;
 /// painted height is at least `24 * 220 / 26` = 203.1. **T21b must not paint
 /// the figure shorter than this**, and `body_map_geometry_test.dart` pins both
 /// the floor and its tightness so a later zone edit cannot quietly slip under
-/// it. On the 390x844 test surface the figure has room for far more than this
-/// (the mockup's own svg is 220 CSS px tall inside a 300 px frame, which is
-/// 286 logical px at the 390/300 frame scale) — see the task report's R13
-/// arithmetic.
+/// it.
+///
+/// **The natural size clears this by 16 px, and no more.** This project maps
+/// 1 mockup CSS px to 1 Flutter logical px with no frame scaling — screen 12
+/// carries the mockup's `padding:44px 22px 20px` over verbatim
+/// (`symptom_form_screen.dart:200,592`), `LumenSelectableChip` its
+/// `6px 10px` / `14` / `11px` (`lumen_selectable_chip.dart:155,159,164`), and
+/// the tap-target ruling itself reasons in the mockups' absolute sizes
+/// ("Screen 3's day cells are 26 logical px"). The mockup's svg is
+/// `viewBox="0 0 120 220" width="150" height="220"`, and the default
+/// `xMidYMid meet` fits 120x220 into 150x220 at scale 1, so the figure's
+/// natural size here is 120x220 LOGICAL px. At that size the four zones are
+/// 48x42, 48x44, 48x26 and 40x54, and the tightest — `pelvis` at 26 px — is
+/// **1.08x** the floor, not a comfortable multiple of it. **T21b therefore
+/// has 16 logical px of slack and nothing more**: a layout that runs out of
+/// vertical room (the header, the point counter, N stacked intensity blocks
+/// and the CTA) must SCROLL rather than shrink the silhouette.
 const double kBodyMapMinPaintedHeight = 204;
 
 /// Each tappable region's hit shape, in [kBodyMapUserSpace] units.
@@ -90,7 +106,7 @@ const double kBodyMapMinPaintedHeight = 204;
 /// transcription, and a rectangle is a shape a reviewer can check against the
 /// path data above by reading. They are slightly generous against the outline
 /// (the torso zones span the figure's full width, x 36..84, so the widest part
-/// of the silhouette at y~109 is inside them; the `legs` zone spans the gap
+/// of the silhouette at y~102.6 is inside them; the `legs` zone spans the gap
 /// between the two legs) — a generous affordance on an input that asserts
 /// nothing beyond the region code is the right trade, and the alternative is
 /// dead pixels on the drawn figure.

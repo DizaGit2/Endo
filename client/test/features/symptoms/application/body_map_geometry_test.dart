@@ -273,5 +273,29 @@ void main() {
     test('the floor is WCAG 2.2 SC 2.5.8, the value the plan ruled', () {
       expect(kBodyMapMinTapTarget, 24.0);
     });
+
+    test('the mockup natural 1:1 size leaves 16 logical px of slack', () {
+      // This project maps 1 mockup CSS px to 1 Flutter logical px, with no
+      // frame scaling, and the mockup's svg is
+      // `viewBox="0 0 120 220" width="150" height="220"` — the default
+      // `xMidYMid meet` fits 120x220 into 150x220 at scale 1 — so the
+      // figure's natural painted height IS the user space's own height.
+      expect(kBodyMapUserSpace.height, 220.0);
+      expect(
+        kBodyMapUserSpace.height - kBodyMapMinPaintedHeight,
+        16.0,
+        reason: 'the whole vertical margin T21b has to spend',
+      );
+
+      // At that natural size the zones measure 48x42, 48x44, 48x26 and 40x54
+      // logical px, so the tightest is `pelvis` at 26 — 1.08x the floor, not
+      // a comfortable multiple of it.
+      final tightest = kBodyMapRegionZones.values
+          .map((zone) => zone.shortestSide)
+          .reduce((a, b) => a < b ? a : b);
+
+      expect(tightest, 26.0, reason: 'pelvis height, at 1:1');
+      expect(tightest / kBodyMapMinTapTarget, closeTo(1.083, 0.001));
+    });
   });
 }

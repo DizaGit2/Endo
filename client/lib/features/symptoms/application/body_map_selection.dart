@@ -81,7 +81,22 @@ class BodyMapSelection {
 
   /// Distinct placed regions, rated or not — the mockup's own "N points
   /// placed" counter.
-  int get pointCount => intensities.length;
+  ///
+  /// Derived from [placedRegions], never from `intensities.length`. For every
+  /// ratified code the two are identical, so this changes no reachable
+  /// behaviour — it removes a divergence. [toggle] refuses an unratified
+  /// code, but the constructor is public, and a key outside `kRegionLabels`
+  /// counted raw would be a phantom point: shown in the counter, never
+  /// emitted by [toDrafts] (which iterates [placedRegions]), and not
+  /// removable by [toggle], whose vocabulary guard returns `this`. Counting
+  /// through the vocabulary makes the counter and the payload agree
+  /// structurally instead of by the caller's good behaviour.
+  ///
+  /// [blockReason] still reads [intensities] directly, so such a key mapped
+  /// to `null` would block [canApply] with nothing on screen to rate. That
+  /// half is flagged upward rather than changed here — the fix-round ruling
+  /// named this getter alone.
+  int get pointCount => placedRegions.length;
 
   /// Why screen 13 may not hand its points back, or `null` when it may.
   ///
@@ -113,12 +128,13 @@ class BodyMapSelection {
   /// A [region] outside `kRegionLabels` is never placed. The frozen vocabulary
   /// is the only source of placeable regions and BOTH of screen 13's input
   /// paths draw from it (the hit-geometry table and the all-8 chip list), so
-  /// an unratified code can only arrive from a typo — and placing one would
-  /// make it a phantom point that [pointCount] counts, [blockReason] can block
-  /// on, and [toDrafts] silently drops, since [placedRegions] iterates the
-  /// vocabulary. Refusing it at the door keeps those three consistent. The
-  /// refusal is visible immediately in the UI (the chip simply does not
-  /// select), so it is not a silent failure.
+  /// an unratified code can only arrive from a typo. Refusing it at the door
+  /// is the first of two guards, not the only one: [pointCount],
+  /// [placedRegions] and [toDrafts] all read `kRegionLabels`, so a code that
+  /// got past this door through the public constructor is counted nowhere and
+  /// emitted nowhere either — see [pointCount]. The refusal is visible
+  /// immediately in the UI (the chip simply does not select), so it is not a
+  /// silent failure.
   BodyMapSelection toggle(String region) {
     if (!kRegionLabels.containsKey(region)) return this;
     final next = Map<String, int?>.of(intensities);
@@ -139,8 +155,9 @@ class BodyMapSelection {
   /// only exists underneath a placed point, so a call for an absent region is
   /// a caller bug, and inventing a placement here would log a location the
   /// user never marked. No bound is enforced on [intensity]: the ratified
-  /// 0-10 scale is the server's to validate (`SymptomService.cs:458-464`) and
-  /// this file states no clinical bound of its own.
+  /// 0-10 scale is the server's to validate — `NormalizeIntensity`'s range
+  /// check against `Symptom.IntensityScale`, `SymptomService.cs:466-472` —
+  /// and this file states no clinical bound of its own.
   BodyMapSelection setIntensity(String region, int intensity) {
     if (!intensities.containsKey(region)) return this;
     final next = Map<String, int?>.of(intensities);
@@ -198,7 +215,7 @@ class BodyMapSelection {
           // field and states that on the traffic this screen sends, EVERY
           // entry's `occurredAt` is null; a device clock here would also trip
           // `formatting_guard`'s device-clock rule and break the
-          // single-instant property `ARCHITECTURE.md:165` relies on for
+          // single-instant property `ARCHITECTURE.md:166` relies on for
           // stable offset paging.
           occurredAt: null,
           // `notes` is deliberately NOT passed (R5). The assembler attaches

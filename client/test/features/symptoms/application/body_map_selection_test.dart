@@ -98,8 +98,7 @@ void main() {
 
     test('a code outside the frozen region vocabulary is never placed', () {
       // `unspecified` is deliberately absent from kRegionLabels and must never
-      // be produced; a typo'd code must not become a phantom point that
-      // pointCount counts and toDrafts silently drops.
+      // be produced; a typo'd code must not become a phantom point at all.
       final result = const BodyMapSelection().toggle('unspecified');
 
       expect(result.intensities, isEmpty);
@@ -161,6 +160,31 @@ void main() {
       final once = const BodyMapSelection().toggle('legs');
       expect(once.pointCount, 1);
       expect(once.toggle('legs').pointCount, 0);
+    });
+
+    test('a key outside the frozen vocabulary is never counted', () {
+      // `toggle` refuses an unratified code, but the constructor is public,
+      // so the count reads `kRegionLabels` rather than trusting the caller.
+      // Counting raw keys would make such a key a phantom point: visible in
+      // the counter, absent from `placedRegions` and never on the wire.
+      const phantomOnly = BodyMapSelection(
+        intensities: <String, int?>{'unspecified': 3},
+      );
+
+      expect(phantomOnly.pointCount, 0);
+      expect(phantomOnly.placedRegions, isEmpty);
+      expect(phantomOnly.toDrafts(), isEmpty);
+
+      const phantomBesideReal = BodyMapSelection(
+        intensities: <String, int?>{'unspecified': 3, 'pelvis': 5},
+      );
+
+      expect(phantomBesideReal.pointCount, 1, reason: 'only pelvis counts');
+      expect(phantomBesideReal.placedRegions, <String>['pelvis']);
+      expect(
+        phantomBesideReal.toDrafts().map((draft) => draft.region),
+        <String>['pelvis'],
+      );
     });
   });
 
