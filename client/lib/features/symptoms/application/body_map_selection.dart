@@ -92,10 +92,10 @@ class BodyMapSelection {
   /// through the vocabulary makes the counter and the payload agree
   /// structurally instead of by the caller's good behaviour.
   ///
-  /// [blockReason] still reads [intensities] directly, so such a key mapped
-  /// to `null` would block [canApply] with nothing on screen to rate. That
-  /// half is flagged upward rather than changed here — the fix-round ruling
-  /// named this getter alone.
+  /// [blockReason] iterates [placedRegions] for the same reason, so the
+  /// counter, the block and the payload share ONE definition of "placed" —
+  /// the vocabulary's. A key outside it is counted nowhere, blocks nothing and
+  /// reaches the wire nowhere, without any caller having to behave.
   int get pointCount => placedRegions.length;
 
   /// Why screen 13 may not hand its points back, or `null` when it may.
@@ -105,12 +105,21 @@ class BodyMapSelection {
   /// (`kSymptomNothingSelectedMessage`) for the batch as a whole. The only
   /// thing this model can object to is a placed region with no intensity —
   /// see R8 and [toDrafts].
+  ///
+  /// Reads through [placedRegions], never `intensities.values`. For every
+  /// ratified code the two are identical; what the vocabulary walk removes is
+  /// a key OUTSIDE `kRegionLabels` mapped to `null`, reachable through the
+  /// public constructor, which read raw would be a permanent [canApply]
+  /// `false` — nothing on screen to rate ([placedRegions] and [toDrafts] omit
+  /// it) and no way to take it back ([toggle] refuses the code). Blocking only
+  /// on points the user can actually see is the same hardening [pointCount]
+  /// makes, on the same map.
   String? get blockReason {
-    // `== null`, never a falsiness test: `0` is a real logged intensity
-    // (D-08), permanently indistinguishable from a real "none today", and
-    // v1 ships no edit and no delete.
-    if (intensities.values.any((intensity) => intensity == null)) {
-      return kBodyMapMissingIntensityMessage;
+    for (final region in placedRegions) {
+      // `== null`, never a falsiness test: `0` is a real logged intensity
+      // (D-08), permanently indistinguishable from a real "none today", and
+      // v1 ships no edit and no delete.
+      if (intensities[region] == null) return kBodyMapMissingIntensityMessage;
     }
     return null;
   }
@@ -130,11 +139,11 @@ class BodyMapSelection {
   /// paths draw from it (the hit-geometry table and the all-8 chip list), so
   /// an unratified code can only arrive from a typo. Refusing it at the door
   /// is the first of two guards, not the only one: [pointCount],
-  /// [placedRegions] and [toDrafts] all read `kRegionLabels`, so a code that
-  /// got past this door through the public constructor is counted nowhere and
-  /// emitted nowhere either — see [pointCount]. The refusal is visible
-  /// immediately in the UI (the chip simply does not select), so it is not a
-  /// silent failure.
+  /// [placedRegions], [blockReason] and [toDrafts] all read `kRegionLabels`,
+  /// so a code that got past this door through the public constructor is
+  /// counted nowhere, blocks nothing and is emitted nowhere either — see
+  /// [pointCount]. The refusal is visible immediately in the UI (the chip
+  /// simply does not select), so it is not a silent failure.
   BodyMapSelection toggle(String region) {
     if (!kRegionLabels.containsKey(region)) return this;
     final next = Map<String, int?>.of(intensities);

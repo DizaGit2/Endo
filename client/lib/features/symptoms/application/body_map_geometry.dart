@@ -61,7 +61,13 @@ const double kBodyMapMinTapTarget = 24;
 /// (`symptom_form_screen.dart:200,592`), `LumenSelectableChip` its
 /// `6px 10px` / `14` / `11px` (`lumen_selectable_chip.dart:155,159,164`), and
 /// the tap-target ruling itself reasons in the mockups' absolute sizes
-/// ("Screen 3's day cells are 26 logical px"). The mockup's svg is
+/// ("Screen 3's day cells are 26 logical px"). The one counterexample in the
+/// repo, `lumen_scaffold.dart:86-89`, scales the nav bar's 9 px label by
+/// 390/300 to 11 — but it sits under that dartdoc's explicit "Departures from
+/// the CSS" heading, so it reads as a declared exception for one widget, not a
+/// competing convention. Either reading leaves the number below intact,
+/// because 204 is a FLOOR: any scale above 1:1 only enlarges the zones.
+/// The mockup's svg is
 /// `viewBox="0 0 120 220" width="150" height="220"`, and the default
 /// `xMidYMid meet` fits 120x220 into 150x220 at scale 1, so the figure's
 /// natural size here is 120x220 LOGICAL px. At that size the four zones are

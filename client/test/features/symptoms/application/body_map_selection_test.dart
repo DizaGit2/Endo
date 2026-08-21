@@ -222,6 +222,35 @@ void main() {
       expect(selection.canApply, isTrue);
     });
 
+    test('a key outside the frozen vocabulary never blocks the CTA', () {
+      // The constructor is public, so a non-vocabulary key can arrive mapped
+      // to `null`. Read from `intensities.values` raw, that is a PERMANENT
+      // `canApply == false`: `placedRegions` and `toDrafts` omit the key so
+      // there is nothing on screen to rate, and `toggle` refuses the code so
+      // there is no way to take it back. The block walks the vocabulary for
+      // the same reason the counter does.
+      const phantomUnrated = BodyMapSelection(
+        intensities: <String, int?>{'unspecified': null},
+      );
+
+      expect(phantomUnrated.blockReason, isNull);
+      expect(phantomUnrated.canApply, isTrue);
+      expect(phantomUnrated.pointCount, 0);
+      expect(phantomUnrated.toDrafts(), isEmpty);
+
+      // Guard against the opposite mutation — a block that never fires. A
+      // REAL unrated placement beside the phantom must still block.
+      const phantomBesideUnratedReal = BodyMapSelection(
+        intensities: <String, int?>{'unspecified': null, 'pelvis': null},
+      );
+
+      expect(
+        phantomBesideUnratedReal.blockReason,
+        kBodyMapMissingIntensityMessage,
+      );
+      expect(phantomBesideUnratedReal.canApply, isFalse);
+    });
+
     test('an unrated region is absent from toDrafts entirely, never a 0', () {
       final selection = const BodyMapSelection()
           .toggle('pelvis')
