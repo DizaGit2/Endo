@@ -236,6 +236,12 @@ class SymptomFormScreen extends ConsumerWidget {
 /// Leaves screen 12: pops when there is something to pop, and otherwise goes
 /// to [Routes.home].
 ///
+/// **BOTH of screen 12's exits route through here** — the back chevron in
+/// `build`, and the post-save exit on the footer's CTA. The helper itself
+/// neither saves nor discards anything; whether the batch was written was
+/// settled before it was called, and all it decides is WHERE a leaving user
+/// lands.
+///
 /// **`canPop`-guarded rather than a bare `context.pop()`.** `pop` on the ROOT
 /// of the stack throws `GoError: There is nothing to pop`, and screen 12 can
 /// be that root two ways: a cold link straight to `/symptoms/new` (legal —
@@ -246,15 +252,25 @@ class SymptomFormScreen extends ConsumerWidget {
 /// shape; this is the second half of it, and without it screen 13's ruled
 /// hand-off would deliver the user to a chevron that crashes.
 ///
+/// Two entrances, two exits, and it has to be all four: a guard on one exit
+/// only moves the crash to the other one. On the SAVE exit the consequence is
+/// worse than a crash — the write has already committed, so a screen left
+/// mounted comes back with a live CTA and a second tap duplicates an
+/// all-or-nothing batch on the server. That is why leaving is unconditional
+/// here rather than best-effort.
+///
 /// [Routes.home] rather than a route of this flow's own: it is the
 /// authenticated default the redirect already sends every signed-in user to
 /// (R-19), so it is the one destination guaranteed to exist under a task flow
-/// that was entered from nowhere. Nothing is saved or discarded on the way —
-/// the chevron never wrote, and this changes only where a user with no back
-/// stack lands.
+/// that was entered from nowhere. It changes only where a user with NO back
+/// stack lands; the ordinary pushed case still pops to whatever pushed it.
 ///
-/// Screen 11's own chevron has the same shape and is NOT touched here: its
-/// convergence is booked for P4b-T16b.
+/// Screen 11's own chevron — the `IconButton` in `DayDetailScreen.build`
+/// (`day_detail_screen.dart`) — is the ONE bare `context.pop()` left in the
+/// logging flows, and is NOT touched here: its convergence is booked for
+/// P4b-T16b. A symbol rather than a line number on purpose: this phase has
+/// now invalidated the same citation range twice by editing the file it
+/// points into.
 void _leaveSymptomForm(BuildContext context) {
   if (context.canPop()) {
     context.pop();
@@ -767,11 +783,22 @@ class _Footer extends StatelessWidget {
                 ? null
                 : () async {
                     final saved = await controller.submit();
-                    // S11 — only `true` pops. On failure the screen stays
+                    // S11 — only `true` leaves. On failure the screen stays
                     // exactly as it was, with every selection intact: the
                     // batch is all-or-nothing and will later carry the work
                     // the user did on screen 13.
-                    if (saved && context.mounted) context.pop();
+                    //
+                    // Through `_leaveSymptomForm`, never a bare
+                    // `context.pop()`: screen 12 can be the ROOT of the stack
+                    // (that helper names both ways), and `pop` on a root
+                    // throws. The throw is WORSE here than on the chevron,
+                    // because by this line the batch has already committed —
+                    // a screen that stays mounted after a successful write
+                    // comes back with `submitting` false and the CTA live, so
+                    // the next tap POSTs the same all-or-nothing batch a
+                    // SECOND time, with nothing between the two. Leaving is
+                    // what closes that door; there is no other guard.
+                    if (saved && context.mounted) _leaveSymptomForm(context);
                   },
             style: FilledButton.styleFrom(
               shape: RoundedRectangleBorder(

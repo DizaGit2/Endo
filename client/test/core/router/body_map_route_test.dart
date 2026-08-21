@@ -14,13 +14,19 @@
 //     would tear the form down and take the user's unsent selections with it;
 //   * the DEEP-LINK case (R11): a cold link to `/symptoms/body-map` has
 //     nothing to pop back to, so `Done` goes to `/symptoms/new` rather than
-//     calling `context.pop()` on the root of the stack, which throws.
+//     calling `context.pop()` on the root of the stack, which throws;
+//   * and BOTH of screen 12's exits surviving the root state that hand-off
+//     creates — the chevron (fix round 1) and the post-save exit (fix round
+//     2), the second of which is not only a crash: the write has already
+//     committed when it throws, so the screen stays up with a live CTA and
+//     the next tap POSTs the same all-or-nothing batch again.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lumen/api/model/create_symptoms_request.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/router/app_router.dart';
@@ -35,6 +41,7 @@ import 'package:lumen/features/symptoms/application/symptom_form.dart';
 import 'package:lumen/features/symptoms/presentation/body_map_screen.dart';
 import 'package:lumen/features/symptoms/presentation/symptom_form_screen.dart';
 import 'package:lumen/shared/widgets/lumen_scaffold.dart';
+import 'package:mocktail/mocktail.dart';
 
 import '../../support/harness.dart';
 
@@ -65,9 +72,15 @@ class _FreshDashboard extends DashboardController {
 
 /// Pumps the REAL production route table at [initialLocation], wired to the
 /// REAL production redirect.
+///
+/// [api] is for the two tests that SAVE. Passing one also pins a
+/// `cacheStore` — `sessionTodayProvider`, which `SymptomFormController.submit`
+/// reads before it POSTs, goes through `cachedRead`, and the real
+/// `cacheStoreProvider` throws when it is read un-overridden.
 Future<void> _pumpProductionRouter(
   WidgetTester tester, {
   required String initialLocation,
+  MockLumenApiApi? api,
 }) async {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -84,7 +97,10 @@ Future<void> _pumpProductionRouter(
     tester,
     routerConfig: router,
     overrides: <Override>[
-      ...lumenOverrides(),
+      ...lumenOverrides(
+        api: api,
+        cacheStore: api == null ? null : emptyCacheStore(),
+      ),
       onboardingFlowControllerProvider.overrideWith(_SettledOnboarding.new),
       dashboardControllerProvider.overrideWith(_FreshDashboard.new),
       greetingTimeOfDayProvider.overrideWithValue('Good morning'),
@@ -101,7 +117,42 @@ Future<void> _tap(WidgetTester tester, Finder finder) async {
   await tester.pumpAndSettle();
 }
 
+/// Taps stop [stop] on the intensity scale keyed [key].
+Future<void> _tapStop(WidgetTester tester, Key key, int stop) => _tap(
+  tester,
+  find.descendant(of: find.byKey(key), matching: find.text('$stop')),
+);
+
+/// Stubs the two calls a successful save makes, in order: the R12
+/// server-confirmed "today" that `SymptomFormController.submit` reads first,
+/// then the batch POST itself.
+void _stubSuccessfulSave(MockLumenApiApi api) {
+  when(
+    () => api.cycleCalendarGet(from: null, to: null),
+  ).thenAnswer(apiSuccess(cycleCalendarFixture()));
+  when(
+    () => api.symptomsPost(
+      createSymptomsRequest: any(named: 'createSymptomsRequest'),
+    ),
+  ).thenAnswer(apiSuccess(createSymptomsResponseFixture(), statusCode: 201));
+}
+
+/// Asserts that exactly [count] batches reached the server.
+void _expectBatchesPosted(MockLumenApiApi api, int count) {
+  verify(
+    () => api.symptomsPost(
+      createSymptomsRequest: any(named: 'createSymptomsRequest'),
+    ),
+  ).called(count);
+}
+
 void main() {
+  setUpAll(() {
+    registerFallbackValue(
+      CreateSymptomsRequest((b) => b.entries.replace(const [])),
+    );
+  });
+
   // -------------------------------------------------------------------------
   // The route itself
   // -------------------------------------------------------------------------
@@ -264,6 +315,110 @@ void main() {
             'screens would rebuild empty and block the save',
       );
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // The POST-SAVE exit on the same rootless stack (fix round 2)
+  // -------------------------------------------------------------------------
+  //
+  // The chevron is not screen 12's only exit, and it is not the primary one.
+  // `Save` popped bare until now, on a stack where `pop` throws — and unlike
+  // the chevron, that exit runs AFTER the write has committed. A throw there
+  // leaves the screen mounted with every selection intact and `submitting`
+  // back to `false`, so the CTA is live again and the next tap POSTs the
+  // same all-or-nothing batch a second time. The server has no idempotency
+  // key for this endpoint and the client has no re-submit guard, so a count
+  // of 2 here is a duplicate day of symptoms, not a retried request.
+  //
+  // Which is why these tests assert the COUNT and not merely that nothing
+  // threw: `takeException(), isNull` alone would go green the day someone
+  // swallowed the GoError, with the duplicate still one tap away.
+
+  group('the post-save exit on a rootless stack', () {
+    testWidgets('a successful save LEAVES screen 12 after the cold-link '
+        'hand-off, and the batch reaches the server exactly ONCE', (
+      tester,
+    ) async {
+      final api = MockLumenApiApi();
+      _stubSuccessfulSave(api);
+
+      await _pumpProductionRouter(
+        tester,
+        initialLocation: Routes.symptomsBodyMap,
+        api: api,
+      );
+
+      // The state this task deliberately creates: `Done` `go`es, and `go`
+      // REPLACES, so screen 12 arrives as the ROOT of the stack.
+      await _tap(tester, find.text(kBodyMapDoneLabel));
+      expect(find.byType(SymptomFormScreen), findsOneWidget);
+
+      await _tapStop(tester, kSymptomPainIntensityKey, 4);
+      await _tap(tester, find.text(kSymptomFormSaveLabel));
+
+      expect(
+        tester.takeException(),
+        isNull,
+        reason:
+            'a bare context.pop() here throws GoError: There is nothing to '
+            'pop — with the batch already written',
+      );
+
+      // The second tap, ATTEMPTED rather than assumed, and asserted BEFORE
+      // where the user ended up. On the fixed build the CTA is not in the
+      // tree and this is a no-op; on the broken build it is the tap a user
+      // makes when the app appears to have done nothing, and it takes the
+      // count to 2. Ordered first so the failure lands on the NUMBER the
+      // defect is about: a build that merely SWALLOWED the GoError would
+      // clear the assertion above and still duplicate the batch here.
+      final ctaAfterSave = find.text(kSymptomFormSaveLabel);
+      if (ctaAfterSave.evaluate().isNotEmpty) {
+        await _tap(tester, ctaAfterSave);
+      }
+      _expectBatchesPosted(api, 1);
+
+      expect(
+        find.byType(SymptomFormScreen),
+        findsNothing,
+        reason:
+            'leaving is what closes the duplicate: a screen 12 still on '
+            'screen is a second Save away from a second batch',
+      );
+      expect(find.byType(DashboardScreen), findsOneWidget);
+    });
+
+    testWidgets('the same is true of the PRE-EXISTING cold link straight to '
+        '/symptoms/new — it threw identically, and duplicated identically', (
+      tester,
+    ) async {
+      final api = MockLumenApiApi();
+      _stubSuccessfulSave(api);
+
+      await _pumpProductionRouter(
+        tester,
+        initialLocation: Routes.symptomsNew,
+        api: api,
+      );
+
+      await _tapStop(tester, kSymptomPainIntensityKey, 4);
+      await _tap(tester, find.text(kSymptomFormSaveLabel));
+
+      expect(tester.takeException(), isNull);
+
+      final ctaAfterSave = find.text(kSymptomFormSaveLabel);
+      if (ctaAfterSave.evaluate().isNotEmpty) {
+        await _tap(tester, ctaAfterSave);
+      }
+      _expectBatchesPosted(api, 1);
+
+      expect(find.byType(SymptomFormScreen), findsNothing);
+      expect(find.byType(DashboardScreen), findsOneWidget);
+    });
+
+    // The POSITIVE CONTROL for this exit — that the guard did not flatten an
+    // ordinary PUSHED save into a `go(Routes.home)` — is
+    // `symptom_form_screen_semantics_test.dart`'s "a successful save pops the
+    // screen", whose host router registers no `Routes.home` at all.
   });
 
   // -------------------------------------------------------------------------

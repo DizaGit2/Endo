@@ -28,7 +28,11 @@
 // argument carries both), and how MANY are drawn. `PaintPattern.circle`
 // compares only what it is passed, so an argument left off is a property
 // nothing guards: colour and alpha were left off until T21b's fix round 1,
-// and a 20 %-alpha magenta marker passed the whole suite.
+// and a 20 %-alpha magenta marker passed the whole suite. Fix round 2 closed
+// the other axis of the same hole: the colour is theme-valued, `pumpApp` is
+// light unless a test says otherwise, and the golden pair is of the EMPTY
+// figure — so until a marker was rendered in DARK, the dark accent was as
+// unguarded as the alpha had been.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -58,14 +62,20 @@ import '../../support/harness.dart';
 /// Nothing on this screen does I/O — R-11 leaves it no repository at all — so
 /// there is no API to stub. The returned container is how a test reads the
 /// form back: this screen's whole contract is what it writes into it.
+///
+/// [brightness] defaults to `pumpApp`'s own light. It is passed only by the
+/// marker-colour tests, which are the only assertions on this screen whose
+/// expected value differs between the two themes.
 Future<ProviderContainer> _pumpScreen(
   WidgetTester tester, {
   ProviderContainer? container,
+  Brightness brightness = Brightness.light,
 }) {
   return pumpApp(
     tester,
     home: const BodyMapScreen(),
     container: container,
+    brightness: brightness,
     overrides: container != null
         ? const <Override>[]
         : <Override>[...lumenOverrides()],
@@ -457,6 +467,40 @@ void main() {
         paints
           ..circle(x: 60, y: 137, radius: 5.0, color: const Color(0xFFC25A36))
           ..circle(x: 60, y: 59, radius: 5.0, color: const Color(0xFFC25A36)),
+      );
+    });
+
+    testWidgets('the marker colour comes from the THEME, not from a literal — '
+        'in dark it is the dark accent, and the light one is nowhere on the '
+        'figure', (tester) async {
+      await _pumpScreen(tester, brightness: Brightness.dark);
+
+      await _tapFigure(tester, 60, 137); // pelvis
+      await _tapStop(tester, 'pelvis', 0);
+
+      // `0xFFE8A87C` is `lumenDark.accent` written out, the counterpart of
+      // the `0xFFC25A36` the tests above state. The paint is theme-valued
+      // (`markerColor: c.accent`), so pinning only the light literal leaves a
+      // marker that is right in light and wrong in dark completely
+      // unguarded: `pumpApp` is `Brightness.light` unless a test says
+      // otherwise, and the golden PAIR photographs the EMPTY figure — so
+      // until this test, nothing in the suite ever rendered a marker in dark
+      // at all.
+      expect(
+        find.byKey(kBodyMapFigureKey),
+        paints
+          ..circle(x: 60, y: 137, radius: 5.0, color: const Color(0xFFE8A87C)),
+      );
+      // The same claim as its own negative, so this test states what a
+      // hard-coded colour actually looks like rather than only what the
+      // right one does. A COLOURED negative is sound here where it would be
+      // wrong on the isNot(paints..circle()) counts elsewhere in this file:
+      // those must stay bare, because "no marker at all" is weakened the
+      // moment it is narrowed to a colour.
+      expect(
+        find.byKey(kBodyMapFigureKey),
+        isNot(paints..circle(color: const Color(0xFFC25A36))),
+        reason: 'the light accent has no business on a dark figure',
       );
     });
 

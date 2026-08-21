@@ -1075,6 +1075,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(SymptomFormScreen), findsNothing);
+    // The POSITIVE CONTROL for the `canPop` guard T21b's fix round 2 put on
+    // this exit: with something to pop, a successful save still POPS, landing
+    // back on the host it was pushed from. This router registers no
+    // `Routes.home` at all, so a guard that had flattened every exit into
+    // `go(Routes.home)` would land on go_router's unknown-route page and this
+    // would fail. The rootless half — where `pop` throws and the screen
+    // staying up would duplicate the batch — is
+    // `test/core/router/body_map_route_test.dart`'s post-save group.
     expect(find.text('host'), findsOneWidget);
   });
 
