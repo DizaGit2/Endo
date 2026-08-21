@@ -4,6 +4,8 @@
 **From:** Lumen product owner. **Prepared:** 2026-07-14.
 **Status of every item below:** **PO-interim — approved by the product owner as a working default, pending your clinical sign-off.** None has yet been signed by a clinician.
 
+> **Specialist-facing Spanish version (2026-08-20):** `lumen-revision-clinica-especialista.docx` in this folder — plain-language, no IT jargon, one page-block per item (title · how the app uses it · Carolina's PO-interim decision · direct question · response box). Regenerate with `python build_clinical_signoff_docx.py` (content in `clinical_signoff_content.py`; needs `python-docx`). Values must stay in sync with this pack.
+
 ---
 
 ## How to use this pack
