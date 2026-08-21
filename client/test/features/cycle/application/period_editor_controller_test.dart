@@ -888,6 +888,74 @@ void main() {
       expect(calendarBuilds.value, 0);
       expect(calendarRefreshes.value, 0);
     });
+
+    // ── the DELETE path ─────────────────────────────────────────────
+    //
+    // Every test above exercises the SAVE path (`_refreshDependents`). Until
+    // T16c's fix round that was the whole group, and the review measured what
+    // that cost: removing BOTH `ref.invalidate(dashboardControllerProvider)`
+    // AND `_refreshCalendar()` from `_refreshDependentsAfterDelete` left the
+    // FULL suite green, because nothing here ever called `delete()`. The two
+    // tests below are one per line of that method, so either half of that
+    // mutation reddens a test whose name says what it protects.
+    //
+    // Deletion is the path where a stale dependent is worst: the row is gone
+    // on the server, and every screen that did not hear about it goes on
+    // showing it — or showing a count that includes it — for the rest of the
+    // 5-minute TTL.
+
+    test('the dashboard is invalidated after a DELETE too, not only after a '
+        'save', () async {
+      stubDeleteEvent();
+      final container = buildContainer(
+        events: <CycleEventResponse>[
+          cycleEventFixture(id: 'evt-1', kind: 'period_start'),
+        ],
+        extra: dependents(),
+      );
+      container.listen(dashboardControllerProvider, (_, _) {});
+      await settle();
+      expect(dashboardBuilds.value, 1);
+
+      final controller = await editor(container);
+      expect(await controller.delete(), isTrue);
+      await settle();
+
+      expect(
+        dashboardBuilds.value,
+        2,
+        reason:
+            'the delete moved the eventCount and hasNotes of this day, and '
+            'the dashboard reads its calendar row out of the very cache key '
+            'the repository has just cleared — leaving it holding a body the '
+            'cache no longer has is the state this invalidate exists for',
+      );
+    });
+
+    test('a calendar that exists AND has a value is refreshed after a DELETE',
+        () async {
+      stubDeleteEvent();
+      final container = buildContainer(
+        events: <CycleEventResponse>[
+          cycleEventFixture(id: 'evt-1', kind: 'period_start'),
+        ],
+        extra: dependents(),
+      );
+      container.listen(cycleCalendarControllerProvider, (_, _) {});
+      await container.read(cycleCalendarControllerProvider.future);
+
+      final controller = await editor(container);
+      expect(await controller.delete(), isTrue);
+      await settle();
+
+      expect(
+        calendarRefreshes.value,
+        1,
+        reason:
+            'an open calendar would otherwise keep drawing the day with its '
+            'pre-delete eventCount',
+      );
+    });
   });
 
   // -------------------------------------------------------------------------

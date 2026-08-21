@@ -435,8 +435,15 @@ class CycleRepository {
   /// genuinely unknown — so it does not overlap the [NotFoundFailure] branch
   /// below, which is a KNOWN outcome treated as success.
   ///
-  /// Any other failure (401, 400, 5xx…) propagates as the typed [Failure]
-  /// `mapDioException` produces, and invalidates nothing.
+  /// Every OTHER failure — 401, 400, 409, 429 — propagates as the typed
+  /// [Failure] `mapDioException` produces and invalidates NOTHING: each of
+  /// those is a KNOWN outcome in which the server wrote nothing, so clearing
+  /// the day's keys would only cost a re-fetch. **A 5xx is not one of them.**
+  /// `mapDioException` maps every `500..599` to [ServerFailure], which is one
+  /// of the two shapes named just above, so a 5xx invalidates AND still
+  /// throws. This line said `(network, 401, 5xx…)` before P4b-T16c and
+  /// `(401, 400, 5xx…)` after — both listed a failure that does invalidate,
+  /// and so contradicted the paragraph three lines up.
   Future<void> deleteEvent({
     required String id,
     required Date occurredOn,

@@ -1206,6 +1206,39 @@ void main() {
       );
     });
 
+    test('a 5xx invalidates TOO and still throws — it is a [ServerFailure], '
+        'so it takes the AMBIGUOUS branch, not the "any other failure" one '
+        '(T16c fix round 1: the dartdoc for this method listed 5xx among '
+        'the failures that invalidate nothing, which contradicted its own '
+        'paragraph three lines up)', () async {
+      // 503 through the problem+json archetype, the same idiom the 401 case
+      // below uses: `mapDioException` sends every `500..599` to
+      // [ServerFailure] regardless of the body, and
+      // `cachedWrite._invalidateOnAmbiguousFailure` tests
+      // `failure is! NetworkFailure && failure is! ServerFailure`.
+      when(() => api.cycleEventsIdDelete(id: any(named: 'id'))).thenAnswer(
+        apiValidationProblem<void>(
+          statusCode: 503,
+          title: 'Service Unavailable',
+        ),
+      );
+
+      await expectLater(
+        repo.deleteEvent(id: 'evt-1', occurredOn: Date(2026, 4, 20)),
+        throwsA(isA<ServerFailure>()),
+      );
+
+      final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      expect(
+        invalidated,
+        unorderedEquals(_threeDateKeys),
+        reason:
+            'a 5xx on a soft delete is as ambiguous as a timeout — the row '
+            'may already be gone, and a cache that still holds it shows the '
+            'user an error over an event the server no longer has',
+      );
+    });
+
     test('a NON-ambiguous failure propagates and invalidates NOTHING — the '
         'positive control the network case above cannot be', () async {
       // A 401 is the sharpest available: the server is KNOWN not to have
