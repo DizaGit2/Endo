@@ -62,9 +62,9 @@ class CheckinRepository {
   /// **`cachedWrite`'s own static `invalidateKeys` parameter is evaluated
   /// eagerly, before `write` runs** (`cached_query.dart:249`), so passing it
   /// still could not see the response's `day` at all — this method
-  /// invalidates by hand afterward, the shape `cycle_repository.dart:276-280`
-  /// (soft-delete 404) already uses for the same reason. **P4b-T19 later
-  /// added a SECOND, deferred option, `invalidateKeysFor`**
+  /// invalidates by hand afterward, the shape `cycle_repository.dart`'s
+  /// `deleteEvent` (soft-delete 404) already uses for the same reason.
+  /// **P4b-T19 later added a SECOND, deferred option, `invalidateKeysFor`**
   /// (`cached_query.dart:250`), computed FROM the write's own result — the
   /// shape this method's own `saved.day ?? fallbackDay` fallback below is
   /// hand-rolling. This repository predates that parameter and has not been

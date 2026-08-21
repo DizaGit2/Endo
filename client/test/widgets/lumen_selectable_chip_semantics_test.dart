@@ -28,6 +28,7 @@ Future<void> _pumpChip(
   WidgetTester tester, {
   bool selected = false,
   bool enabled = true,
+  bool nullTap = false,
   String label = 'Bloating',
 }) {
   taps = 0;
@@ -39,7 +40,7 @@ Future<void> _pumpChip(
         label: label,
         selected: selected,
         enabled: enabled,
-        onTap: () => taps++,
+        onTap: nullTap ? null : () => taps++,
       ),
     ),
   );
@@ -129,6 +130,48 @@ void main() {
       expect(taps, 1);
     },
   );
+
+  testWidgetsWithSemantics(
+    'a null onTap DROPS the tap action and announces the chip as '
+    'unavailable — the shape screen 11 needs for its selected mood chip',
+    (tester) async {
+      // The caller's "a tap here would do nothing" case: the selected chip of
+      // a single-select row whose endpoint has no deselect. P4b-T16b shipped
+      // that as a callback that early-returned, which left the node an
+      // activatable button whose activation silently did nothing.
+      await _pumpChip(tester, selected: true, nullTap: true);
+
+      expect(
+        _announced(tester).hasAction(SemanticsAction.tap),
+        isFalse,
+        reason:
+            'the same measurement the allowClear: false stop in '
+            'LumenIntensityScale passes — no action at all, rather than an '
+            'action that silently no-ops',
+      );
+      expect(
+        _announced(tester).flagsCollection.isEnabled,
+        Tristate.isFalse,
+        reason:
+            'the enabled flag follows the ACTION, not the enabled parameter: '
+            'a node that keeps isButton, has no action and still claims to '
+            'be enabled never says why it cannot be activated',
+      );
+      // Inert is not silent: it still says what it is and that it is chosen.
+      expect(_announced(tester).flagsCollection.isSelected, Tristate.isTrue);
+      expect(_announced(tester).label, 'Bloating');
+    },
+  );
+
+  testWidgetsWithSemantics('a null onTap invokes nothing on a real tap '
+      'either', (tester) async {
+    await _pumpChip(tester, selected: true, nullTap: true);
+
+    await tester.tap(_chip);
+    await tester.pump();
+
+    expect(taps, 0);
+  });
 
   testWidgetsWithSemantics('a disabled chip invokes nothing', (tester) async {
     await _pumpChip(tester, enabled: false);

@@ -313,8 +313,7 @@ void main() {
     });
 
     test('M-7 — a user who CLEARS a prefilled note and changes nothing else '
-        'is blocked with the server\'s own cross-field sentence, never sent '
-        'to the endpoint to be 400ed', () async {
+        'is blocked on the device, never 400ed by the endpoint', () async {
       final c = buildContainer(
         log: cycleDayLogFixture(pain: null, mood: null, notes: 'a note'),
       );
@@ -323,14 +322,31 @@ void main() {
       notifier(c).setNotes('   ');
 
       expect(state(c).touchedNotes, isTrue);
-      expect(state(c).blockReason, kDayLogEmptyMessage);
+      expect(state(c).blockReason, kDayLogEmptyChangeMessage);
+    });
+
+    test('I-2 — the block reason describes the SAVE, not the DAY: it never '
+        'says the day holds nothing while its stored pain is shown', () async {
+      // The reviewer's measured state: a day that STORES pain 4, whose
+      // prefilled note the user empties. Nothing about the day changed.
+      final c = buildContainer(
+        log: cycleDayLogFixture(pain: 4, mood: null, notes: 'a note'),
+      );
+      await openEditor(c);
+
+      notifier(c).setNotes('');
+
+      expect(state(c).pain, 4, reason: 'the stored pain is untouched');
+      expect(state(c).blockReason, kDayLogEmptyChangeMessage);
       expect(
-        kDayLogEmptyMessage,
-        'at least one of pain, mood or notes is required',
+        kDayLogEmptyChangeMessage,
+        isNot(contains('required')),
         reason:
-            'mirrored verbatim from CycleValidationMessages.DayLogEmpty; '
-            'rewording it would put two different sentences in front of the '
-            'user for the same rule',
+            'the server sentence "at least one of pain, mood or notes is '
+            'required" is true of the REQUEST and false as the user reads '
+            'it: this day requires nothing, it already stores pain 4. That '
+            'sentence reaches the user only off the wire, through '
+            'dayLogEditorBannerMessage, never from this constant.',
       );
     });
 

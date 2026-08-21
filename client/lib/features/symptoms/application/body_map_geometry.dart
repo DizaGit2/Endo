@@ -59,8 +59,8 @@ const double kBodyMapMinTapTarget = 24;
 /// 1 mockup CSS px to 1 Flutter logical px with no frame scaling — screen 12
 /// carries the mockup's `padding:44px 22px 20px` over verbatim
 /// (`symptom_form_screen.dart:200,592`), `LumenSelectableChip` its
-/// `6px 10px` / `14` / `11px` (`lumen_selectable_chip.dart:155,159,164`), and
-/// the tap-target ruling itself reasons in the mockups' absolute sizes
+/// `6px 10px` / `14` / `11px` (its own `build`), and the tap-target ruling
+/// itself reasons in the mockups' absolute sizes
 /// ("Screen 3's day cells are 26 logical px"). The one counterexample in the
 /// repo, `lumen_scaffold.dart:86-89`, scales the nav bar's 9 px label by
 /// 390/300 to 11 — but it sits under that dartdoc's explicit "Departures from

@@ -19,9 +19,10 @@
 // `POST /cycle/day/{date}` leaves an omitted field unchanged and cannot clear
 // one at all. So:
 //
-//  * the pain scale is built `allowClear: false` and the mood chips ignore a
-//    re-tap of the selected chip — the endpoint cannot honour a clear, and a
-//    control that looks like one would be a data lie;
+//  * the pain scale is built `allowClear: false` and the SELECTED mood chip
+//    is given a null `onTap` — the endpoint cannot honour a clear, and a
+//    control that looks like one would be a data lie. Both controls say that
+//    the same way: no gesture, and no tap action announced;
 //  * emptying the note box is a NO-OP on the server, and
 //    [kDayLogEditorMergeNote] says so above the fields rather than leaving the
 //    user to discover it from a 200 that changed nothing;
@@ -357,12 +358,24 @@ class _DayLogEditorScreenState extends ConsumerState<DayLogEditorScreen> {
 /// primitive for choosing one value out of a ratified vocabulary, which is
 /// exactly what this is, and it costs no new mapping at all.
 ///
-/// **Single-select, and re-tapping the selected chip does NOTHING.** The chip
-/// widget only reports taps; whether a row is a toggle or a radio is the
-/// caller's decision. This caller makes it a radio with no deselect, for the
-/// same reason the pain scale is built `allowClear: false`: mood cannot be
-/// un-logged on this endpoint, so a deselect gesture would clear the form and
-/// change nothing on the server.
+/// **Single-select with no deselect, and the selected chip is INERT — by
+/// having no callback, not by ignoring one.** The chip widget only reports
+/// taps; whether a row is a toggle or a radio is the caller's decision. This
+/// caller makes it a radio with no deselect, for the same reason the pain
+/// scale is built `allowClear: false`: mood cannot be un-logged on this
+/// endpoint, so a deselect gesture would clear the form and change nothing on
+/// the server.
+///
+/// **Fix round 1 (I-1) made that the same MECHANISM as the scale's, not just
+/// the same intent.** It used to be an `onTap` closure that returned early on
+/// the selected chip, which left the node an activatable button whose
+/// activation silently did nothing — measurably, on one sheet: `hasTap=true`
+/// on the selected mood chip against `hasTap=false` on the selected pain
+/// stop. The selected chip is now passed `onTap: null`, so
+/// [LumenSelectableChip] drops the action and announces it unavailable. The
+/// comparison is asserted in `day_log_editor_screen_semantics_test.dart`
+/// against the chips beside it and against the scale, not left to a
+/// comment.
 class _MoodChips extends StatelessWidget {
   const _MoodChips({
     required this.selected,
@@ -395,10 +408,10 @@ class _MoodChips extends StatelessWidget {
             label: label,
             selected: selected == index + 1,
             enabled: enabled,
-            onTap: () {
-              if (selected == index + 1) return;
-              onSelect(index + 1);
-            },
+            // `null`, never a closure that early-returns: the chip's own
+            // contract is that a null callback means "a tap here would do
+            // nothing", and the chip then says so to assistive technology.
+            onTap: selected == index + 1 ? null : () => onSelect(index + 1),
           ),
       ],
     );

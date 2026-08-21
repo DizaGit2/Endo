@@ -18,7 +18,7 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 ///
 /// | where | selectable? | radius | padding | font | unselected | selected |
 /// |---|---|---|---|---|---|---|
-/// | `day_detail_screen.dart` (~:524-544) | **no** — `DecoratedBox`, no tap, no `Semantics` at all | 7 | 8×3 | 9 | `input`/`border`/`ink` | — |
+/// | `day_detail_screen.dart`'s `_Chip` | **no** — `DecoratedBox`, no tap, no `Semantics` at all | 7 | 8×3 | 9 | `input`/`border`/`ink` | — |
 /// | `cycle_setup_screen.dart` (~:563-609) | **yes** | 10 | 6×10 | 12 | `input`/`border`/`ink` | `accentSoft`/`accent`/`accent`, weight w500 |
 ///
 /// **Controller ruling — neither was migrated, on purpose.** The
@@ -76,11 +76,11 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 /// | selected — accent on accentSoft | `#C25A36` on `#F3D9CC` = **3.25:1** — FAILS AA | `#E8A87C` on `#3A2438` = 6.93:1 — passes |
 ///
 /// **Ruling: ship the tokens as specified; do not deviate.** Precedent:
-/// `lumen_intensity_scale.dart:182-190` recorded an identical light-theme
-/// failure rather than patching it, and the phase already carries a standing
-/// entry that the light-theme accent token pair "needs a design decision, not
-/// an implementer's judgement." Changing a design-system colour inside a
-/// widget commit is an implementer making a design decision.
+/// `lumen_intensity_scale.dart`'s `_Stop.build` recorded an identical
+/// light-theme failure rather than patching it, and the phase already carries
+/// a standing entry that the light-theme accent token pair "needs a design
+/// decision, not an implementer's judgement." Changing a design-system colour
+/// inside a widget commit is an implementer making a design decision.
 ///
 /// Selection is also signalled by **colour alone** — no icon, no weight
 /// change — which compounds the contrast failure for colour-blind users on
@@ -130,23 +130,49 @@ class LumenSelectableChip extends StatelessWidget {
   /// Whether this chip behaves as a toggle or as one option in a single-select
   /// group is entirely the caller's decision; this widget only reports the
   /// tap.
-  final VoidCallback onTap;
+  ///
+  /// **`null` means "a tap here would do nothing", and the chip then says
+  /// so** — the node drops its tap action and reports itself unavailable,
+  /// rather than staying a button whose activation silently does nothing.
+  /// Pass it wherever the caller would otherwise have ignored the callback:
+  /// the already-selected chip of a single-select row with no deselect
+  /// (screen 11's mood row, whose endpoint cannot un-log a mood) is the
+  /// shipped case. That is the SAME MECHANISM, not merely the same intent, as
+  /// [LumenIntensityScale]'s `allowClear: false` stop — which is the point,
+  /// because two controls on one sheet expressing "this gesture is not
+  /// offered" two different ways is how one of them ends up lying.
+  ///
+  /// Still `required`, so no call site drifts into inertness by omission:
+  /// passing `null` has to be written down.
+  final VoidCallback? onTap;
 
   /// False while the answer cannot be changed. A disabled chip announces
   /// itself as disabled and offers no tap action, rather than staying a
   /// button that silently does nothing.
+  ///
+  /// Distinct from a null [onTap] only in intent — "no answer can be changed
+  /// right now" vs. "this particular chip's tap is a no-op". The node the two
+  /// produce is deliberately identical.
   final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).extension<LumenColors>()!;
+    // One value drives BOTH the gesture and the announcement, from either
+    // source of "no": a disabled chip, or a chip whose tap the caller would
+    // have ignored.
     final VoidCallback? tap = enabled ? onTap : null;
 
     return MergeSemantics(
       child: Semantics(
         button: true,
         selected: selected,
-        enabled: enabled,
+        // The enabled FLAG follows the ACTION, never the parameter. A node
+        // that keeps `isButton`, has no tap action and still claims to be
+        // enabled is "looks like a button, cannot be activated, never says
+        // why" — the same rule `lumen_intensity_scale.dart`'s `_Stop` states
+        // for its own selected stop.
+        enabled: tap != null,
         onTap: tap,
         child: GestureDetector(
           onTap: tap,

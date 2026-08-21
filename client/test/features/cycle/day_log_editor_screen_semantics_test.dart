@@ -15,7 +15,10 @@
 //  * the CTA is disabled with a visible reason rather than round-tripping a
 //    request the server can only reject.
 
+import 'dart:ui' show Tristate;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/cycle_day_log_response.dart';
@@ -345,6 +348,45 @@ void main() {
       },
     );
 
+    testWidgetsWithSemantics(
+      'I-1 — the SELECTED mood chip offers NO tap action, exactly like the '
+      'selected pain stop beside it, while the other chips still do',
+      (tester) async {
+        await pumpSheet(tester, log: cycleDayLogFixture(pain: 4, mood: 3));
+
+        final SemanticsData chosen = tester
+            .getSemantics(find.text('Steady'))
+            .getSemanticsData();
+        expect(
+          chosen.hasAction(SemanticsAction.tap),
+          isFalse,
+          reason:
+              'mood cannot be un-logged on this endpoint, so activating this '
+              'chip can do nothing — and a control that cannot act must not '
+              'announce itself as one that can',
+        );
+        expect(chosen.flagsCollection.isEnabled, Tristate.isFalse);
+        expect(chosen.flagsCollection.isSelected, Tristate.isTrue);
+
+        final SemanticsData other = tester
+            .getSemantics(find.text('Bright'))
+            .getSemanticsData();
+        expect(other.hasAction(SemanticsAction.tap), isTrue);
+        expect(other.flagsCollection.isEnabled, Tristate.isTrue);
+
+        // The comparison that failed before fix round 1: the two controls on
+        // this ONE sheet now report a refused gesture the same way.
+        expect(
+          tester
+              .getSemantics(find.text('4'))
+              .getSemanticsData()
+              .hasAction(SemanticsAction.tap),
+          isFalse,
+          reason: 'the allowClear: false stop, for comparison',
+        );
+      },
+    );
+
     testWidgetsWithSemantics('picking a DIFFERENT mood chip does select it, '
         'and sends the WIRE ordinal, never the list index', (tester) async {
       stubLogDay();
@@ -404,7 +446,7 @@ void main() {
 
     testWidgetsWithSemantics(
       'M-7 — clearing a prefilled note and nothing else keeps the CTA '
-      'disabled and shows the server\'s own sentence: no request is made',
+      'disabled and shows the reason inline: no request is made',
       (tester) async {
         stubLogDay();
         await pumpSheet(
@@ -415,7 +457,7 @@ void main() {
         await tester.enterText(find.byType(TextField), '');
         await tester.pump();
 
-        expect(find.text(kDayLogEmptyMessage), findsOneWidget);
+        expect(find.text(kDayLogEmptyChangeMessage), findsOneWidget);
         expect(
           tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
           isNull,

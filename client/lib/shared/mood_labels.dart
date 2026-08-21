@@ -26,7 +26,7 @@ const List<String> kMoodLabels = <String>['Low', 'Tired', 'Steady', 'Bright'];
 /// WAS logged, just outside the ratified scale — a different fact from
 /// nothing being logged at all (that case is the caller's own "Not logged
 /// today", decided by the caller, not this function). Both call sites use
-/// this fallback as of P4b-T18; `day_detail_screen.dart:549` carried the
-/// superseded `'Mood'` shape until this promotion.
+/// this fallback as of P4b-T18; `day_detail_screen.dart`'s `_MoodRow`
+/// carried the superseded `'Mood'` shape until this promotion.
 String moodLabel(int mood) =>
     (mood >= 1 && mood <= kMoodLabels.length) ? kMoodLabels[mood - 1] : '$mood';

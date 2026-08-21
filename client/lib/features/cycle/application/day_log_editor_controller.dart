@@ -24,8 +24,8 @@
 //     differs and why it still does not touch the form.
 //
 // **This screen offers no "clear" affordance, because the endpoint has none.**
-// The pain scale is passed `allowClear: false` and the mood chips ignore a
-// re-tap of the selected chip. A logged pain or mood CANNOT be removed in v1
+// The pain scale is passed `allowClear: false` and the selected mood chip is
+// passed no tap callback at all. A logged pain or mood CANNOT be removed in v1
 // by any route; closing that needs a contract change P4b does not make.
 // Suppressing a gesture the server cannot honour is honest — offering one
 // that silently no-ops is a data lie.
@@ -55,28 +55,46 @@ import 'package:lumen/features/home/application/dashboard_controller.dart';
 /// **Authored** — no mockup draws this editor at all, so nothing about it is
 /// extracted. Queued for the T25 PO copy pass with screen 12's four strings.
 ///
-/// It is a different sentence from [kDayLogEmptyMessage] because it is a
-/// different situation: this one says "you have not changed anything yet",
-/// which is the ordinary state of an editor that was opened and not yet used.
+/// It is a different sentence from [kDayLogEmptyChangeMessage] because it is
+/// a different situation: this one says "you have not touched anything yet",
+/// the ordinary state of an editor that was opened and not yet used, while
+/// that one says "what you did touch would not save anything".
 const String kDayLogNothingChangedMessage =
     'Change pain, mood or the note to save.';
 
-/// Why Save is disabled once the user has cleared everything they changed.
+/// Why Save is disabled once nothing the user touched would reach the wire.
 ///
-/// **SERVER-VERBATIM** — `CycleValidationMessages.DayLogEmpty`, the exact
-/// string `POST /cycle/day/{date}` answers with under the cross-field
-/// `request` key when pain, mood and a trimmed note are all absent. Mirrored
-/// rather than reworded, the same move `kSymptomNothingSelectedMessage`
-/// makes: the condition is fully knowable on the device, so the user should
-/// meet it as a disabled button with a reason instead of a round trip, and
-/// two different sentences for one rule is how a user learns to distrust
-/// both.
+/// **AUTHORED** — on the T25 PO copy list with the rest of screen 11's
+/// strings. It shipped as the server's own sentence mirrored verbatim
+/// (`CycleValidationMessages.DayLogEmpty` = "at least one of pain, mood or
+/// notes is required"); fix round 1 (I-2) replaced it, because that sentence
+/// describes the REQUEST and the user reads it as describing their DAY. The
+/// only state that reaches this message is a prefilled sheet whose note has
+/// been emptied — so a day that STORES pain 4 was being told "at least one
+/// of pain, mood or notes is required" with pain 4 visibly selected two rows
+/// above. The replacement says the thing that is actually true: this save
+/// would carry nothing.
+///
+/// **Rewording it was NOT a contract change**, which the T16b report wrongly
+/// claimed. This constant is the client's own pre-check copy with exactly one
+/// production reader, [DayLogEditorForm.blockReason], rendered in a
+/// `LumenFieldMessage` beside a disabled CTA. The server's 400 reaches the
+/// user by a different route entirely — `day_log_editor_screen.dart`'s
+/// `dayLogEditorBannerMessage` reads `failure.requestMessages.first`, i.e.
+/// the server's sentence off the wire, into the banner. The two can never
+/// occupy the same slot, so the mirror was not buying agreement; it was only
+/// exposing this file to a silent drift in a string no client test can see.
+///
+/// The PRE-CHECK is unchanged, and still exists for the reason
+/// `kSymptomNothingSelectedMessage` gives: the condition is fully knowable on
+/// the device, so the user meets it as a disabled button with a reason rather
+/// than a round trip that can only 400.
 ///
 /// Reachable only on a PREFILLED form — screen 9 cannot reach its own
 /// equivalent, because it never prefills and its CTA needs a touch. Here the
 /// user reaches it by emptying the note they arrived with.
-const String kDayLogEmptyMessage =
-    'at least one of pain, mood or notes is required';
+const String kDayLogEmptyChangeMessage =
+    'Nothing to save yet. Add pain, mood or a note.';
 
 // ---------------------------------------------------------------------------
 // DayLogEditorForm
@@ -188,9 +206,11 @@ class DayLogEditorForm {
     if (!touchedPain && !touchedMood && !touchedNotes) {
       return kDayLogNothingChangedMessage;
     }
-    // Something was touched, and none of it survives to the wire — the exact
-    // condition the endpoint answers with its cross-field 400.
-    return kDayLogEmptyMessage;
+    // Something was touched, and none of it survives to the wire — the same
+    // condition the endpoint answers with its cross-field 400, said in this
+    // client's own words (the constant records why they are not the
+    // server's).
+    return kDayLogEmptyChangeMessage;
   }
 
   bool get canSubmit => blockReason == null;
