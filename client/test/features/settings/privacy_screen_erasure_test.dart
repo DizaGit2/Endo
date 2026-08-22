@@ -18,14 +18,16 @@
 //     gone — asserted twice: over the authored constants themselves (which
 //     survives any change to the tree) and over every string rendered after
 //     the 202.
-//  4. **A refused request changes nothing and is never silent.** The account
-//     is left alone, THIS SCREEN touches no session, and the user is told.
+//  4. **A refused request is never silent, and THIS SCREEN changes nothing
+//     of its own.** No session ends here, no local data is thrown away here,
+//     and the user is told. What the layers BELOW do on a refusal is a
+//     different question, answered in the note above the `refused` group.
 //
 // **The layer this file observes.** Except for the one whole-app test at the
 // bottom, the fake is a `MockLumenApiApi` — above Dio, above `AuthInterceptor`.
 // So these are assertions about the SCREEN. Where that differs from what the
 // app does, the difference is stated rather than papered over: see the note
-// above the `refused` group, which is about the 401.
+// above the `refused` group, which walks all three refusals.
 //
 // The ROUTE and the entry affordance live in
 // `test/core/router/privacy_route_test.dart`.
@@ -620,28 +622,51 @@ void main() {
   //
   // **What this harness can see, and what it cannot.** The fake is a
   // `MockLumenApiApi` — ABOVE Dio. These tests therefore observe THE SCREEN
-  // and nothing underneath it. That scope is exactly right for the property
-  // the screen owes: on a refusal it must tell the user and must not end the
-  // session ITSELF. It is not wide enough to say what the app does.
+  // and nothing underneath it. That scope is exactly right for the properties
+  // the screen owes: on a refusal it must tell the user, must not end the
+  // session ITSELF, and must not throw local data away ITSELF. It is not wide
+  // enough to say what the APP does — and on ALL THREE refusals the app can
+  // do something else. So every name below carries the scope it can back up.
   //
-  // **The 401 is where the two answers differ, and the difference matters.**
-  // In production a 401 never reaches this code untouched.
-  // `AuthInterceptor.onError` intercepts it and attempts a refresh:
+  // **Branch by branch, where the app parts company with the screen.** Each
+  // step below was re-read at source in `auth_interceptor.dart`,
+  // `dio_provider.dart` and `auth_controller.dart`:
   //
-  //   * refresh fails, or no refresh token is stored → the interceptor clears
-  //     the tokens and calls `onAuthLost`, which `dioProvider` wires to
-  //     `authStatusProvider.notifier.logout()`. **The session ends.** The user
-  //     sees `kPrivacyErasureFailedMessage` — *"please try again"* — on the
-  //     way to Welcome, where there is nothing to try again.
-  //   * refresh succeeds → the request is retried once, marked; a second 401
-  //     is forwarded untouched and the session survives, which is the only
-  //     case that matches the test below.
+  //   * **A 401 never reaches this code untouched.** `onError` intercepts it
+  //     and attempts a refresh:
+  //       - refresh fails, or no refresh token is stored → `_performRefresh`
+  //         clears the token store and calls `onAuthLost`. **The session
+  //         ends.** This is the likely branch for `DELETE /me`.
+  //       - refresh succeeds → the request is retried once, marked; a second
+  //         401 is forwarded untouched and the session survives, which is the
+  //         only case that matches the test below.
+  //   * **No connectivity and a 503 can end the session BEFORE the DELETE is
+  //     ever sent** — they are not the safe cases with the 401 as the lone
+  //     exception; they are the same case reached by a different trigger.
+  //     `onRequest` refreshes PROACTIVELY whenever the stored access-token
+  //     expiry is within `_kProactiveRefreshThreshold` (30 s) of now. Offline
+  //     that refresh cannot reach the token endpoint at all; against a backend
+  //     that is 5xx-ing `/me`, the token endpoint may be down with it. Either
+  //     way `_performRefresh` clears the tokens, calls `onAuthLost` and
+  //     throws, and `onRequest` REJECTS the request — so the user is signed
+  //     out and `meDelete` never leaves the device. The branch is reached
+  //     whenever the access token happens to be near expiry, which is not a
+  //     rare state.
+  //   * **`onAuthLost` also throws local data away.** `dioProvider` wires it
+  //     to `authStatusProvider.notifier.logout()`, and
+  //     `AuthController.logout()` ends the OIDC session, clears the
+  //     `TokenStore` AND runs `cacheStoreProvider.purge()` before going
+  //     `unauthenticated`. So on every branch above the local cache IS purged
+  //     — which is why the purge test below is named for this screen and not
+  //     for the app.
   //
-  // So the honest reading of `a 401` here is *"the screen signs nobody out"*,
-  // and the test names say that rather than the system-level claim they used
-  // to make. **The production behaviour is pinned where it lives** and is not
-  // restated here: `auth_interceptor_test.dart`'s *"refresh throws → clear()
-  // called, onAuthLost invoked, DioException thrown"* and
+  // In each of those cases the user is left looking at
+  // `kPrivacyErasureFailedMessage` — *"please try again"* — on the way to
+  // Welcome, where there is nothing to try again with.
+  //
+  // **The production behaviour is pinned where it lives** and is not restated
+  // here: `auth_interceptor_test.dart`'s *"refresh throws → clear() called,
+  // onAuthLost invoked, DioException thrown"* and
   // `dio_provider_test.dart`'s *"401 with a failing refresh clears tokens and
   // drives authStatusProvider to unauthenticated"*.
   //
@@ -649,8 +674,9 @@ void main() {
   // it cannot reason about, and a 401 on `DELETE /me` is ambiguous to it —
   // the same call disables the Keycloak identity, so a 401 can equally mean
   // "an earlier attempt already succeeded". Filed for the phase's STATUS: the
-  // retry advice is misleading on the sign-out branch, and correcting it is a
-  // copy change on an L-05/L-06-gated string, not an implementer's call.)
+  // retry advice is misleading on EVERY sign-out branch, not just the 401,
+  // and correcting it is a copy change on an L-05/L-06-gated string, not an
+  // implementer's call.)
 
   group('refused', () {
     /// The refusal cases, each with the scope its assertions ACTUALLY have —
@@ -658,7 +684,11 @@ void main() {
     final refusals = <String, ({ApiAnswer<void> Function() answer, String scope})>{
       'no connectivity': (
         answer: () => apiNetworkFailure<void>(path: '/me'),
-        scope: 'and no layer signs the user out',
+        scope:
+            'and THIS SCREEN signs nobody out — offline, a proactive refresh '
+            'of a near-expiry token ends the session one layer below this '
+            'fake, before the DELETE is even sent; see the note above the '
+            'group',
       ),
       'a 401': (
         answer: () => _status(401),
@@ -669,7 +699,10 @@ void main() {
       ),
       'a 503': (
         answer: () => _status(503),
-        scope: 'and no layer signs the user out',
+        scope:
+            'and THIS SCREEN signs nobody out — if the token endpoint is down '
+            'with the API, that same proactive refresh ends the session one '
+            'layer below this fake; see the note above the group',
       ),
     };
 
@@ -692,7 +725,15 @@ void main() {
         },
       );
 
-      testWidgets('$name: nothing local is thrown away', (tester) async {
+      // Scoped to the screen on purpose. On every branch where `onAuthLost`
+      // fires — the 401's failed refresh, and the proactive refresh behind
+      // the other two (see the note above the group) — production `logout()`
+      // runs `cacheStoreProvider.purge()`, so "nothing local is thrown away"
+      // would be false of the APP. What the screen owes, and all this harness
+      // can see, is that the screen purges nothing of its own on a refusal.
+      testWidgets('$name: THIS SCREEN throws nothing local away', (
+        tester,
+      ) async {
         final h = await _pumpPrivacy(tester, answer: answer());
 
         await _confirmDelete(tester);
