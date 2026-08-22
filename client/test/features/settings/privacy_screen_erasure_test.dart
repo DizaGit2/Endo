@@ -23,14 +23,17 @@
 //     and the user is told. What the layers BELOW do on a refusal is a
 //     different question, answered in the note above the `refused` group.
 //
-// **The layer this file observes.** Except for the one whole-app test at the
-// bottom, the fake is a `MockLumenApiApi` — above Dio, above `AuthInterceptor`.
-// So these are assertions about the SCREEN. Where that differs from what the
-// app does, the difference is stated rather than papered over: see the note
-// above the `refused` group, which walks all three refusals.
+// **The layer this file observes.** The API fake is a `MockLumenApiApi` in
+// EVERY test here, the whole-app one at the bottom included — above Dio,
+// above `AuthInterceptor`, so NOTHING in this file observes the interceptor.
+// What the bottom test adds is the real `LumenApp`, router and redirect, not
+// a lower fake. These are therefore assertions about the SCREEN, plus one
+// about where the app puts the user afterwards. Where that differs from what
+// the app does, the difference is stated rather than papered over: see the
+// note above the `refused` group, which walks all three refusals.
 //
 // The ROUTE and the entry affordance live in
-// `test/core/router/privacy_route_test.dart`.
+// `test/core/router/privacy_route_test.dart`, and are not re-asserted here.
 
 import 'dart:async';
 import 'dart:ui' show Tristate;
@@ -43,7 +46,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
-import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/core/time/greeting_clock.dart';
 import 'package:lumen/features/home/application/dashboard_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
@@ -421,9 +423,9 @@ void main() {
     );
 
     testWidgetsWithSemantics(
-      'while the request is in flight the row says so — it announces itself '
-      'DISABLED with no tap action, and shows a spinner instead of the '
-      'chevron',
+      'while the request is in flight the row says so — its semantics node '
+      'declares itself DISABLED with no tap action, and it shows a spinner '
+      'instead of the chevron',
       (tester) async {
         final release = Completer<Response<void>>();
         await _pumpPrivacy(tester, answer: (_) => release.future);
@@ -470,11 +472,17 @@ void main() {
     // true)` drops its subtree, so a label there would announce to nobody. The
     // state is carried on the row's own node instead. These two assertions are
     // what stop that from being a story told only in a dartdoc.
+    //
+    // What the harness itself sees is the node's `label` and its live-region
+    // flag. That the platform then SPEAKS the new name unprompted is the SDK
+    // contract for that flag (quoted at the assertion), inferred here rather
+    // than observed: no assistive technology runs in a widget test.
 
     testWidgetsWithSemantics(
       'while the request is in flight the row ANNOUNCES it — the accessible '
-      'name becomes the busy one, exactly, and it is a live region so a '
-      'screen-reader user hears it without swiping back onto the row',
+      'name becomes the busy one, EXACTLY, and the node carries the '
+      'live-region flag that makes the platforms speak it without focus '
+      '(SDK contract, inferred: no screen reader runs in a widget test)',
       (tester) async {
         final release = Completer<Response<void>>();
         await _pumpPrivacy(tester, answer: (_) => release.future);
@@ -514,8 +522,14 @@ void main() {
           busy.flagsCollection.isLiveRegion,
           isTrue,
           reason:
-              'Without this the new name is only heard by a user who happens '
-              'to swipe back onto a control they just activated.',
+              'What is asserted is the FLAG. The audible consequence is an '
+              'inference from the SDK contract, not something this harness '
+              'observes: `SemanticsConfiguration.liveRegion` documents that '
+              '"On Android and iOS, live region causes a polite announcement '
+              'to be generated automatically, even if the widget does not '
+              'have accessibility focus." Without the flag the new name is '
+              'only reached by a user who happens to swipe back onto a '
+              'control they just activated.',
         );
 
         release.complete(_acceptedResponse());
@@ -524,15 +538,20 @@ void main() {
     );
 
     testWidgets(
-      'the sign-out does NOT race the request — nothing about the session '
-      'moves until the 202 has arrived',
+      'THIS SCREEN moves nothing about the session until the 202 has '
+      'arrived — its own sign-out does not race the request. (Below this '
+      'fake the session can end before any 202 does: a proactive refresh of '
+      'a near-expiry token signs the user out and the DELETE is never sent '
+      '— see the note above the `refused` group.)',
       (tester) async {
         final release = Completer<Response<void>>();
         final h = await _pumpPrivacy(tester, answer: (_) => release.future);
 
         await _confirmDelete(tester, settle: false);
 
-        // In flight: the request is out, and the session is untouched.
+        // In flight: the request is out, and THIS SCREEN has moved nothing
+        // about the session — `authStatusProvider` and the token store are
+        // what this harness can see, and neither has moved.
         verify(() => h.api.meDelete()).called(1);
         verifyNever(() => h.tokenStore.clear());
         expect(h.container.read(authStatusProvider), AuthStatus.authenticated);
@@ -643,15 +662,17 @@ void main() {
   //   * **No connectivity and a 503 can end the session BEFORE the DELETE is
   //     ever sent** — they are not the safe cases with the 401 as the lone
   //     exception; they are the same case reached by a different trigger.
-  //     `onRequest` refreshes PROACTIVELY whenever the stored access-token
-  //     expiry is within `_kProactiveRefreshThreshold` (30 s) of now. Offline
+  //     `onRequest` refreshes PROACTIVELY whenever the stored access token
+  //     has `_kProactiveRefreshThreshold` (30 s) of life left OR LESS — the
+  //     code is `remaining <= threshold`, so a token that expired hours ago
+  //     takes the same branch, not only one inside a 30 s window. Offline
   //     that refresh cannot reach the token endpoint at all; against a backend
   //     that is 5xx-ing `/me`, the token endpoint may be down with it. Either
   //     way `_performRefresh` clears the tokens, calls `onAuthLost` and
   //     throws, and `onRequest` REJECTS the request — so the user is signed
   //     out and `meDelete` never leaves the device. The branch is reached
-  //     whenever the access token happens to be near expiry, which is not a
-  //     rare state.
+  //     whenever the access token is within 30 s of expiry, at it, or past
+  //     it — which is not a rare state.
   //   * **`onAuthLost` also throws local data away.** `dioProvider` wires it
   //     to `authStatusProvider.notifier.logout()`, and
   //     `AuthController.logout()` ends the OIDC session, clears the
@@ -789,10 +810,20 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // Route constant sanity — the screen the erasure lives on is reachable
+  // The route is NOT re-asserted here — on purpose
   // -------------------------------------------------------------------------
-
-  test('screen 36 has a route at all (the whole point of T22c)', () {
-    expect(Routes.privacy, isNotEmpty);
-  });
+  //
+  // What stood here was `expect(Routes.privacy, isNotEmpty)`, named "screen 36
+  // has a route at all (the whole point of T22c)". It asserted that one `const
+  // String` is non-empty: no router, no `lumenRoutes()`, no redirect, so no
+  // change to the route table could redden it. This task's own mutation m6 —
+  // delete the `routes:` child from the More branch, i.e. exactly "screen 36
+  // has no route" — turned FIVE tests red, and this was not one of them.
+  //
+  // Deleted rather than renamed: the property is owned, and pinned by running
+  // the router, in `test/core/router/privacy_route_test.dart` — the path
+  // constant asserted by EXACT value against `Routes.more` (which subsumes
+  // non-empty), and a deep link to `/more/privacy` pumped through
+  // `lumenRoutes()` and the production redirect, expecting screen 36 and NOT
+  // the dashboard. That deep-link test is one of m6's five.
 }
