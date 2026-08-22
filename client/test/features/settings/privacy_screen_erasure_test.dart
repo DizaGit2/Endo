@@ -19,7 +19,13 @@
 //     survives any change to the tree) and over every string rendered after
 //     the 202.
 //  4. **A refused request changes nothing and is never silent.** The account
-//     is left alone, the session is left alone, and the user is told.
+//     is left alone, THIS SCREEN touches no session, and the user is told.
+//
+// **The layer this file observes.** Except for the one whole-app test at the
+// bottom, the fake is a `MockLumenApiApi` — above Dio, above `AuthInterceptor`.
+// So these are assertions about the SCREEN. Where that differs from what the
+// app does, the difference is stated rather than papered over: see the note
+// above the `refused` group, which is about the 401.
 //
 // The ROUTE and the entry affordance live in
 // `test/core/router/privacy_route_test.dart`.
@@ -162,8 +168,13 @@ final List<RegExp> kCompletionClaims = <RegExp>[
 /// **Applied to the AUTHORED strings, not to the whole tree**, and that scope
 /// is deliberate: screen 36 already ships a DATA row reading "Encryption
 /// status / AES-256", which is pre-existing P3b copy the plan explicitly says
-/// P4b must flag rather than rewrite (plan:879). This task must not ADD such a
-/// claim; it is not licensed to remove the one that is already there.
+/// P4b must flag rather than rewrite (the *"Known, accepted, still-open at
+/// phase exit"* paragraph in P4b's phase entry — R-23: named, not cited by
+/// line, because a plan edit moves it). **The PO reviewed that row and the
+/// warrant canary on 2026-08-22 and ruled both KEEP, risk accepted, routed to
+/// the L-05/L-06 legal pass.** So the scope stands for a second reason now: it
+/// is not this test's call. This task must not ADD such a claim; it is not
+/// licensed to remove the ones already there.
 final List<RegExp> kLegalCharacterisations = <RegExp>[
   RegExp('permanent', caseSensitive: false),
   RegExp('irreversib', caseSensitive: false),
@@ -442,6 +453,74 @@ void main() {
       },
     );
 
+    // -----------------------------------------------------------------------
+    // The in-flight ANNOUNCEMENT (P4b-T22c fix round, review I2)
+    // -----------------------------------------------------------------------
+    //
+    // The test above pins that the row stops claiming to be usable. That is
+    // not the same as telling anyone what is happening: "Delete all data,
+    // button, disabled" is also what a permanently dead control sounds like,
+    // and the sighted user meanwhile gets a spinner. The wait can run to 15 s
+    // (`dioProvider`'s connect timeout) after confirming an ACCOUNT DELETION.
+    //
+    // The house rule is one `semanticsLabel` per new spinner. This spinner has
+    // none on purpose: `_DeleteAllDataRow`'s `Semantics(excludeSemantics:
+    // true)` drops its subtree, so a label there would announce to nobody. The
+    // state is carried on the row's own node instead. These two assertions are
+    // what stop that from being a story told only in a dartdoc.
+
+    testWidgetsWithSemantics(
+      'while the request is in flight the row ANNOUNCES it — the accessible '
+      'name becomes the busy one, exactly, and it is a live region so a '
+      'screen-reader user hears it without swiping back onto the row',
+      (tester) async {
+        final release = Completer<Response<void>>();
+        await _pumpPrivacy(tester, answer: (_) => release.future);
+
+        // Before: the ordinary name, and NOT a live region — a row that is
+        // permanently live re-announces itself on every unrelated rebuild.
+        final before = tester
+            .getSemantics(find.text(kPrivacyDeleteRowLabel))
+            .getSemanticsData();
+        expect(before.label, kPrivacyDeleteRowLabel);
+        expect(before.flagsCollection.isLiveRegion, isFalse);
+
+        await _confirmDelete(tester, settle: false);
+
+        final busy = tester
+            .getSemantics(find.text(kPrivacyDeleteRowLabel))
+            .getSemanticsData();
+        expect(
+          busy.label,
+          kPrivacyDeleteRowBusyLabel,
+          reason:
+              'EXACT, not `contains`. Exactness is what keeps the subtree '
+              'exclusion honest: if a spinner semanticsLabel ever did leak '
+              'into this node it would change the announced name, and this '
+              'assertion is what notices instead of the name being quietly '
+              'stolen.',
+        );
+        expect(
+          busy.label,
+          contains(kPrivacyDeleteRowLabel),
+          reason:
+              'WCAG 2.5.3 Label in Name: the accessible name must still '
+              'contain the words a sighted user reads, or voice control '
+              'loses the control.',
+        );
+        expect(
+          busy.flagsCollection.isLiveRegion,
+          isTrue,
+          reason:
+              'Without this the new name is only heard by a user who happens '
+              'to swipe back onto a control they just activated.',
+        );
+
+        release.complete(_acceptedResponse());
+        await tester.pumpAndSettle();
+      },
+    );
+
     testWidgets(
       'the sign-out does NOT race the request — nothing about the session '
       'moves until the 202 has arrived',
@@ -515,6 +594,10 @@ void main() {
         'kPrivacyDeleteConfirmBody': kPrivacyDeleteConfirmBody,
         'kPrivacyErasureRequestedMessage': kPrivacyErasureRequestedMessage,
         'kPrivacyErasureFailedMessage': kPrivacyErasureFailedMessage,
+        // Never rendered as text — it is the row's accessible NAME while the
+        // request is out. It is authored copy all the same, and a screen
+        // reader is exactly the wrong audience to make an unchecked claim to.
+        'kPrivacyDeleteRowBusyLabel': kPrivacyDeleteRowBusyLabel,
       };
       authored.forEach((name, text) {
         _expectMakesNoCompletionClaim(text, describedAs: name);
@@ -534,17 +617,66 @@ void main() {
   // -------------------------------------------------------------------------
   // Refused
   // -------------------------------------------------------------------------
+  //
+  // **What this harness can see, and what it cannot.** The fake is a
+  // `MockLumenApiApi` — ABOVE Dio. These tests therefore observe THE SCREEN
+  // and nothing underneath it. That scope is exactly right for the property
+  // the screen owes: on a refusal it must tell the user and must not end the
+  // session ITSELF. It is not wide enough to say what the app does.
+  //
+  // **The 401 is where the two answers differ, and the difference matters.**
+  // In production a 401 never reaches this code untouched.
+  // `AuthInterceptor.onError` intercepts it and attempts a refresh:
+  //
+  //   * refresh fails, or no refresh token is stored → the interceptor clears
+  //     the tokens and calls `onAuthLost`, which `dioProvider` wires to
+  //     `authStatusProvider.notifier.logout()`. **The session ends.** The user
+  //     sees `kPrivacyErasureFailedMessage` — *"please try again"* — on the
+  //     way to Welcome, where there is nothing to try again.
+  //   * refresh succeeds → the request is retried once, marked; a second 401
+  //     is forwarded untouched and the session survives, which is the only
+  //     case that matches the test below.
+  //
+  // So the honest reading of `a 401` here is *"the screen signs nobody out"*,
+  // and the test names say that rather than the system-level claim they used
+  // to make. **The production behaviour is pinned where it lives** and is not
+  // restated here: `auth_interceptor_test.dart`'s *"refresh throws → clear()
+  // called, onAuthLost invoked, DioException thrown"* and
+  // `dio_provider_test.dart`'s *"401 with a failing refresh clears tokens and
+  // drives authStatusProvider to unauthenticated"*.
+  //
+  // (Nothing about the screen changes as a result: it must not end a session
+  // it cannot reason about, and a 401 on `DELETE /me` is ambiguous to it —
+  // the same call disables the Keycloak identity, so a 401 can equally mean
+  // "an earlier attempt already succeeded". Filed for the phase's STATUS: the
+  // retry advice is misleading on the sign-out branch, and correcting it is a
+  // copy change on an L-05/L-06-gated string, not an implementer's call.)
 
   group('refused', () {
-    final refusals = <String, ApiAnswer<void> Function()>{
-      'no connectivity': () => apiNetworkFailure<void>(path: '/me'),
-      'a 401': () => _status(401),
-      'a 503': () => _status(503),
+    /// The refusal cases, each with the scope its assertions ACTUALLY have —
+    /// spliced into the test name so the name cannot outrun the harness.
+    final refusals = <String, ({ApiAnswer<void> Function() answer, String scope})>{
+      'no connectivity': (
+        answer: () => apiNetworkFailure<void>(path: '/me'),
+        scope: 'and no layer signs the user out',
+      ),
+      'a 401': (
+        answer: () => _status(401),
+        scope:
+            'and THIS SCREEN signs nobody out — in production the session '
+            'usually ends anyway, one layer below this fake; see the note '
+            'above the group',
+      ),
+      'a 503': (
+        answer: () => _status(503),
+        scope: 'and no layer signs the user out',
+      ),
     };
 
-    refusals.forEach((name, answer) {
+    refusals.forEach((name, refusal) {
+      final answer = refusal.answer;
       testWidgetsWithSemantics(
-        '$name: the user is told, and is NOT signed out',
+        '$name: the user is told, ${refusal.scope}',
         (tester) async {
           final h = await _pumpPrivacy(tester, answer: answer());
 
@@ -569,7 +701,9 @@ void main() {
       });
 
       testWidgetsWithSemantics(
-        '$name: the row is live again, so the user can try again',
+        '$name: the row is live again — the SCREEN leaves a retry available '
+        '(whether the app still has a session to retry with is decided '
+        'below this harness; see the note above the group)',
         (tester) async {
           await _pumpPrivacy(tester, answer: answer());
 

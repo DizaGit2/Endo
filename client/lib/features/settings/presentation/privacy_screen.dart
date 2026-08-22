@@ -41,6 +41,20 @@ const String kPrivacyScreenTitle = 'Privacy & security';
 /// here.
 const String kPrivacyDeleteRowLabel = 'Delete all data';
 
+/// The danger-zone row's announced name **while the request is in flight**.
+/// **AUTHORED, L-05/L-06-gated** like everything this screen invents — though
+/// it makes no claim a lawyer has to weigh: it says what the app is doing this
+/// second and stops before the outcome. *"Sending"*, not *"sent"* — the 202 has
+/// not arrived, and [kPrivacyErasureRequestedMessage] is what reports arrival.
+///
+/// It REPLACES [kPrivacyDeleteRowLabel] on the row's own semantics node rather
+/// than riding on the spinner, because the row excludes its own subtree — see
+/// [_DeleteAllDataRow] for why a `semanticsLabel` there would be dead code.
+/// It still OPENS with the visible label, so the accessible name contains the
+/// text a sighted user reads (WCAG 2.5.3, Label in Name) and voice control
+/// keeps working on "delete all data".
+const String kPrivacyDeleteRowBusyLabel = 'Delete all data, sending request';
+
 /// The confirmation's question. **AUTHORED, L-05/L-06-gated.**
 ///
 /// Names the account as well as the data, because the endpoint does both and
@@ -117,15 +131,39 @@ void _leavePrivacy(BuildContext context) {
 
 /// Screen 36 — Privacy & security (Settings).
 ///
-/// D-07: the "Anonymous analytics" toggle from the DATA section is omitted —
-/// there is no analytics in v1.
-///
 /// Sections:
-/// - APP LOCK: Face ID, Hide content in app switcher, Disguised app icon
-///   (visual-only toggles — no preference behind them yet)
-/// - DATA: Encryption status (no analytics toggle per D-07)
+/// - DATA: Encryption status (no analytics toggle — D-07)
 /// - DANGER ZONE: [kPrivacyDeleteRowLabel] — **live since P4b-T22c**
 /// - Warrant-canary notice (reproduced as-is from mockup)
+///
+/// **Two things the mockup draws are not here, for two DIFFERENT reasons, and
+/// the difference is the whole point.**
+///
+/// *Anonymous analytics* (DATA) is absent because **D-07 ruled analytics out of
+/// v1**: the feature is not coming, so its toggle never arrives either.
+///
+/// *APP LOCK* — `Face ID / Required to open`, `Hide content in app switcher /
+/// Show blank screen`, `Disguised app icon / Show as "Notes"` — was **removed
+/// at P4b-T22c's fix round under R-16**: copy describing machinery the phase
+/// does not ship is removed, not reworded into a promise. All three rows sat on
+/// a visual-only pill — no app lock, no biometric gate, no preference, no
+/// storage — and the first two rendered **ON**, so the screen told a user of an
+/// endometriosis tracker that biometric unlock was required to open the app and
+/// that the switcher showed a blank screen. Both were false, and both are the
+/// kind of claim someone leans on before deciding what to log. They were
+/// unreachable dead code while this screen was in no route table; T22c is the
+/// commit that would have shipped them, so T22c is the commit that takes them
+/// out.
+///
+/// **That is a copy removal, NOT a scope reversal — do not read it as one.**
+/// D-07 ruled biometric app-lock and app-switcher blur **IN** for v1
+/// (`ARCHITECTURE.md`'s decision table, row *"Client privacy scope (D-07,
+/// 2026-06-14)"*), and D-04's row in the same table leans on it — *"biometric
+/// app-lock covers casual device security"*. No task in the build ledger owns
+/// it. The section comes back **with the feature behind it**, which is R-16's
+/// own remedy shape. ("Disguised app icon" is a third case again: D-07 ruled on
+/// analytics, device backup, app lock and the language picker, and never on
+/// that one.)
 ///
 /// **This stopped being a static screen at P4b-T22c.** `DELETE /me` had worked
 /// end to end since P4a and was reachable by nobody: the danger-zone row was
@@ -266,28 +304,10 @@ class PrivacyScreen extends ConsumerWidget {
 
                 const SizedBox(height: 14),
 
-                // --- APP LOCK section ---
-                const LumenSectionLabel('App lock'),
-                const SizedBox(height: 6),
-                const _SettingsToggleRow(
-                  label: 'Face ID',
-                  subtitle: 'Required to open',
-                  enabled: true,
-                ),
-                const SizedBox(height: 5),
-                const _SettingsToggleRow(
-                  label: 'Hide content in app switcher',
-                  subtitle: 'Show blank screen',
-                  enabled: true,
-                ),
-                const SizedBox(height: 5),
-                const _SettingsToggleRow(
-                  label: 'Disguised app icon',
-                  subtitle: 'Show as "Notes"',
-                  enabled: false,
-                ),
-
-                const SizedBox(height: 14),
+                // NOTE: the APP LOCK section is REMOVED, not disabled and not
+                // reworded — R-16, and the reasoning is on [PrivacyScreen].
+                // `privacy_screen_semantics_test.dart` pins its absence so it
+                // cannot drift back in without the feature behind it.
 
                 // --- DATA section ---
                 const LumenSectionLabel('Data'),
@@ -367,69 +387,14 @@ class PrivacyScreen extends ConsumerWidget {
 // Private helper widgets
 // ---------------------------------------------------------------------------
 
-/// A settings row with a label, optional subtitle, and a toggle (on/off).
-class _SettingsToggleRow extends StatelessWidget {
-  const _SettingsToggleRow({
-    required this.label,
-    required this.enabled,
-    this.subtitle,
-  });
-
-  final String label;
-  final String? subtitle;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Theme.of(context).extension<LumenColors>()!;
-    // MergeSemantics: label + subtitle read as one unit. _MiniToggle is
-    // documented visual-only (no onTap anywhere on this row today), so it is
-    // safe to merge in too — unlike profile_screen.dart's _InfoRow, there is
-    // no independently-actionable descendant here to protect.
-    return MergeSemantics(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: c.input,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: c.border),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                      color: c.ink,
-                    ),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle!,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w400,
-                        color: c.muted,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            _MiniToggle(enabled: enabled),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// NOTE: `_SettingsToggleRow` and `_MiniToggle` were DELETED here at P4b-T22c's
+// fix round. They existed only to draw the APP LOCK section, and `_MiniToggle`
+// was documented as "a compact visual-only toggle pill" — a control that could
+// not be moved, backed by no preference and no storage. With the section gone
+// under R-16 they had no call site, and a visual-only toggle left lying in the
+// file is the next screen's temptation. Whichever task builds the real app lock
+// writes a real control (`Switch`, `Semantics(toggled:)`, a persisted
+// preference) rather than reviving these.
 
 /// A settings row showing a label and a static value string on the right,
 /// with an optional trailing icon beside the value (e.g. a check mark).
@@ -509,6 +474,27 @@ class _SettingsInfoRow extends StatelessWidget {
 /// wait is a real network round trip (`dioProvider` allows up to 15 s to
 /// connect) and a destructive action that swallows the tap and shows nothing
 /// is how a user taps it twice.
+///
+/// **The spinner deliberately carries NO `semanticsLabel`, and the house rule
+/// it appears to break is satisfied one level up.** Every other spinner in
+/// `lib/` has one (`'Loading'`, `'Signing in'`, `'Loading profile'`) because
+/// each is the only thing in its subtree with anything to say. This one is not:
+/// the `Semantics(excludeSemantics: true)` below drops the whole subtree, so a
+/// label on the indicator would reach nobody — dead code shaped like
+/// compliance. The state is carried where it can actually be heard, on the
+/// row's OWN node: the announced name becomes [kPrivacyDeleteRowBusyLabel], and
+/// `liveRegion` is true **only while busy**, so the change is announced without
+/// the user having to swipe back onto the control they just activated.
+///
+/// `enabled: false` on its own does NOT carry it. *"Delete all data, button,
+/// disabled"* is also exactly what a permanently dead control sounds like, and
+/// this one can sit there for up to 15 s after the user confirmed an ACCOUNT
+/// DELETION with no way to tell the two apart.
+///
+/// `privacy_screen_erasure_test.dart` pins the busy name **exactly**, not by
+/// substring — the exactness is what keeps the exclusion honest, because a
+/// spinner label that ever did leak through would change the announced name and
+/// redden the test rather than quietly stealing it.
 class _DeleteAllDataRow extends StatelessWidget {
   const _DeleteAllDataRow({required this.onTap, required this.busy});
 
@@ -520,9 +506,13 @@ class _DeleteAllDataRow extends StatelessWidget {
     final c = Theme.of(context).extension<LumenColors>()!;
     return Semantics(
       button: true,
-      label: kPrivacyDeleteRowLabel,
+      label: busy ? kPrivacyDeleteRowBusyLabel : kPrivacyDeleteRowLabel,
       enabled: onTap != null,
       container: true,
+      // liveRegion only WHILE busy: the name change is worth interrupting for
+      // once, and a row that is permanently a live region re-announces itself
+      // on every unrelated rebuild.
+      liveRegion: busy,
       // excludeSemantics: true drops the descendant GestureDetector's own
       // SemanticsAction.tap, so this Semantics needs its own onTap — wired to
       // the SAME callback (not a second closure) so pointer taps and
@@ -611,49 +601,3 @@ class _DeleteConfirmationDialog extends StatelessWidget {
   }
 }
 
-/// A compact visual-only toggle pill (26×16 px) matching the mockup's design.
-class _MiniToggle extends StatelessWidget {
-  const _MiniToggle({required this.enabled});
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Theme.of(context).extension<LumenColors>()!;
-    // OFF track: a low-opacity muted tint — visible in both light and dark themes
-    // without referencing hard-coded brand hex. ON track: full accent colour.
-    final trackColor = enabled ? c.accent : c.muted.withValues(alpha: 0.35);
-    // Thumb: surface colour — contrasts clearly against both accent (ON) and the
-    // muted tint (OFF) in light AND dark themes.
-    final thumbColor = c.surface;
-    return SizedBox(
-      width: 26,
-      height: 16,
-      child: Stack(
-        children: [
-          // Track
-          Container(
-            decoration: BoxDecoration(
-              color: trackColor,
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          // Thumb
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 150),
-            left: enabled ? null : 2,
-            right: enabled ? 2 : null,
-            top: 2,
-            child: Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: thumbColor,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
