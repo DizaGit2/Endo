@@ -32,8 +32,16 @@
 // the app does, the difference is stated rather than papered over: see the
 // note above the `refused` group, which walks all three refusals.
 //
-// The ROUTE and the entry affordance live in
-// `test/core/router/privacy_route_test.dart`, and are not re-asserted here.
+// The ROUTE and the entry affordance are OWNED by
+// `test/core/router/privacy_route_test.dart`, which asserts them directly
+// against `lumenRoutes()` and the production redirect. They get no assertion
+// of their OWN here — but they are not untouched either: the whole-app test
+// taps the row on screen 31 and asserts its destination
+// (`find.byType(PrivacyScreen)`), so under this task's mutation m6 ("screen 36
+// has no route") that test goes red, which is why the closing note counts it
+// among m6's five. By the standard this file uses everywhere else — would it
+// redden under the mutation? — the route and the affordance ARE pinned here
+// too, as a by-product of asserting where the erasure lands.
 
 import 'dart:async';
 import 'dart:ui' show Tristate;
@@ -212,7 +220,26 @@ void _expectMakesNoCompletionClaim(String text, {required String describedAs}) {
   );
 }
 
-/// Every string the tree is currently rendering, `Text` and `Text.rich` alike.
+/// The strings the tree is currently rendering in a [Text] — the plain `data`
+/// form and the rich `Text.rich` (`textSpan`) form alike.
+///
+/// NOT "every string on screen". `find.byType(Text)` matches
+/// `runtimeType == Text` and nothing else, so a `SelectableText`, a bare
+/// `RichText`, an `EditableText` or a `Tooltip`'s `message` all fall outside
+/// it. That is the house scope, not a shortcut: `a11y_guard.dart`'s equivalent
+/// helper opens the same way — *"The DRAWN plain-text content of a [Text]"*.
+/// Screen 36 renders all of its copy in `Text` (its one `Text.rich` is a
+/// `WidgetSpan` icon plus a plain span), so the scope costs this file nothing
+/// today; the WORDING is what had to stop saying "every".
+///
+/// For the rich form this keeps `toPlainText`'s defaults, which differ from
+/// `effectiveText`'s: a `WidgetSpan` arrives as U+FFFC, and a span carrying a
+/// `semanticsLabel` would be read by that LABEL rather than by the words
+/// drawn. No span on this screen has one today.
+///
+/// Two names inherit this scope by saying "on screen" — the caller's test name
+/// and its `describedAs` — as does property 3 in the file header. All three
+/// mean every `Text` on screen.
 List<String> _renderedText(WidgetTester tester) => tester
     .widgetList<Text>(find.byType(Text))
     .map((t) => t.data ?? t.textSpan?.toPlainText() ?? '')
@@ -253,9 +280,26 @@ class _SettledDashboard extends DashboardController {
   );
 }
 
-/// Pumps the REAL [LumenApp] — the real router, the real redirect, the real
-/// `authStatusProvider` and the REAL [MeRepository] — which is the only
-/// harness that can answer "where does the app land when the session ends?".
+/// Pumps the REAL [LumenApp] — the real router, the real redirect and the REAL
+/// [MeRepository] — which is the only harness that can answer "where does the
+/// app land when the session ends?".
+///
+/// `authStatusProvider` is NOT on that list and cannot be: `lumenOverrides`,
+/// six lines below, always pins it with a `FakeAuthController` (*"Nothing is
+/// overridden unless it is asked for, except [authStatusProvider]"*). What
+/// stays real is the half every session assertion in this file rests on. The
+/// fake `extends AuthController` and overrides `build()` ONLY, so
+/// [AuthController.logout] is PRODUCTION code: it reads the id token (null,
+/// from `emptyTokenStore`, so the OIDC `endSession` branch is skipped), clears
+/// the `TokenStore`, purges the cache store, then goes `unauthenticated` —
+/// which is the transition the real redirect acts on to land the user on
+/// Welcome, and the one `verify(tokenStore.clear())` observes in the
+/// `_pumpPrivacy` tests, which run under the same fake.
+///
+/// What the fake REMOVES is the session bootstrap: the real `build()` starts
+/// `_init()`, which asks the real `TokenStore` — i.e. `FlutterSecureStorage` —
+/// `hasValidSession()`, and sits at `AuthStatus.unknown` until it answers. The
+/// fake hard-codes the initial status and completes `initialized` instead.
 ///
 /// [MeRepository] is deliberately NOT mocked here (unlike `r19_navigation_
 /// test.dart`, whose subject is navigation): this test's subject is the write,
@@ -810,7 +854,7 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // The route is NOT re-asserted here — on purpose
+  // The route has no assertion OF ITS OWN here — on purpose
   // -------------------------------------------------------------------------
   //
   // What stood here was `expect(Routes.privacy, isNotEmpty)`, named "screen 36
