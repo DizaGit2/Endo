@@ -1,12 +1,18 @@
 // Semantics tests — PrivacyScreen (P3c-T13, house a11y pattern).
 //
-// PrivacyScreen is static (no API/state) but every row visually resembles a
-// settings control. None of them has a wired onTap today (the toggles are
-// explicitly documented as "visual-only" in _MiniToggle, and the nav rows have
-// no destination screen yet) — so rows get MergeSemantics (read label +
-// subtitle/value as one unit) rather than fabricated button semantics. See
+// Most rows on this screen visually resemble a settings control while having
+// nothing wired behind them (the toggles are documented as "visual-only" in
+// `_MiniToggle`) — those get MergeSemantics, reading label + subtitle/value as
+// one unit, rather than fabricated button semantics. See
 // profile_screen_semantics_test.dart's doc comment for the same reasoning
 // applied to the user-card row.
+//
+// **Two of them are no longer in that class, as of P4b-T22c**, and the
+// distinction is the whole point of the rule rather than an exception to it:
+// the danger-zone row now invokes `DELETE /me`, and the back chevron now pops
+// a real route. Both therefore announce themselves as buttons — a control with
+// an action behind it SHOULD. The erasure behaviour they lead to is pinned in
+// `privacy_screen_erasure_test.dart`.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,12 +49,30 @@ void main() {
   );
 
   testWidgetsWithSemantics(
-    'Delete all data row is informational (not exposed as a button — no '
-    'destination screen exists yet)',
+    'Delete all data row IS a button now — it has an action behind it '
+    '(P4b-T22c wired DELETE /me), so announcing one is honest',
     (tester) async {
       await _pump(tester);
 
-      expectNotAButton(tester, find.text('Delete all data'));
+      expectLabeledButton(
+        tester,
+        find.text(kPrivacyDeleteRowLabel),
+        kPrivacyDeleteRowLabel,
+      );
+    },
+  );
+
+  testWidgetsWithSemantics(
+    'the back chevron announces itself with the platform\'s own name for the '
+    'control — screen 36 is a pushed route since P4b-T22c, so there is '
+    'something to go back TO',
+    (tester) async {
+      await _pump(tester);
+
+      final back = MaterialLocalizations.of(
+        tester.element(find.byType(PrivacyScreen)),
+      ).backButtonTooltip;
+      expectLabeledButton(tester, find.bySemanticsLabel(back), back);
     },
   );
 

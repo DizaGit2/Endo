@@ -134,9 +134,13 @@ void testWidgetsWithSemantics(
 ///    `LumenInputField`. `InputDecorator` renders `hintText` as a real [Text],
 ///    so it is inside this rule's reach (`test/widgets/
 ///    lumen_input_field_semantics_test.dart:97` draws the same string).
-///  * `—` U+2014 — `profile_screen.dart:151,156,158,279` uses a lone em dash
-///    as the "not set" value, and `cycle_setup_controller.dart:74,77` uses one
-///    mid-sentence.
+///  * `—` U+2014 — `profile_screen.dart`'s three `_InfoRow` values and
+///    `_UserCard`'s name use a lone em dash as the "not set" value, and
+///    `cycle_setup_controller.dart:74,77` uses one mid-sentence.
+///    (This used to read `profile_screen.dart:151,156,158,279`, which was
+///    already off by six at P4b-T22c's HEAD and which T22c's own edit would
+///    have moved again — R-23: cite by symbol into a file the commit
+///    touches.)
 ///
 /// The rest are admitted so that legitimate copy the next screens will carry
 /// does not have to argue with the guard: the es-ES letters and marks (R-04

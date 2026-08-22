@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lumen/api/model/me_response.dart';
+import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
+import 'package:lumen/features/settings/presentation/privacy_screen.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:lumen/shared/widgets/lumen_retry_button.dart';
 import 'package:lumen/shared/widgets/lumen_section_label.dart';
@@ -164,6 +167,16 @@ class _ProfileBody extends ConsumerWidget {
               _InfoRow(label: 'Timezone', value: me.timezone ?? '—', c: c),
 
               const SizedBox(height: 14),
+
+              // --- PRIVACY & SECURITY (screen 36) ---
+              // Ships in the SAME commit as the route it points at (R-20,
+              // P4b-T22c). Screen 36 had existed since P3a and was registered
+              // in no route table, so the danger-zone affordance it draws —
+              // the app's only way to invoke `DELETE /me` — was reachable by
+              // nobody. This row is the other half of closing that.
+              _PrivacyRow(c: c),
+
+              const SizedBox(height: 5),
 
               // --- SIGN OUT ---
               _SignOutRow(c: c),
@@ -521,6 +534,73 @@ class _EditDisplayNameDialogState extends State<_EditDisplayNameDialog> {
           child: const Text('Save'),
         ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Privacy & security row — the entry affordance for screen 36
+// ---------------------------------------------------------------------------
+
+/// Navigates into screen 36 (`Routes.privacy`), a CHILD of this branch root.
+///
+/// `push`, not `go`: screen 36 stacks on top of screen 31 inside the More
+/// branch's own Navigator, so its back chevron pops back here with the tab
+/// still selected. `go` would replace the branch's location and leave the
+/// chevron nothing to pop.
+///
+/// Shaped after [_SignOutRow] rather than extracted into a shared widget: both
+/// are private rows on their own screen, and a widget under `lib/shared/
+/// widgets/` owes the registry its own golden pair and semantics test
+/// (`test/shared/screen_registry_test.dart`) — a cost worth paying for a
+/// reused control, not for the second instance of a container with a chevron
+/// in it.
+class _PrivacyRow extends StatelessWidget {
+  const _PrivacyRow({required this.c});
+  final LumenColors c;
+
+  @override
+  Widget build(BuildContext context) {
+    // Shared callback reference: excludeSemantics:true drops the descendant
+    // GestureDetector's SemanticsAction.tap from the tree entirely, so
+    // Semantics itself needs its own onTap — wired to the SAME callback (not
+    // a second closure) so pointer taps and assistive-tech activation always
+    // do the same thing.
+    void onTap() => context.push(Routes.privacy);
+    return Semantics(
+      button: true,
+      label: kPrivacyScreenTitle,
+      container: true,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: c.input,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: c.border),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  kPrivacyScreenTitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    color: c.ink,
+                  ),
+                ),
+              ),
+              // Decorative — the row's Semantics(button, label) above already
+              // excludes and replaces this subtree's semantics.
+              Icon(Icons.chevron_right, size: 16, color: c.muted),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

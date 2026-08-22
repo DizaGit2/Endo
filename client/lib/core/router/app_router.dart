@@ -10,6 +10,7 @@ import 'package:lumen/features/onboarding/application/onboarding_status_controll
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
 import 'package:lumen/features/onboarding/presentation/onboarding_shell_screen.dart';
 import 'package:lumen/features/onboarding/presentation/welcome_screen.dart';
+import 'package:lumen/features/settings/presentation/privacy_screen.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
 import 'package:lumen/features/shell/presentation/tab_placeholder_screen.dart';
 import 'package:lumen/features/symptoms/presentation/body_map_screen.dart';
@@ -217,8 +218,9 @@ class _RouterRefreshNotifier extends ChangeNotifier {
 /// any nav destination) would have stranded a signed-in user with no route to
 /// sign-out; mounting profile here alone (default still pointing at the old
 /// `/profile`) would have given one screen two live URLs with divergent back
-/// behaviour. T22a later pushes screen 32 inside this branch as a CHILD of
-/// this root — the same shape `/cycle/day/:date` uses under [Routes.cycle].
+/// behaviour. **Screen 36 (privacy & security) is that root's first CHILD
+/// since P4b-T22c** ([Routes.privacy]) — the same shape `/cycle/day/:date`
+/// uses under [Routes.cycle] — and T22a pushes screen 32 in beside it.
 ///
 /// A function rather than a constant, deliberately: [StatefulShellRoute] and
 /// [StatefulShellBranch] each allocate a [GlobalKey], so two simultaneously
@@ -332,9 +334,24 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
       // what "More" names) are not built in P4b and stay off this branch —
       // R-10 covers only the TAB existing with an honest destination, not a
       // full accordion of placeholder children.
+      //
+      // Screen 36 (privacy & security) is a CHILD of that root since P4b-T22c,
+      // together with the row on screen 31 that reaches it (R-20). A child, so
+      // it stacks inside the branch's own Navigator and pops back to profile
+      // with the tab and the nav bar intact — the same arrangement
+      // `/cycle/day/:date` has under Routes.cycle.
       StatefulShellBranch(
         routes: <RouteBase>[
-          GoRoute(path: Routes.more, builder: (_, _) => const ProfileScreen()),
+          GoRoute(
+            path: Routes.more,
+            builder: (_, _) => const ProfileScreen(),
+            routes: <RouteBase>[
+              GoRoute(
+                path: Routes.privacySegment,
+                builder: (_, _) => const PrivacyScreen(),
+              ),
+            ],
+          ),
         ],
       ),
     ],

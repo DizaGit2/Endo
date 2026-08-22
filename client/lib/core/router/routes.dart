@@ -90,10 +90,14 @@ abstract final class Routes {
   ///
   /// Screen 10 (calendar) shipped at P4b-T15. P4b-T16 adds screen 11 (day
   /// detail) as a child route (`/cycle/day/:date`); P4b-T23 adds screen 14
-  /// (phase correction) — see `lumen-build.md:1136` for the ledger. (This
-  /// comment used to cite `:1132`, which is a blank line; `:1136` is T23's
-  /// actual line — corrected here per survey-t16/05-routing.md, which
-  /// flagged the drift and noted this dartdoc was about to be edited anyway.)
+  /// (phase correction) — see the **T23** entry in
+  /// `docs/superpowers/plans/lumen-build.md` for the ledger.
+  ///
+  /// (Citation history, kept because it is the case R-23 exists for: this
+  /// cited `:1132` at T16, was "corrected" to `:1136` in the same breath, and
+  /// `:1136` had drifted onto an unrelated paragraph by P4b-T22c without
+  /// anyone touching this file. Naming the task instead of the line is the
+  /// rule now.)
   static const cycle = '/cycle';
 
   /// The RELATIVE path segment screen 11 (day detail) registers as a CHILD
@@ -170,10 +174,36 @@ abstract final class Routes {
   /// **Screen 31 (profile) mounts as this branch's ROOT since P4b-T17
   /// (R-19)** — the settled home CLAUDE.md always intended for it, and the
   /// ONLY URL that reaches it: there is no longer a top-level `/profile`
-  /// route, so profile has exactly one address. T22a later pushes screen 32
-  /// inside this branch, as a child of this root, the same way `/cycle/
-  /// day/:date` sits under [cycle]. Treatment and reports (the rest of what
-  /// this tab names) are not built in P4b and stay on [TabPlaceholderScreen]
-  /// — R-10.
+  /// route, so profile has exactly one address. **[privacy] is that root's
+  /// first child, since P4b-T22c**, the same way `/cycle/day/:date` sits under
+  /// [cycle]; T22a pushes screen 32 in beside it. Treatment and reports (the
+  /// rest of what this tab names) are not built in P4b and stay on
+  /// [TabPlaceholderScreen] — R-10.
   static const more = '/more';
+
+  /// The RELATIVE path segment screen 36 (privacy & security) registers as a
+  /// CHILD of [more] — go_router requires a sub-route's `path` to be relative,
+  /// the same shape [cycleDaySegment] has under [cycle]. Not a usable
+  /// navigation target on its own; [privacy] is the concrete path.
+  static const privacySegment = 'privacy';
+
+  /// Screen 36 (privacy & security) — `/more/privacy`, a CHILD of [more]
+  /// (P4b-T22c).
+  ///
+  /// **A child of the More branch root, not a top-level route.** Screen 36 is
+  /// a settings leaf reached from screen 31, so it belongs inside that
+  /// branch's own Navigator: `context.pop()` returns to profile with the tab
+  /// still selected and the bottom nav still on screen. Registering it
+  /// top-level would render it over the whole app and throw the More branch's
+  /// history away — the shape [symptomsNew] uses deliberately, for a task flow
+  /// entered from ANY tab, which this is not.
+  ///
+  /// Composed from [more] rather than spelled out, so renaming the branch root
+  /// cannot leave this pointing at a path that no longer exists.
+  ///
+  /// **What it reaches matters more than where it sits.** `DELETE /me` has
+  /// worked end to end since P4a and, until this route existed, was reachable
+  /// by nobody — behind a screen that advertises the affordance. See the T22c
+  /// entry in `docs/superpowers/plans/lumen-build.md`.
+  static const privacy = '$more/$privacySegment';
 }

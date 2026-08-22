@@ -23,6 +23,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
+import 'package:lumen/features/settings/presentation/privacy_screen.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -346,9 +347,24 @@ void main() {
     await _pump(tester, _FreshProfileController.new);
 
     expectNoDingbats(tester, screen: 'ProfileScreen');
-    // User card + Sign out row.
-    expect(find.byIcon(Icons.chevron_right), findsNWidgets(2));
+    // User card + Privacy & security row (P4b-T22c) + Sign out row.
+    expect(find.byIcon(Icons.chevron_right), findsNWidgets(3));
   });
+
+  testWidgetsWithSemantics(
+    'the Privacy & security row is a real button with an accessible name — '
+    'it ships in the same commit as the route behind it (R-20, P4b-T22c), so '
+    'unlike the user card above it there IS something to activate',
+    (tester) async {
+      await _pump(tester, _FreshProfileController.new);
+
+      expectLabeledButton(
+        tester,
+        find.bySemanticsLabel(kPrivacyScreenTitle),
+        kPrivacyScreenTitle,
+      );
+    },
+  );
 
   testWidgets(
     'no decorative back chevron — fix round 1, M6 (P4b-T17): this screen '
