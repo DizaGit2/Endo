@@ -958,6 +958,120 @@ void main() {
         ]),
       );
     });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // T17b — the explicit-occurredAt window, after `_dayWindow` stopped
+    // trusting its caller. The old form (`instant ± const Duration(days: 1)`)
+    // was exact instant arithmetic: correct for a calendar day only on a
+    // value carrying no DST offset. Its dartdoc said the input was always a
+    // UTC instant; nothing enforced that, and in THIS file — where the API
+    // is a mock and no serializer ever runs — nothing could have.
+    // ─────────────────────────────────────────────────────────────────────
+
+    test('T17b: an explicit occurredAt is anchored on its UTC civil date '
+        'whatever flavour of DateTime it arrives in — the window is built '
+        'from calendar FIELDS on the UTC instant, not by ±24h on the value '
+        'as given', () async {
+      when(
+        () => api.symptomsPost(
+          createSymptomsRequest: any(named: 'createSymptomsRequest'),
+        ),
+      ).thenAnswer(apiNetworkFailure());
+
+      // Two LOCAL-flavoured values, both naming the same UTC day (Apr 20),
+      // chosen so that on ANY machine with a non-zero offset at least one of
+      // them has a local civil date that differs from its UTC one:
+      // `lateLocal` is the last half-hour of Apr 20 UTC (local Apr 21 on any
+      // positive-offset machine) and `earlyLocal` the first (local Apr 19 on
+      // any negative-offset one). Same UTC day, so one expected key set.
+      //
+      // Under the old form the window came off the value AS GIVEN: on this
+      // repo's dev machine (UTC−6) `earlyLocal` produced the Apr 18/19/20
+      // window and this test is RED. On a UTC±0 runner neither entry can
+      // discriminate and the test passes vacuously — the honest limit, and
+      // part of why `ci-client.yml` re-runs this file under
+      // TZ=Europe/Madrid, where `lateLocal` is the discriminating one.
+      final lateLocal = DateTime.utc(2026, 4, 20, 23, 30).toLocal();
+      final earlyLocal = DateTime.utc(2026, 4, 20, 0, 30).toLocal();
+      expect(lateLocal.isUtc, isFalse);
+      expect(earlyLocal.isUtc, isFalse);
+
+      final failure = await repo
+          .createBatch(
+            entries: [
+              _draft(occurredAt: lateLocal),
+              _draft(occurredAt: earlyLocal),
+            ],
+            fallbackDay: _anyFallbackDay,
+          )
+          .then<Object?>((v) => v, onError: (Object e) => e);
+
+      expect(failure, isA<NetworkFailure>());
+      final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      expect(
+        invalidated,
+        unorderedEquals(<String>[
+          'GET:/cycle/day/2026-04-19',
+          'GET:/symptoms?day=2026-04-19',
+          'GET:/cycle/day/2026-04-20',
+          'GET:/symptoms?day=2026-04-20',
+          'GET:/cycle/day/2026-04-21',
+          'GET:/symptoms?day=2026-04-21',
+          'GET:/cycle/calendar?month=2026-04',
+        ]),
+      );
+    });
+
+    test('T17b: the window normalises across a month, a leap day and a year '
+        'boundary — the failure mode calendar-field arithmetic has and '
+        '±Duration did not', () async {
+      // `DateTime.utc(2028, 3, 0)` is Feb 29 and `DateTime.utc(2025, 12, 32)`
+      // is Jan 1 — normalisation the language does, but only if the fields
+      // are handed to it in that shape. This is the pin on the NEW mechanism:
+      // a `day - 1` written as `day` or a hand-rolled month rollover reddens
+      // here and nowhere else.
+      when(
+        () => api.symptomsPost(
+          createSymptomsRequest: any(named: 'createSymptomsRequest'),
+        ),
+      ).thenAnswer(apiNetworkFailure());
+
+      final failure = await repo
+          .createBatch(
+            entries: [
+              _draft(occurredAt: DateTime.utc(2028, 3, 1, 8)),
+              _draft(occurredAt: DateTime.utc(2026, 1, 1, 8)),
+            ],
+            fallbackDay: _anyFallbackDay,
+          )
+          .then<Object?>((v) => v, onError: (Object e) => e);
+
+      expect(failure, isA<NetworkFailure>());
+      final invalidated = verify(() => store.invalidate(captureAny())).captured;
+      expect(
+        invalidated,
+        unorderedEquals(<String>[
+          // Leap day, and the month key it belongs to.
+          'GET:/cycle/day/2028-02-29',
+          'GET:/symptoms?day=2028-02-29',
+          'GET:/cycle/calendar?month=2028-02',
+          'GET:/cycle/day/2028-03-01',
+          'GET:/symptoms?day=2028-03-01',
+          'GET:/cycle/day/2028-03-02',
+          'GET:/symptoms?day=2028-03-02',
+          'GET:/cycle/calendar?month=2028-03',
+          // Year boundary.
+          'GET:/cycle/day/2025-12-31',
+          'GET:/symptoms?day=2025-12-31',
+          'GET:/cycle/calendar?month=2025-12',
+          'GET:/cycle/day/2026-01-01',
+          'GET:/symptoms?day=2026-01-01',
+          'GET:/cycle/day/2026-01-02',
+          'GET:/symptoms?day=2026-01-02',
+          'GET:/cycle/calendar?month=2026-01',
+        ]),
+      );
+    });
   });
 }
 

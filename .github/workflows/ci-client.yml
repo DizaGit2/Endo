@@ -74,6 +74,50 @@ jobs:
         working-directory: client
         run: dart run tool/check_coverage.dart
 
+      # -----------------------------------------------------------------------
+      # Timezone-sensitive tests, re-run on a positive-offset DST zone (P4b-T17b)
+      #
+      # ⚠ STATUS: UNCONFIRMED — this step is NOT yet a control.
+      # It has never been observed to go red. The plan requires a deliberate
+      # red (put `.subtract(const Duration(days: 1))` back in `_dayWindow`,
+      # push, watch this fail) before it may be cited as evidence of anything.
+      # That could not be done on the branch that added it: the branch had no
+      # upstream and CI had never run. Until someone does it and records the
+      # result, treat a green here as "the step executed", not "the DST
+      # behaviour is pinned".
+      #
+      # WHAT IT IS FOR. Three P4b tests are unprovable on the primary dev
+      # machine (Windows, UTC−6, no DST since 2022):
+      #   * `dashboard_controller_test.dart`'s "yesterday is computed by
+      #     CALENDAR arithmetic" test (T17) needs a DST-observing zone;
+      #   * `symptoms_repository_test.dart`'s `fallbackDay` non-normalisation
+      #     test (T19) is observable only on a POSITIVE-offset machine;
+      #   * `symptoms_repository_test.dart`'s explicit-`occurredAt` UTC-anchor
+      #     test (T17b) discriminates on any non-zero offset, and on a
+      #     positive one it exercises the opposite sign from the dev machine.
+      # Madrid is UTC+1/+2 and observes DST, so one zone covers all three.
+      # `duration_days_guard_test.dart` is zone-independent and is here only
+      # because it is the source-level half of the same rule.
+      #
+      # Dart on Linux resolves local time through the C library and DOES read
+      # `TZ`; Dart on Windows does not — and worse, setting `TZ` there moves
+      # the reported offset to 0 while keeping the machine's own zone NAME, so
+      # a local "verification" silently runs on a UTC-flavoured clock. That is
+      # what `tool/tz_probe.dart` exists to catch: it asserts the offset is
+      # actually Madrid's BEFORE the tests run, so if the runner ignores `TZ`
+      # this step fails loudly instead of passing while proving nothing.
+      # -----------------------------------------------------------------------
+      - name: Timezone-sensitive tests (TZ=Europe/Madrid) — UNCONFIRMED control
+        working-directory: client
+        env:
+          TZ: Europe/Madrid
+        run: |
+          dart run tool/tz_probe.dart
+          flutter test \
+            test/core/time/duration_days_guard_test.dart \
+            test/features/home/dashboard_controller_test.dart \
+            test/features/symptoms/data/symptoms_repository_test.dart
+
       - name: Upload failure artifacts (coverage + golden diffs)
         if: failure()
         uses: actions/upload-artifact@v4

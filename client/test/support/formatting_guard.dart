@@ -254,7 +254,7 @@ List<FormattingViolation> auditSource(String source, {required String path}) {
 /// is the same standard `direct-intl` already applies in the other direction.
 Set<int> _waiverLines(CompilationUnit unit, int Function(int) lineOf) {
   final lines = <int>{};
-  for (final comment in _lineComments(unit)) {
+  for (final comment in lineComments(unit)) {
     if (_escapeWithReason.hasMatch(comment.lexeme)) {
       lines.add(lineOf(comment.offset));
     }
@@ -268,7 +268,13 @@ Set<int> _waiverLines(CompilationUnit unit, int Function(int) lineOf) {
 /// that follows them — so they are walked here through the token chain rather
 /// than by a visitor. The EOF token is included: it carries any comment at the
 /// very end of the file.
-List<Token> _lineComments(CompilationUnit unit) {
+///
+/// PUBLIC because `duration_days_guard.dart` enforces its own line-level
+/// waiver the same way and must read comments the same way (P4b-T17b): two
+/// copies of this walk could disagree about what counts as a comment, and the
+/// whole point of reading tokens instead of raw text is that the answer is not
+/// negotiable.
+List<Token> lineComments(CompilationUnit unit) {
   final comments = <Token>[];
   Token? token = unit.beginToken;
   while (token != null) {

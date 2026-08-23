@@ -462,6 +462,16 @@ List<String> _keysForCreatedItems(List<SymptomResponse> items) {
 /// this function's answer could matter. `.toUtc()` bought nothing, on either
 /// path.
 ///
+/// **T17b — a `.toUtc()` IS back, inside [_dayWindow], and it is not the one
+/// M-2 removed.** M-2's call sat here, on the value handed to
+/// [CacheKeys.keysForDate], and was sold as closing the profile-timezone gap;
+/// it did not, because the value was already UTC. T17b's sits one level down,
+/// on the ANCHOR of the ±1-day arithmetic, and does a different job: it makes
+/// the "given a UTC instant" premise of the exhaustiveness argument below a
+/// property of the code instead of a claim about callers. Read together with
+/// the [fallbackDay] paragraph that follows: that branch must still never be
+/// `.toUtc()`-ed, and is not.
+///
 /// **The gap `.toUtc()` never closed, closed instead by a ±1-day window.**
 /// [CacheKeys.keysForDate] reads the UTC civil date, while the SERVER derives
 /// the stored day in the user's PROFILE timezone (`SymptomService.cs:526`,
@@ -517,13 +527,42 @@ List<String> _fallbackInvalidationKeys(
   return keys.toList(growable: false);
 }
 
-/// [instant]'s own civil day plus its immediate neighbours (D−1, D, D+1) —
+/// [instant]'s own UTC civil day plus its immediate neighbours (D−1, D, D+1) —
 /// see [_fallbackInvalidationKeys]'s doc for why this specific window is
-/// exhaustive for a profile-timezone civil date given only a UTC instant.
+/// exhaustive for a profile-timezone civil date given a UTC instant.
+///
+/// **T17b — the UTC premise is now ENFORCED here rather than asserted about
+/// callers, and the arithmetic is on calendar FIELDS.** The first version
+/// yielded `instant.subtract(const Duration(days: 1))` and its `.add` twin,
+/// which is exact arithmetic on an instant: 86 400 seconds, correct for a
+/// calendar day only when the value carries no DST. It was safe *only* while
+/// [instant] was UTC, and nothing in this file made that true — the dartdoc
+/// said it. What actually kept it safe was a coincidence three files away
+/// (built_value's `Iso8601DateTimeSerializer` throws `ArgumentError` on a
+/// non-UTC `DateTime`, the generated client rewraps that as a
+/// `DioException(unknown)`, `mapDioException` answers `UnknownFailure`, and
+/// [cachedWrite] invalidates on nothing but `NetworkFailure`/`ServerFailure`)
+/// — and that coincidence does **not** hold in the unit tests, where the API
+/// is mocked and no serializer ever runs. `.toUtc()` costs nothing on the
+/// values that actually arrive (it is the identity on a UTC one) and makes
+/// the window's exhaustiveness argument true for any flavour of input; the
+/// field arithmetic then makes "±1 day" mean one CALENDAR day by
+/// construction, since `DateTime.utc` normalises day 0 into the previous
+/// month and day 32 into the next.
+///
+/// The three values are UTC MIDNIGHTS rather than the original's
+/// same-time-of-day instants. Nothing downstream can tell: the sole consumer
+/// is [CacheKeys.keysForDate], which reads `year`/`month`/`day` and nothing
+/// else.
+///
+/// This is deliberately NOT a waived `Duration(days: 1)`
+/// (`test/support/duration_days_guard.dart`). A waiver would have rested on
+/// the dartdoc above being true, which is the thing that was not enforceable.
 Iterable<DateTime> _dayWindow(DateTime instant) sync* {
-  yield instant.subtract(const Duration(days: 1));
-  yield instant;
-  yield instant.add(const Duration(days: 1));
+  final utc = instant.toUtc();
+  yield DateTime.utc(utc.year, utc.month, utc.day - 1);
+  yield DateTime.utc(utc.year, utc.month, utc.day);
+  yield DateTime.utc(utc.year, utc.month, utc.day + 1);
 }
 
 // ---------------------------------------------------------------------------
