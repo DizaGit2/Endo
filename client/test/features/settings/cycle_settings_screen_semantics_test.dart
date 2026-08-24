@@ -31,6 +31,8 @@
 //     golden, because a golden of a screen that does not scroll yet cannot
 //     tell the two layouts apart.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -80,6 +82,11 @@ void main() {
     bool? autoDetectPeriodStartEnabled = true,
     bool? showFertilityWindowEnabled = false,
     List<String>? warnings = const <String>[],
+    // The pause triple (P4b-T22b), supplied INDEPENDENTLY: the pair
+    // `(trackingPaused: false, pauseReason: 'pregnancy')` is a resumed user,
+    // which the server produces by design and which R2 exists for.
+    bool? trackingPaused = false,
+    String? pauseReason,
   }) {
     return cycleSettingsFixture(
       avgCycleLengthDays: avgCycleLengthDays,
@@ -88,6 +95,10 @@ void main() {
       phasePredictionEnabled: phasePredictionEnabled,
       autoDetectPeriodStartEnabled: autoDetectPeriodStartEnabled,
       showFertilityWindowEnabled: showFertilityWindowEnabled,
+      trackingPaused: trackingPaused,
+      pauseReason: pauseReason,
+      phasesUnavailable:
+          (trackingPaused ?? false) || !(phasePredictionEnabled ?? false),
       warnings: warnings,
       createdAt: DateTime.utc(2026, 4, 1),
       updatedAt: DateTime.utc(2026, 4, 1),
@@ -125,8 +136,7 @@ void main() {
         phasePredictionEnabled: named[#phasePredictionEnabled] as bool?,
         autoDetectPeriodStartEnabled:
             named[#autoDetectPeriodStartEnabled] as bool?,
-        showFertilityWindowEnabled:
-            named[#showFertilityWindowEnabled] as bool?,
+        showFertilityWindowEnabled: named[#showFertilityWindowEnabled] as bool?,
         touchedAvgCycleLengthDays: named[#touchedAvgCycleLengthDays] as bool,
         touchedAvgPeriodLengthDays: named[#touchedAvgPeriodLengthDays] as bool,
         touchedRegularity: named[#touchedRegularity] as bool,
@@ -221,14 +231,15 @@ void main() {
     );
 
     testWidgets(
-      'nothing about pausing is here either — the C-12 pause card is T22b\'s, '
-      'and half a state machine is worse than none',
+      'the pause card IS here now — this assertion was T22a\'s tripwire that '
+      'nothing about pausing had shipped yet, and P4b-T22b inverts it rather '
+      'than deleting it, so the two halves of screen 32 stay pinned to each '
+      'other (T21b did the same to screen 12\'s body-map tripwire)',
       (tester) async {
         await pumpScreen(tester);
 
         final drawn = renderedText(tester).join('\n').toLowerCase();
-        expect(drawn, isNot(contains('pause')));
-        expect(drawn, isNot(contains('resume')));
+        expect(drawn, contains('pause'));
       },
     );
   });
@@ -963,5 +974,557 @@ void main() {
         expect(calls, hasLength(1));
       },
     );
+  });
+
+  // ── the C-12 pause sub-flow (P4b-T22b) ────────────────────────────────────
+  //
+  // Everything below is driven through the real controller and asserted at the
+  // repository call, so "the card looks right" and "the right request went
+  // out" are never confused for each other.
+  //
+  // The two rulings that decide the shape of this group:
+  //
+  //  * **R2** — the card's state is `trackingPaused`. A resumed user's
+  //    response still carries their last `pauseReason`, on purpose, so every
+  //    case here supplies the two independently and one of them is the pair a
+  //    `pauseReason != null` gate would render as "paused forever".
+  //  * **R1** — resume is unconditional for every one of the five reasons,
+  //    pregnancy included. The resume cases are parameterised over the whole
+  //    vocabulary, and each asserts that no dialog appeared.
+
+  group('the pause card', () {
+    late List<String> pauseCalls;
+    late int resumeCalls;
+
+    void stubPause({CycleSettingsResponse? body, Object? throws}) {
+      when(() => repo.pauseTracking(reason: any(named: 'reason'))).thenAnswer((
+        invocation,
+      ) async {
+        final reason = invocation.namedArguments[#reason] as String;
+        pauseCalls.add(reason);
+        if (throws != null) throw throws;
+        return body ?? stored(trackingPaused: true, pauseReason: reason);
+      });
+    }
+
+    void stubResume({CycleSettingsResponse? body, Object? throws}) {
+      when(repo.resumeTracking).thenAnswer((_) async {
+        resumeCalls++;
+        if (throws != null) throw throws;
+        return body ?? stored(trackingPaused: false, pauseReason: 'pregnancy');
+      });
+    }
+
+    setUp(() {
+      pauseCalls = <String>[];
+      resumeCalls = 0;
+      stubPause();
+      stubResume();
+    });
+
+    /// Taps one reason chip, scrolling it into view first.
+    ///
+    /// The pause card is the LAST thing in the scroll view and the form now
+    /// genuinely scrolls at 390x844 — which is the whole reason R5 moved the
+    /// sub-flow's CTA out of it. A bare `tap` on a chip below the fold warns
+    /// "finder missed" and does nothing, so the gesture has to reach the
+    /// widget the same way a user's would.
+    Future<void> tapReasonChip(WidgetTester tester, String label) async {
+      await tester.ensureVisible(find.text(label));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+    }
+
+    /// The five reason chips currently drawn, by label. The regularity row
+    /// uses the same widget, so counting `LumenSelectableChip` alone would
+    /// answer three when the pause card draws none.
+    List<String> reasonChipLabels(WidgetTester tester) {
+      return CyclePauseReason.values
+          .map((r) => r.label)
+          .where(
+            (label) => find
+                .widgetWithText(LumenSelectableChip, label)
+                .evaluate()
+                .isNotEmpty,
+          )
+          .toList();
+    }
+
+    /// R4 — every drawn string that mentions a C-12 reason IS that reason's
+    /// bare label. A sentence saying what a reason means is C-12's clinician's
+    /// to write; C-12 is PO-interim with the sign-off still pending.
+    ///
+    /// `other` is deliberately not among the words: it is an ordinary English
+    /// word that would match copy having nothing to do with the vocabulary,
+    /// and a check that fires on the wrong thing gets deleted rather than
+    /// heeded.
+    void expectNoReasonProse(WidgetTester tester) {
+      const words = <String, String>{
+        'pregnan': 'Pregnancy',
+        'hormonal': 'Hormonal suppression',
+        'surgic': 'Surgical',
+        'menopaus': 'Menopause',
+      };
+      for (final drawn in renderedText(tester)) {
+        for (final entry in words.entries) {
+          if (!drawn.toLowerCase().contains(entry.key)) continue;
+          expect(
+            drawn,
+            entry.value,
+            reason:
+                'a sentence that explains a C-12 reason is the clinician\'s '
+                'to write, not this screen\'s',
+          );
+        }
+      }
+    }
+
+    // -- the vocabulary ------------------------------------------------------
+
+    testWidgets(
+      'the five C-12 codes are exactly the five the server accepts, and all '
+      'five are drawn as chips — the labels are the codes humanised and '
+      'nothing more (R4: the reasons are a vocabulary, not a diagnosis)',
+      (tester) async {
+        expect(
+          CyclePauseReason.values.map((r) => r.wireName).toList(),
+          <String>[
+            'pregnancy',
+            'hormonal_suppression',
+            'surgical',
+            'menopause',
+            'other',
+          ],
+        );
+
+        await pumpScreen(tester);
+
+        for (final reason in CyclePauseReason.values) {
+          expect(
+            find.widgetWithText(LumenSelectableChip, reason.label),
+            findsOneWidget,
+          );
+        }
+      },
+    );
+
+    testWidgets(
+      'R4 — no copy on this screen says anything about what a reason MEANS. '
+      'C-12 is PO-interim and clinician-UNSIGNED, so every drawn string that '
+      'mentions one of these words is that reason\'s bare label and nothing '
+      'longer',
+      (tester) async {
+        await pumpScreen(tester);
+        expectNoReasonProse(tester);
+      },
+    );
+
+    testWidgets('R4 — and none while PAUSED either', (tester) async {
+      await pumpScreen(
+        tester,
+        read: Fresh(stored(trackingPaused: true, pauseReason: 'pregnancy')),
+      );
+      expectNoReasonProse(tester);
+    });
+
+    // -- R2: the flag is the state ------------------------------------------
+
+    testWidgets(
+      'R2 — a RESUMED user renders as NOT paused, though their response still '
+      'carries their last reason. This is the state a `pauseReason != null` '
+      'gate would draw as paused forever, with a Resume button they had '
+      'already used',
+      (tester) async {
+        await pumpScreen(
+          tester,
+          read: Fresh(stored(trackingPaused: false, pauseReason: 'pregnancy')),
+        );
+
+        expect(find.text(kCycleSettingsTrackingActiveValue), findsOneWidget);
+        expect(find.text(kCycleSettingsTrackingPausedValue), findsNothing);
+        expect(
+          find.widgetWithText(OutlinedButton, kCycleSettingsPauseLabel),
+          findsOneWidget,
+        );
+        expect(find.text(kCycleSettingsResumeLabel), findsNothing);
+
+        // …and the remembered reason is doing the one job the server keeps it
+        // for: the chip opens pre-selected, so the CTA is live immediately.
+        final chip = tester.widget<LumenSelectableChip>(
+          find.widgetWithText(
+            LumenSelectableChip,
+            CyclePauseReason.pregnancy.label,
+          ),
+        );
+        expect(chip.selected, isTrue);
+        expect(find.text(kCycleSettingsChooseReasonMessage), findsNothing);
+      },
+    );
+
+    testWidgets('a PAUSED user renders paused, with the reason and no chips', (
+      tester,
+    ) async {
+      await pumpScreen(
+        tester,
+        read: Fresh(stored(trackingPaused: true, pauseReason: 'surgical')),
+      );
+
+      expect(find.text(kCycleSettingsTrackingPausedValue), findsOneWidget);
+      expect(find.text(kCycleSettingsTrackingActiveValue), findsNothing);
+      expect(find.text(CyclePauseReason.surgical.label), findsOneWidget);
+      // …but NOT as a chip: while paused the reason is a read-only row, and
+      // re-picking one is a gesture this task deliberately does not ship.
+      expect(reasonChipLabels(tester), isEmpty);
+      expect(
+        find.widgetWithText(OutlinedButton, kCycleSettingsResumeLabel),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'a stored reason this build has never seen draws no reason row at all, '
+      'and never the raw wire code — the C-12 vocabulary is append-only on '
+      'the server, so a sixth member WILL reach a build that predates it',
+      (tester) async {
+        await pumpScreen(
+          tester,
+          read: Fresh(stored(trackingPaused: true, pauseReason: 'lactational')),
+        );
+
+        expect(find.text(kCycleSettingsTrackingPausedValue), findsOneWidget);
+        expect(renderedText(tester).join('\n'), isNot(contains('lactational')));
+        expect(
+          find.widgetWithText(OutlinedButton, kCycleSettingsResumeLabel),
+          findsOneWidget,
+          reason: 'and they can still resume out of it',
+        );
+      },
+    );
+
+    // -- R1: five in, five out ----------------------------------------------
+
+    for (final reason in CyclePauseReason.values) {
+      testWidgets(
+        'tapping ${reason.label} then Pause sends `${reason.wireName}`',
+        (tester) async {
+          await pumpScreen(tester);
+
+          await tapReasonChip(tester, reason.label);
+          await tester.tap(find.text(kCycleSettingsPauseLabel));
+          await tester.pumpAndSettle();
+
+          expect(pauseCalls, <String>[reason.wireName]);
+          expect(find.text(kCycleSettingsTrackingPausedValue), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'Resume works from `${reason.wireName}` with NO confirmation and no '
+        'second question — R1: there is no reason a user cannot resume from',
+        (tester) async {
+          stubResume(
+            body: stored(trackingPaused: false, pauseReason: reason.wireName),
+          );
+          await pumpScreen(
+            tester,
+            read: Fresh(
+              stored(trackingPaused: true, pauseReason: reason.wireName),
+            ),
+          );
+
+          await tester.tap(find.text(kCycleSettingsResumeLabel));
+          // ONE pump, before settling: a confirmation would be on screen here.
+          await tester.pump();
+          expect(
+            find.byType(AlertDialog),
+            findsNothing,
+            reason: 'nothing may stand between the user and resuming',
+          );
+          await tester.pumpAndSettle();
+
+          expect(resumeCalls, 1);
+          expect(find.text(kCycleSettingsTrackingActiveValue), findsOneWidget);
+        },
+      );
+    }
+
+    testWidgets(
+      'R2 end to end — after resuming, the reason is STILL SET and the screen '
+      'still reads active. The chip comes back pre-selected, which is the '
+      'whole reason the server keeps it',
+      (tester) async {
+        stubResume(
+          body: stored(trackingPaused: false, pauseReason: 'pregnancy'),
+        );
+        await pumpScreen(
+          tester,
+          read: Fresh(stored(trackingPaused: true, pauseReason: 'pregnancy')),
+        );
+
+        await tester.tap(find.text(kCycleSettingsResumeLabel));
+        await tester.pumpAndSettle();
+
+        expect(find.text(kCycleSettingsTrackingActiveValue), findsOneWidget);
+        expect(find.text(kCycleSettingsResumeLabel), findsNothing);
+        final chip = tester.widget<LumenSelectableChip>(
+          find.widgetWithText(
+            LumenSelectableChip,
+            CyclePauseReason.pregnancy.label,
+          ),
+        );
+        expect(chip.selected, isTrue);
+      },
+    );
+
+    // -- the block, and its independence from the save's ---------------------
+
+    testWidgets(
+      'with no reason ever chosen the pause CTA is DISABLED, its reason is '
+      'rendered, and no request goes out — all three, because the first two '
+      'can be true while a second code path still submits',
+      (tester) async {
+        await pumpScreen(tester);
+
+        expect(find.text(kCycleSettingsChooseReasonMessage), findsOneWidget);
+        final cta = tester.widget<OutlinedButton>(
+          find.widgetWithText(OutlinedButton, kCycleSettingsPauseLabel),
+        );
+        expect(cta.onPressed, isNull);
+
+        await tester.tap(
+          find.widgetWithText(OutlinedButton, kCycleSettingsPauseLabel),
+        );
+        await tester.pumpAndSettle();
+        expect(pauseCalls, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'the empty-body block belongs to the SAVE alone — a freshly opened '
+      'screen can pause without touching a single setting. `Validate`\'s '
+      'emptiness test spans all nine members, so a pause-only body names a '
+      'field and is a legal request',
+      (tester) async {
+        await pumpScreen(
+          tester,
+          read: Fresh(stored(trackingPaused: false, pauseReason: 'menopause')),
+        );
+
+        expect(find.text(kCycleSettingsNothingChangedMessage), findsOneWidget);
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.widgetWithText(FilledButton, kCycleSettingsSaveLabel),
+              )
+              .onPressed,
+          isNull,
+        );
+
+        await tester.tap(find.text(kCycleSettingsPauseLabel));
+        await tester.pumpAndSettle();
+
+        expect(pauseCalls, <String>['menopause']);
+        verifyNever(anyUpdate);
+      },
+    );
+
+    // -- R5: the sub-flow's message zone is pinned too ----------------------
+
+    testWidgets(
+      'R5 — the pause banner, its block reason and its CTA all sit OUTSIDE '
+      'the scroll view, exactly where T22a put the save trio. The pause card '
+      'is precisely the content that made this matter',
+      (tester) async {
+        stubPause(throws: const NetworkFailure('offline'));
+        await pumpScreen(tester);
+
+        // Blocked first: the CTA and its reason, with the form scrolling.
+        expect(find.text(kCycleSettingsChooseReasonMessage), findsOneWidget);
+        expect(
+          find.ancestor(
+            of: find.text(kCycleSettingsChooseReasonMessage),
+            matching: find.byType(Scrollable),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.ancestor(
+            of: find.widgetWithText(OutlinedButton, kCycleSettingsPauseLabel),
+            matching: find.byType(Scrollable),
+          ),
+          findsNothing,
+        );
+
+        // The positive control: the chips the CTA acts on DO scroll, so the
+        // `findsNothing`s above are about placement rather than a finder pair
+        // that never matches anything.
+        expect(
+          find.ancestor(
+            of: find.text(CyclePauseReason.other.label),
+            matching: find.byType(Scrollable),
+          ),
+          findsWidgets,
+        );
+
+        await tapReasonChip(tester, CyclePauseReason.other.label);
+        await tester.tap(find.text(kCycleSettingsPauseLabel));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LumenErrorBanner), findsOneWidget);
+        expect(
+          find.ancestor(
+            of: find.byType(LumenErrorBanner),
+            matching: find.byType(Scrollable),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.ancestor(
+            of: find.text(CyclePauseReason.other.label),
+            matching: find.byType(Scrollable),
+          ),
+          findsWidgets,
+        );
+      },
+    );
+
+    testWidgets(
+      'a failed pause relabels ITS OWN control to Try again — the save CTA is '
+      'untouched — and the retry re-issues exactly one request',
+      (tester) async {
+        final log = ApiCallLog();
+        when(() => repo.pauseTracking(reason: any(named: 'reason'))).thenAnswer(
+          (_) async {
+            log.record();
+            throw const NetworkFailure('offline');
+          },
+        );
+        await pumpScreen(tester);
+
+        await tapReasonChip(tester, CyclePauseReason.surgical.label);
+        await tester.tap(find.text(kCycleSettingsPauseLabel));
+        await tester.pumpAndSettle();
+
+        expect(find.text(kCycleSettingsSaveLabel), findsOneWidget);
+        await expectRetryReissuesOneRequest(
+          tester,
+          requestCount: () => log.calls,
+          label: kCycleSettingsRetryLabel,
+        );
+      },
+    );
+
+    testWidgets(
+      'the two CTAs never both read Try again — starting either attempt '
+      'clears the other\'s banner, so `findRetryAffordance` can always name '
+      'one control and a screen reader hears one',
+      (tester) async {
+        stubSave(throws: const NetworkFailure('offline'));
+        stubPause(throws: const ServerFailure('boom'));
+        // Seeded with a REMEMBERED reason, so the pause needs no chip tap.
+        // Tapping one would go through the controller's `_write`, which clears
+        // the settings failure by itself — and the test would then pass
+        // whether or not the pause path clears anything (T22b mutation m8,
+        // caught at the controller layer and closed in both places).
+        await pumpScreen(
+          tester,
+          read: Fresh(stored(trackingPaused: false, pauseReason: 'menopause')),
+        );
+
+        await tester.tap(find.text(kCycleSettingsFertilityLabel));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(kCycleSettingsSaveLabel));
+        await tester.pumpAndSettle();
+        expect(findRetryAffordance(), findsOneWidget);
+        expect(find.byType(LumenErrorBanner), findsOneWidget);
+
+        await tester.tap(find.text(kCycleSettingsPauseLabel));
+        await tester.pumpAndSettle();
+
+        expect(findRetryAffordance(), findsOneWidget);
+        expect(find.byType(LumenErrorBanner), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'while a pause is in flight the pause control shows a spinner and BOTH '
+      'CTAs go inert, along with the chips — the controller refuses either '
+      'write while the other runs, so a live control here would be one whose '
+      'activation silently does nothing',
+      (tester) async {
+        // The save CTA's half of this was measured unpinned: gating it on
+        // `form.submitting` alone left the suite green (T22b mutation m23),
+        // because the controller refuses the overlapping save anyway and no
+        // screen test looked at the button.
+        final gate = Completer<CycleSettingsResponse>();
+        when(
+          () => repo.pauseTracking(reason: any(named: 'reason')),
+        ).thenAnswer((_) => gate.future);
+        await pumpScreen(
+          tester,
+          read: Fresh(stored(trackingPaused: false, pauseReason: 'menopause')),
+        );
+
+        // Touched first, so the save CTA is live BEFORE the pause starts and
+        // its disabling can only come from the in-flight gate.
+        await tester.tap(find.text(kCycleSettingsFertilityLabel));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.widgetWithText(FilledButton, kCycleSettingsSaveLabel),
+              )
+              .onPressed,
+          isNotNull,
+        );
+
+        await tester.tap(find.text(kCycleSettingsPauseLabel));
+        await tester.pump();
+
+        expect(
+          find.descendant(
+            of: find.byType(OutlinedButton),
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.widgetWithText(FilledButton, kCycleSettingsSaveLabel),
+              )
+              .onPressed,
+          isNull,
+        );
+        expect(
+          tester.widget<OutlinedButton>(find.byType(OutlinedButton)).onPressed,
+          isNull,
+        );
+        expect(
+          tester
+              .widgetList<LumenSelectableChip>(find.byType(LumenSelectableChip))
+              .every((chip) => !chip.enabled),
+          isTrue,
+        );
+
+        gate.complete(stored(trackingPaused: true, pauseReason: 'menopause'));
+        await tester.pumpAndSettle();
+        expect(find.text(kCycleSettingsTrackingPausedValue), findsOneWidget);
+      },
+    );
+
+    testWidgets('no dingbats with the chips drawn', (tester) async {
+      await pumpScreen(tester);
+      expectNoDingbats(tester, screen: 'CycleSettingsScreen');
+    });
+
+    testWidgets('no dingbats while paused', (tester) async {
+      await pumpScreen(
+        tester,
+        read: Fresh(stored(trackingPaused: true, pauseReason: 'menopause')),
+      );
+      expectNoDingbats(tester, screen: 'CycleSettingsScreen');
+    });
   });
 }

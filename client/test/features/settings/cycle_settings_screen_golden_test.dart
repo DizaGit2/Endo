@@ -17,7 +17,17 @@ import 'package:lumen/features/settings/presentation/cycle_settings_screen.dart'
 import '../../support/harness.dart';
 
 /// A controller settled on one saved row — no repository, so nothing loads.
+///
+/// [trackingPaused] / [pauseReason] are supplied **independently** (P4b-T22b),
+/// because the two states worth photographing differ in the flag and not in
+/// the reason: the default pair is a user who has never paused, and
+/// `_PausedCycleSettings` below is the same row with the flag on.
 class _SettledCycleSettings extends CycleSettingsController {
+  _SettledCycleSettings({this.trackingPaused = false, this.pauseReason});
+
+  final bool trackingPaused;
+  final String? pauseReason;
+
   @override
   Future<CycleSettingsForm> build() async => CycleSettingsForm.seededFrom(
     cycleSettingsFixture(
@@ -30,6 +40,9 @@ class _SettledCycleSettings extends CycleSettingsController {
       phasePredictionEnabled: true,
       autoDetectPeriodStartEnabled: true,
       showFertilityWindowEnabled: false,
+      trackingPaused: trackingPaused,
+      pauseReason: pauseReason,
+      phasesUnavailable: trackingPaused,
       createdAt: DateTime.utc(2026, 4, 1),
       updatedAt: DateTime.utc(2026, 4, 1),
     ),
@@ -46,6 +59,30 @@ void main() {
       overrides: [
         ...lumenOverrides(),
         cycleSettingsControllerProvider.overrideWith(_SettledCycleSettings.new),
+      ],
+    ),
+  );
+
+  // The PAUSED state (P4b-T22b) — a second pair, because the pause card draws
+  // a genuinely different thing in it: the five reason chips are replaced by a
+  // read-only reason row, and the CTA relabels. None of that is visible to a
+  // semantics assertion beyond its strings, and `_PauseCard`'s decoration is
+  // exactly the class of thing T22a's m28 established the goldens are the pin
+  // for.
+  goldenTestLightAndDark(
+    subject: 'CycleSettingsScreen paused',
+    fileName: 'cycle_settings_screen_paused',
+    build: (brightness) => goldenApp(
+      home: const CycleSettingsScreen(),
+      brightness: brightness,
+      overrides: [
+        ...lumenOverrides(),
+        cycleSettingsControllerProvider.overrideWith(
+          () => _SettledCycleSettings(
+            trackingPaused: true,
+            pauseReason: 'surgical',
+          ),
+        ),
       ],
     ),
   );

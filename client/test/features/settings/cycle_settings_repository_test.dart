@@ -9,11 +9,18 @@
 //
 // Everything asserted about the READ below is about that resume being
 // trustworthy: the right key, the right TTL, and the three values surviving a
-// cache round trip. The PATCH half arrived with screen 32 (P4b-T22a) and has
-// its own group at the bottom of this file — one endpoint, one owner.
+// cache round trip. The WRITES arrived with screen 32 — the settings save at
+// P4b-T22a and the C-12 pause pair at P4b-T22b — and each has its own group
+// below, plus a third that audits the three signatures at the SOURCE. One
+// endpoint, one owner, and one place to look for why it is three methods.
 
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:analyzer/dart/analysis/features.dart';
+import 'package:analyzer/dart/analysis/utilities.dart';
+import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/cycle_settings_response.dart';
@@ -26,6 +33,7 @@ import 'package:lumen/features/settings/data/cycle_settings_repository.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../../support/harness.dart';
+import '../../support/screen_registry.dart';
 
 /// The exact string this repository must file its read under, written out
 /// rather than read back from [CacheKeys].
@@ -300,68 +308,62 @@ void main() {
       },
     );
 
-    test(
-      'TOUCHED + null — the field is absent, and in particular is NOT '
-      'defaulted (a `?? 28` here would store a self-report the user never '
-      'made, on a column onboarding also writes)',
-      () async {
-        stubPatch();
+    test('TOUCHED + null — the field is absent, and in particular is NOT '
+        'defaulted (a `?? 28` here would store a self-report the user never '
+        'made, on a column onboarding also writes)', () async {
+      stubPatch();
 
-        await update(
-          avgCycleLengthDays: null,
-          avgPeriodLengthDays: null,
-          regularity: null,
-          phasePredictionEnabled: null,
-          touchedAvgCycleLengthDays: true,
-          touchedAvgPeriodLengthDays: true,
-          touchedRegularity: true,
-          touchedPhasePredictionEnabled: true,
-          // One real change, so this is not merely the empty-body case.
-          showFertilityWindowEnabled: true,
-          touchedShowFertilityWindowEnabled: true,
-        );
+      await update(
+        avgCycleLengthDays: null,
+        avgPeriodLengthDays: null,
+        regularity: null,
+        phasePredictionEnabled: null,
+        touchedAvgCycleLengthDays: true,
+        touchedAvgPeriodLengthDays: true,
+        touchedRegularity: true,
+        touchedPhasePredictionEnabled: true,
+        // One real change, so this is not merely the empty-body case.
+        showFertilityWindowEnabled: true,
+        touchedShowFertilityWindowEnabled: true,
+      );
 
-        final wire = _wirePatchMap(_capturedPatch(api));
-        expect(
-          wire.keys,
-          unorderedEquals(<String>['showFertilityWindowEnabled']),
-        );
-        expect(wire['avgCycleLengthDays'], isNot(28));
-        expect(wire['phasePredictionEnabled'], isNot(false));
-      },
-    );
+      final wire = _wirePatchMap(_capturedPatch(api));
+      expect(
+        wire.keys,
+        unorderedEquals(<String>['showFertilityWindowEnabled']),
+      );
+      expect(wire['avgCycleLengthDays'], isNot(28));
+      expect(wire['phasePredictionEnabled'], isNot(false));
+    });
 
-    test(
-      'TOUCHED + SET — the field travels, and `false` travels as false (the '
-      'boolean analogue of D-08: the server merges with `is { }`, never a '
-      'truthiness test, so a deliberate "off" is a real datum)',
-      () async {
-        stubPatch();
+    test('TOUCHED + SET — the field travels, and `false` travels as false (the '
+        'boolean analogue of D-08: the server merges with `is { }`, never a '
+        'truthiness test, so a deliberate "off" is a real datum)', () async {
+      stubPatch();
 
-        await update(
-          avgCycleLengthDays: 45,
-          avgPeriodLengthDays: 8,
-          regularity: 'irregular',
-          phasePredictionEnabled: false,
-          autoDetectPeriodStartEnabled: false,
-          showFertilityWindowEnabled: false,
-          touchedAvgCycleLengthDays: true,
-          touchedAvgPeriodLengthDays: true,
-          touchedRegularity: true,
-          touchedPhasePredictionEnabled: true,
-          touchedAutoDetectPeriodStartEnabled: true,
-          touchedShowFertilityWindowEnabled: true,
-        );
+      await update(
+        avgCycleLengthDays: 45,
+        avgPeriodLengthDays: 8,
+        regularity: 'irregular',
+        phasePredictionEnabled: false,
+        autoDetectPeriodStartEnabled: false,
+        showFertilityWindowEnabled: false,
+        touchedAvgCycleLengthDays: true,
+        touchedAvgPeriodLengthDays: true,
+        touchedRegularity: true,
+        touchedPhasePredictionEnabled: true,
+        touchedAutoDetectPeriodStartEnabled: true,
+        touchedShowFertilityWindowEnabled: true,
+      );
 
-        final wire = _wirePatchMap(_capturedPatch(api));
-        expect(wire['avgCycleLengthDays'], 45);
-        expect(wire['avgPeriodLengthDays'], 8);
-        expect(wire['regularity'], 'irregular');
-        expect(wire['phasePredictionEnabled'], false);
-        expect(wire['autoDetectPeriodStartEnabled'], false);
-        expect(wire['showFertilityWindowEnabled'], false);
-      },
-    );
+      final wire = _wirePatchMap(_capturedPatch(api));
+      expect(wire['avgCycleLengthDays'], 45);
+      expect(wire['avgPeriodLengthDays'], 8);
+      expect(wire['regularity'], 'irregular');
+      expect(wire['phasePredictionEnabled'], false);
+      expect(wire['autoDetectPeriodStartEnabled'], false);
+      expect(wire['showFertilityWindowEnabled'], false);
+    });
 
     test(
       'the six flags are INDEPENDENT — touching only the period length sends '
@@ -530,4 +532,408 @@ void main() {
       ]);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // pauseTracking / resumeTracking — the C-12 sub-flow (screen 32, P4b-T22b)
+  // -------------------------------------------------------------------------
+  //
+  // **These are separate methods on purpose, and the reason is the whole of
+  // this task's safety argument.** Before T22b the response could not be
+  // echoed back at the endpoint because `updateSettings` had no `pauseReason`
+  // parameter — *"the current guard is: the parameter does not exist"*. T22b
+  // writes the same row through the same endpoint, so that guard had to be
+  // REPLACED rather than merely inherited. What replaces it:
+  //
+  //   * `updateSettings` still has NO pause parameter (unchanged);
+  //   * `pauseTracking` sends `trackingPaused: true` as a LITERAL — it has no
+  //     `trackingPaused` parameter, so a reason can never ride an unpaused
+  //     request;
+  //   * `resumeTracking` takes NO ARGUMENTS AT ALL and sends
+  //     `trackingPaused: false` and nothing else, so the remembered reason a
+  //     resumed user's 200 still carries — the server preserves it across a
+  //     resume on purpose — has no way back onto the wire.
+  //
+  // The 400-producing combination is `trackingPaused: false` WITH a
+  // `pauseReason` (`CycleSettingsValidationMessages.PauseFieldRequiresPause`:
+  // *"value is only allowed while cycle tracking is paused"*). No public
+  // method on this repository can express it. The exact-key-set assertions
+  // below are what pin that: each reddens if the flag becomes a parameter, or
+  // if a reason is added to the resume path.
+  //
+  // Neither method carries any of the six self-report values either, which
+  // closes the second half of the same hazard: `UpdateCycleSettingsRequest`'s
+  // own contract doc warns that a pause card posting the whole resource would
+  // *"silently reset AvgCycleLengthDays … and destroy a self-report the user
+  // made on a different control"*.
+
+  group('the pause sub-flow', () {
+    void stubPatch({CycleSettingsResponse? body}) {
+      when(
+        () => api.settingsCyclePatch(
+          updateCycleSettingsRequest: any(named: 'updateCycleSettingsRequest'),
+        ),
+      ).thenAnswer(apiSuccess(body ?? cycleSettingsFixture()));
+    }
+
+    /// The five C-12 members, written out rather than read off any symbol —
+    /// the same reason `_settingsKey` is a literal. A test that compared the
+    /// repository's codes to the app's own enum would pass for any pair of
+    /// values as long as both sides moved together, including the wrong one.
+    const wireReasons = <String>[
+      'pregnancy',
+      'hormonal_suppression',
+      'surgical',
+      'menopause',
+      'other',
+    ];
+
+    test('resumeTracking puts EXACTLY `{trackingPaused: false}` on the wire — '
+        'this is the guard that replaces "the parameter does not exist". A '
+        'resumed user 200 still carries their last `pauseReason` BY DESIGN, and '
+        'echoing that back alongside `trackingPaused: false` is a 400 keyed '
+        '`pauseReason`. This method takes no arguments, so there is nothing to '
+        'echo it with', () async {
+      stubPatch(
+        body: cycleSettingsFixture(
+          trackingPaused: false,
+          pauseReason: 'pregnancy',
+        ),
+      );
+
+      await repo.resumeTracking();
+
+      final wire = _wirePatchMap(_capturedPatch(api));
+      expect(wire.keys, unorderedEquals(<String>['trackingPaused']));
+      expect(wire['trackingPaused'], isFalse);
+    });
+
+    test(
+      'pauseTracking puts EXACTLY `{trackingPaused: true, pauseReason: …}` on '
+      'the wire — never `pausedSince`, which the server defaults to the user '
+      'own today and which this client deliberately cannot supply',
+      () async {
+        stubPatch();
+
+        await repo.pauseTracking(reason: 'surgical');
+
+        final wire = _wirePatchMap(_capturedPatch(api));
+        expect(
+          wire.keys,
+          unorderedEquals(<String>['trackingPaused', 'pauseReason']),
+        );
+        expect(wire['trackingPaused'], isTrue);
+        expect(wire['pauseReason'], 'surgical');
+      },
+    );
+
+    for (final reason in wireReasons) {
+      test('`$reason` reaches the wire verbatim, and pauses', () async {
+        stubPatch();
+
+        await repo.pauseTracking(reason: reason);
+
+        final wire = _wirePatchMap(_capturedPatch(api));
+        expect(wire['pauseReason'], reason);
+        expect(wire['trackingPaused'], isTrue);
+      });
+    }
+
+    test('NEITHER method can carry one of the six self-report values, whatever '
+        'the caller does — so a pause can never re-assert a stale seed over '
+        'whatever the server now holds (the cross-surface wipe merge exists to '
+        'prevent). The same structural argument as `updateSettings` having no '
+        'pause parameter, in the other direction', () async {
+      stubPatch(
+        body: cycleSettingsFixture(
+          avgCycleLengthDays: 45,
+          avgPeriodLengthDays: 9,
+          regularity: 'irregular',
+          trackingPaused: true,
+          pauseReason: 'menopause',
+        ),
+      );
+
+      await repo.pauseTracking(reason: 'menopause');
+      final paused = _wirePatchMap(_capturedPatch(api));
+      await repo.resumeTracking();
+      final resumed = _wirePatchMap(_capturedPatch(api));
+
+      for (final wire in <Map<String, dynamic>>[paused, resumed]) {
+        for (final field in <String>[
+          'avgCycleLengthDays',
+          'avgPeriodLengthDays',
+          'regularity',
+          'phasePredictionEnabled',
+          'autoDetectPeriodStartEnabled',
+          'showFertilityWindowEnabled',
+          'pausedSince',
+        ]) {
+          expect(
+            wire.containsKey(field),
+            isFalse,
+            reason: '$field must not ride a pause request',
+          );
+        }
+      }
+    });
+
+    test('a pause-only body is NOT the endpoint empty body — `Validate` '
+        'emptiness test spans all NINE members, so `{trackingPaused: false}` '
+        'alone names a field and is a legal request', () async {
+      stubPatch();
+
+      await repo.resumeTracking();
+
+      final wire = _wirePatchMap(_capturedPatch(api));
+      expect(wire, isNotEmpty);
+    });
+
+    // -- cache ---------------------------------------------------------------
+
+    test('both writes invalidate the settings read on success and on an '
+        'AMBIGUOUS failure (S-6), and neither invalidates on a 400', () async {
+      stubPatch();
+      await repo.pauseTracking(reason: 'other');
+      verify(() => store.invalidate(_settingsKey)).called(1);
+
+      await repo.resumeTracking();
+      verify(() => store.invalidate(_settingsKey)).called(1);
+
+      when(
+        () => api.settingsCyclePatch(
+          updateCycleSettingsRequest: any(named: 'updateCycleSettingsRequest'),
+        ),
+      ).thenAnswer(apiNetworkFailure<CycleSettingsResponse>());
+      await expectLater(
+        repo.pauseTracking(reason: 'other'),
+        throwsA(isA<NetworkFailure>()),
+      );
+      verify(() => store.invalidate(_settingsKey)).called(1);
+
+      when(
+        () => api.settingsCyclePatch(
+          updateCycleSettingsRequest: any(named: 'updateCycleSettingsRequest'),
+        ),
+      ).thenAnswer(
+        apiValidationProblem<CycleSettingsResponse>(
+          fields: <String, List<String>>{
+            'pauseReason': <String>['value is not an allowed value'],
+          },
+        ),
+      );
+      await expectLater(
+        repo.pauseTracking(reason: 'other'),
+        throwsA(isA<ValidationFailure>()),
+      );
+      verifyNever(() => store.invalidate(_settingsKey));
+    });
+
+    test('a 200 with no body is a typed ServerFailure on both', () async {
+      when(
+        () => api.settingsCyclePatch(
+          updateCycleSettingsRequest: any(named: 'updateCycleSettingsRequest'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<CycleSettingsResponse>(
+          requestOptions: RequestOptions(path: '/settings/cycle'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(
+        repo.pauseTracking(reason: 'other'),
+        throwsA(isA<ServerFailure>()),
+      );
+      await expectLater(repo.resumeTracking(), throwsA(isA<ServerFailure>()));
+    });
+
+    test(
+      'the 200 body reaches the caller unchanged, pause triple and all',
+      () async {
+        stubPatch(
+          body: cycleSettingsFixture(
+            trackingPaused: true,
+            pauseReason: 'hormonal_suppression',
+            phasesUnavailable: true,
+          ),
+        );
+
+        final saved = await repo.pauseTracking(reason: 'hormonal_suppression');
+
+        expect(saved.trackingPaused, isTrue);
+        expect(saved.pauseReason, 'hormonal_suppression');
+        expect(saved.phasesUnavailable, isTrue);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // The round-trip guard, at the SOURCE (P4b-T22b)
+  // -------------------------------------------------------------------------
+  //
+  // **This group is what replaces "the parameter does not exist".**
+  //
+  // Until T22b, the 400-producing echo — `trackingPaused: false` together with
+  // the `pauseReason` a resumed user's own 200 still carries — could not be
+  // built by any caller, because `updateSettings` had no such parameter. That
+  // was a property of a method SIGNATURE, held by nothing but its own absence:
+  // adding the parameter would have made the echo constructible and reddened
+  // nothing. T22b writes the same row through the same endpoint, so the
+  // property had to be re-established and then PINNED.
+  //
+  // The property, stated as a shape rather than as a behaviour:
+  //
+  //   * `updateSettings` names none of the three pause members;
+  //   * `pauseTracking` takes a reason and NOT the flag — it sends
+  //     `trackingPaused: true` as a literal;
+  //   * `resumeTracking` takes nothing at all;
+  //   * `pausedSince` is set by nothing, anywhere in the file;
+  //   * and no PUBLIC method takes a request object, which would hand a caller
+  //     back everything the three signatures withhold.
+  //
+  // Behaviour tests cannot see this. The wire assertions above prove what
+  // today's callers send; they cannot prove what tomorrow's caller COULD send,
+  // and that is exactly the difference the old guard lived in. So this is a
+  // syntactic audit of the repository's own source — the shape
+  // `duration_days_guard.dart` and `golden_comparison_gate_test.dart` already
+  // use in this repo, for the same reason: some properties are about the code
+  // rather than about a run of it.
+  //
+  // **Every assertion here has been watched to fail** (T22b's mutation round,
+  // g1–g4): a `pauseReason` parameter added to `updateSettings`, a `reason`
+  // added to `resumeTracking`, a `pausedSince` added to `pauseTracking`, and
+  // `_patch` made public each redden exactly the clause that names them.
+
+  group('the round-trip guard, at the source', () {
+    late String source;
+    late Map<String, MethodDeclaration> methods;
+
+    setUpAll(() {
+      final file = File(
+        '${resolvePackageRoot().path}/lib/features/settings/data/'
+        'cycle_settings_repository.dart',
+      );
+      expect(
+        file.existsSync(),
+        isTrue,
+        reason:
+            'the repository moved; re-point this guard rather than deleting '
+            'it — it is the only thing standing where "the parameter does not '
+            'exist" used to',
+      );
+      source = file.readAsStringSync();
+      final parsed = parseString(
+        content: source,
+        path: file.path,
+        featureSet: FeatureSet.latestLanguageVersion(),
+        throwIfDiagnostics: false,
+      );
+      final collector = _MethodCollector();
+      parsed.unit.accept(collector);
+      methods = collector.byName;
+      expect(
+        methods.keys,
+        containsAll(<String>[
+          'getSettings',
+          'updateSettings',
+          'pauseTracking',
+          'resumeTracking',
+        ]),
+        reason: 'the repository was reshaped; re-point this guard',
+      );
+    });
+
+    List<String> parameterNames(String name) {
+      final method = methods[name];
+      expect(method, isNotNull, reason: '$name is gone from the repository');
+      return (method!.parameters?.parameters ?? const <FormalParameter>[])
+          .map((p) => p.name?.lexeme ?? '')
+          .toList();
+    }
+
+    test('updateSettings names NONE of the three pause members — the original '
+        'guard, unchanged and now asserted rather than merely true', () {
+      final names = parameterNames('updateSettings');
+      expect(names, isNotEmpty);
+      for (final member in <String>[
+        'trackingPaused',
+        'pauseReason',
+        'pausedSince',
+      ]) {
+        expect(
+          names,
+          isNot(contains(member)),
+          reason:
+              'a settings save that can carry $member can echo a response '
+              'back, and for a paused-then-resumed user that echo is a 400',
+        );
+      }
+    });
+
+    test('pauseTracking takes the reason and NOT the flag: `trackingPaused = '
+        'true` is a literal in its body, so a reason can never ride an unpaused '
+        'request', () {
+      expect(parameterNames('pauseTracking'), <String>['reason']);
+      expect(
+        methods['pauseTracking']!.toSource(),
+        contains('trackingPaused = true'),
+      );
+    });
+
+    test('resumeTracking takes NOTHING — the remembered reason a resumed user '
+        'still carries has no parameter to travel in', () {
+      expect(parameterNames('resumeTracking'), isEmpty);
+      expect(
+        methods['resumeTracking']!.toSource(),
+        contains('trackingPaused = false'),
+      );
+    });
+
+    test(
+      'nothing in this file sets `pausedSince`. The server defaults it to the '
+      "caller's own user-local today; sending one would need a date derived "
+      'from the device clock and opens two 400s (FutureDate, and '
+      'PauseFieldRequiresPause while unpaused) for a gesture screen 32 does '
+      'not offer',
+      () {
+        expect(source, isNot(contains('pausedSince =')));
+      },
+    );
+
+    test('no PUBLIC method takes an UpdateCycleSettingsRequest — the three '
+        'signatures ARE the guard, and one method that accepts a prebuilt body '
+        'hands a caller back everything they withhold', () {
+      for (final entry in methods.entries) {
+        final takesRequest =
+            (entry.value.parameters?.parameters ?? const <FormalParameter>[])
+                .map((p) => p.toSource())
+                .any((s) => s.contains('UpdateCycleSettingsRequest'));
+        if (!takesRequest) continue;
+        expect(
+          entry.key.startsWith('_'),
+          isTrue,
+          reason:
+              '${entry.key} takes a request object and is public. Keep the '
+              'body-building inside the repository, where each method fixes '
+              'what its own request may contain.',
+        );
+      }
+    });
+  });
+}
+
+/// Every method declared in the parsed unit, by name.
+///
+/// A visitor rather than `ClassDeclaration.members`: analyzer 12 reshaped the
+/// class-declaration API (`screen_registry.dart` records the same surprise
+/// about `namePart`), and this audit does not need to know which class a
+/// method belongs to — the repository file declares exactly one.
+class _MethodCollector extends RecursiveAstVisitor<void> {
+  final Map<String, MethodDeclaration> byName = <String, MethodDeclaration>{};
+
+  @override
+  void visitMethodDeclaration(MethodDeclaration node) {
+    byName[node.name.lexeme] = node;
+    super.visitMethodDeclaration(node);
+  }
 }

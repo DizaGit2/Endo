@@ -144,6 +144,95 @@ const String kCycleSettingsEditCancelLabel = 'Cancel';
 /// display-name dialog.
 const String kCycleSettingsEditSaveLabel = 'Save';
 
+// ---------------------------------------------------------------------------
+// The C-12 pause sub-flow's copy and vocabulary (P4b-T22b)
+// ---------------------------------------------------------------------------
+//
+// **Every string below is AUTHORED**: `Screens/screen_32_cycle_settings.html`
+// draws no pause card, and the word "pause" appears in no mockup in the repo.
+// All of them are on the T25 PO copy list.
+//
+// **R4 governs the whole block.** C-12 is PO-interim and clinician-UNSIGNED,
+// so the five reasons are a VOCABULARY and not a diagnosis: each label is its
+// wire code humanised and nothing more, and no sentence anywhere on this
+// screen says what a reason means, medically or otherwise — least of all about
+// `pregnancy`, whose C-12 rider (hormone-range interpretation disabled
+// entirely) is a P6/P7b rule with no surface here at all.
+// `cycle_settings_screen_semantics_test.dart` asserts that property directly:
+// every drawn string mentioning one of these words IS that reason's bare
+// label.
+
+/// The pause card's section. **AUTHORED.**
+const String kCycleSettingsTrackingLabel = 'Cycle tracking';
+
+/// The status row's label. **AUTHORED.**
+const String kCycleSettingsStatusLabel = 'Status';
+
+/// The status of a user who is NOT paused. **AUTHORED.**
+const String kCycleSettingsTrackingActiveValue = 'Active';
+
+/// The status of a paused user. **AUTHORED.**
+const String kCycleSettingsTrackingPausedValue = 'Paused';
+
+/// Labels the reason chips while unpaused, and the reason row while paused.
+/// **AUTHORED.**
+const String kCycleSettingsPauseReasonLabel = 'Reason';
+
+/// The pause CTA. **AUTHORED.**
+const String kCycleSettingsPauseLabel = 'Pause tracking';
+
+/// The resume CTA. **AUTHORED.**
+///
+/// **It is never anything else, and nothing stands in front of it.** R1 /
+/// C-12: resume is user-controlled and always available for every pause
+/// reason, `pregnancy` included — no confirmation dialog, no second question,
+/// and no variant of this string that asks one.
+const String kCycleSettingsResumeLabel = 'Resume tracking';
+
+/// The five ratified C-12 pause reasons and the labels screen 32 draws.
+///
+/// Wire codes from `UserCycleSettings.PauseReasons` — the **five**-member set,
+/// PO-extended 2026-07-14 and recorded in `ARCHITECTURE.md` §A:59; the
+/// three-member r15 list is superseded. The server compares the code against
+/// that list and answers a 400 keyed `pauseReason` for anything else, which is
+/// why [fromWireName] matches exactly and normalises nothing.
+///
+/// `CycleRegularity` is the shape this follows, including the reason it lives
+/// beside the screen rather than in the controller: the label→code mapping is
+/// the screen's, and `CycleSettingsController.selectPauseReason` takes the
+/// wire code already resolved.
+enum CyclePauseReason {
+  pregnancy('pregnancy', 'Pregnancy'),
+  hormonalSuppression('hormonal_suppression', 'Hormonal suppression'),
+  surgical('surgical', 'Surgical'),
+  menopause('menopause', 'Menopause'),
+  other('other', 'Other');
+
+  const CyclePauseReason(this.wireName, this.label);
+
+  /// The code on the wire.
+  final String wireName;
+
+  /// The chip label — the code humanised, and **nothing more** (R4).
+  final String label;
+
+  /// The member [code] names, or null — including for a code this build has
+  /// never seen.
+  ///
+  /// **The null is load-bearing, and the vocabulary is append-only on the
+  /// server**, so a sixth member will one day reach a build that predates it.
+  /// A paused user whose stored reason resolves to nothing is still shown as
+  /// paused and can still resume; the reason row is simply omitted, rather
+  /// than drawing a raw wire code at them. Same choice as
+  /// [cycleSettingsWarningMessage]'s unknown code, for the same reason.
+  static CyclePauseReason? fromWireName(String? code) {
+    for (final value in values) {
+      if (value.wireName == code) return value;
+    }
+    return null;
+  }
+}
+
 /// The hint for `avg_cycle_length_out_of_sanity_band`.
 ///
 /// **AUTHORED, and it is screen 3's sentence minus its first word.** Screen 3
@@ -245,11 +334,17 @@ void _leaveCycleSettings(BuildContext context) {
 
 /// Screen 32 — Cycle (Settings), at [Routes.cycleSettings].
 ///
-/// Sections: YOUR PATTERN (the three self-reports, all editable) and
-/// PREDICTIONS (the three stored preferences R-10 keeps). The pause card the
-/// C-12 contract also puts on this screen is **T22b's** and is deliberately
-/// absent — nothing here reads or writes `trackingPaused`, `pauseReason` or
-/// `pausedSince`.
+/// Sections: YOUR PATTERN (the three self-reports, all editable), PREDICTIONS
+/// (the three stored preferences R-10 keeps) and CYCLE TRACKING (the C-12
+/// pause sub-flow, P4b-T22b).
+///
+/// **The screen writes the same row through two separate requests**, and the
+/// split is the safety property, not a layering accident: a `pauseReason` sent
+/// while the effective state is not paused is a 400, and a resumed user's own
+/// 200 is exactly that body. `CycleSettingsRepository`'s three methods have
+/// disjoint parameter sets so the combination cannot be built; read its class
+/// dartdoc. `pausedSince` is written by nothing here — the server defaults it
+/// to the user's own today.
 class CycleSettingsScreen extends ConsumerWidget {
   const CycleSettingsScreen({super.key});
 
@@ -349,7 +444,11 @@ class _Body extends ConsumerWidget {
     final rejected = form.failure is ValidationFailure
         ? form.failure! as ValidationFailure
         : null;
-    final enabled = !form.submitting;
+    // Either write on this row locks the whole form: they hit the same
+    // `user_cycle_settings` row, and `CycleSettingsController` refuses to
+    // start one while the other is in flight, so a live control here would be
+    // a gesture the controller would silently drop.
+    final enabled = !form.submitting && !form.pausing;
 
     return SingleChildScrollView(
       child: Padding(
@@ -440,6 +539,21 @@ class _Body extends ConsumerWidget {
               ),
             ),
 
+            const SizedBox(height: 14),
+
+            // --- CYCLE TRACKING (the C-12 pause sub-flow, P4b-T22b) ---
+            // The CARD is here, in the scroll view; its CTA, its block reason
+            // and its failure banner are in `_Footer` with the save trio. That
+            // split is R5, and this card is the content T22a moved the footer
+            // out for.
+            const LumenSectionLabel(kCycleSettingsTrackingLabel),
+            const SizedBox(height: 6),
+            _PauseCard(
+              form: form,
+              enabled: enabled,
+              onSelect: controller.selectPauseReason,
+            ),
+
             // NOTE: the DISPLAY section and its `First day of week` row are
             // REMOVED, not disabled and not reworded — R-10, and the reasoning
             // is at the top of this file. The retrain footer is likewise gone
@@ -457,18 +571,18 @@ class _Body extends ConsumerWidget {
 // The pinned footer
 // ---------------------------------------------------------------------------
 
-/// The advisory, the failure banner, the block reason and the CTA — outside
-/// the scroll view, always on screen.
+/// The advisory, both failure banners, both block reasons and both CTAs —
+/// outside the scroll view, always on screen.
 ///
-/// **Converged with screen 12's `_Footer` (T22a fix round 1), before T22b
-/// makes it matter.** T20b's fix round 1 moved screen 12's banner out of its
-/// scroll view and amended S9 to say so; this screen shipped the banner
-/// inside. Measured, that was not a live defect — at 390x844 screen 32's
-/// `maxScrollExtent` is 0.0 before and after a failure, so nothing could
-/// scroll away — but the property held by accident of content height rather
-/// than by construction, and T22b adds a whole pause card to this same screen.
-/// The moment the content exceeds the viewport, a banner in the scroll view is
-/// a message the user never sees.
+/// **Converged with screen 12's `_Footer` (T22a fix round 1), one task before
+/// T22b made it matter — and it now does.** T20b's fix round 1 moved screen
+/// 12's banner out of its scroll view and amended S9 to say so; this screen
+/// shipped the banner inside. Measured at the time that was not a live defect
+/// — at 390x844 screen 32's `maxScrollExtent` was 0.0 before and after a
+/// failure, so nothing could scroll away — but the property held by accident
+/// of content height rather than by construction. **T22b's pause card is the
+/// content that broke the accident**: the form now scrolls, and a banner left
+/// inside it would be a message the user never sees.
 ///
 /// T20b's three reasons, all of which apply here unchanged:
 ///  * a failure banner and a block reason are the same class of message —
@@ -503,6 +617,7 @@ class _Footer extends ConsumerWidget {
     final controller = ref.read(cycleSettingsControllerProvider.notifier);
     final bannerMessage = cycleSettingsBannerMessage(form.failure);
     final blockReason = form.blockReason;
+    final busy = form.submitting || form.pausing;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 4, 22, 20),
@@ -540,9 +655,7 @@ class _Footer extends ConsumerWidget {
             // itself; this is the screen-level half of that pair, and it is
             // what stops the endpoint's all-fields-absent 400 from ever being
             // sent for.
-            onPressed: (!form.canSubmit || form.submitting)
-                ? null
-                : controller.submit,
+            onPressed: (!form.canSubmit || busy) ? null : controller.submit,
             style: FilledButton.styleFrom(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -570,8 +683,102 @@ class _Footer extends ConsumerWidget {
                         : kCycleSettingsSaveLabel,
                   ),
           ),
+
+          // --- the pause sub-flow's own three (P4b-T22b) ---
+          // Same order as the save trio above — banner, block reason, CTA —
+          // and in the same pinned footer, because R5 asks for exactly what
+          // T22a converged on. It sits BELOW the save CTA so it stays adjacent
+          // to the card it acts on, which is the last thing in the scroll
+          // view.
+          //
+          // Footer height is bounded by two invariants rather than by hope:
+          // the two banners are mutually exclusive (starting either attempt
+          // clears both — `CycleSettingsForm.pauseFailure`), and so are the
+          // pause banner and the pause block reason (a pause attempt requires
+          // a selected reason, and the card offers no deselect, so a form that
+          // can show `Choose a reason to pause.` has never attempted one).
+          _PauseFooter(form: form, busy: busy, controller: controller),
         ],
       ),
+    );
+  }
+}
+
+/// The pause sub-flow's failure banner, block reason and CTA — the second half
+/// of [_Footer], outside the scroll view for [_Footer]'s reasons.
+class _PauseFooter extends StatelessWidget {
+  const _PauseFooter({
+    required this.form,
+    required this.busy,
+    required this.controller,
+  });
+
+  final CycleSettingsForm form;
+  final bool busy;
+  final CycleSettingsController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).extension<LumenColors>()!;
+    final bannerMessage = cycleSettingsBannerMessage(form.pauseFailure);
+    final blockReason = form.pauseBlockReason;
+
+    // ONE branch decides the label and the action together, so the control can
+    // never announce one and do the other. **Nothing else gates the resume
+    // arm** — R1 / C-12: there is no reason a user cannot resume from, and no
+    // confirmation singles out `pregnancy`.
+    final (String label, Future<bool> Function() action) = form.trackingPaused
+        ? (kCycleSettingsResumeLabel, controller.resume)
+        : (kCycleSettingsPauseLabel, controller.pause);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (bannerMessage != null) ...<Widget>[
+          const SizedBox(height: 10),
+          LumenErrorBanner(message: bannerMessage),
+        ],
+        if (blockReason != null) ...<Widget>[
+          const SizedBox(height: 10),
+          // Straight from `CycleSettingsForm.pauseBlockReason`, never composed
+          // here, and never rendered while paused — that getter has no arm
+          // that can block a resume.
+          LumenFieldMessage(blockReason),
+        ],
+        const SizedBox(height: 8),
+        OutlinedButton(
+          // Gated on `canTogglePause`, which is `pauseBlockReason == null`.
+          // `pause()` and `resume()` carry the same guards themselves; this is
+          // the screen-level half of that pair.
+          onPressed: (!form.canTogglePause || busy) ? null : action,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: c.ink,
+            side: BorderSide(color: c.border),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            textStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          child: form.pausing
+              ? SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: c.ink,
+                    semanticsLabel: 'Loading',
+                  ),
+                )
+              : Text(
+                  form.pauseFailure != null ? kCycleSettingsRetryLabel : label,
+                ),
+        ),
+      ],
     );
   }
 }
@@ -780,6 +987,163 @@ class _RegularityChips extends StatelessWidget {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The C-12 pause card (P4b-T22b)
+// ---------------------------------------------------------------------------
+
+/// The state of cycle tracking, and — while it is on — the reason a pause
+/// would be taken for.
+///
+/// **The two states are decided by `trackingPaused` alone** (R2). The
+/// remembered `pauseReason` a resumed user's response still carries is used
+/// for exactly what the server keeps it for: pre-selecting the chip. It is
+/// never read as "is this user paused", which would leave every resumed user
+/// looking paused with a Resume control they had already used.
+///
+/// **While PAUSED the chips are gone and the reason is a read-only row.**
+/// Re-tapping a chip in that state would re-pause with a new reason, which the
+/// server does accept — it updates the open span in place — but it is a second
+/// gesture with its own failure mode that C-12 asks for nowhere, and it would
+/// need its own confirmation story to be safe. Resume and pause again is the
+/// path; R1 guarantees the first half is always available. Booked for T25 as a
+/// product question, not shipped as a guess.
+class _PauseCard extends StatelessWidget {
+  const _PauseCard({
+    required this.form,
+    required this.enabled,
+    required this.onSelect,
+  });
+
+  final CycleSettingsForm form;
+  final bool enabled;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = CyclePauseReason.fromWireName(form.pauseReason);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _StatusRow(
+          label: kCycleSettingsStatusLabel,
+          value: form.trackingPaused
+              ? kCycleSettingsTrackingPausedValue
+              : kCycleSettingsTrackingActiveValue,
+        ),
+        if (form.trackingPaused) ...<Widget>[
+          // An unresolvable code draws NO row rather than the raw wire string
+          // — the vocabulary is append-only, so a future member will reach
+          // this build. The status above still says Paused, and the CTA below
+          // still resumes.
+          if (reason != null) ...<Widget>[
+            const SizedBox(height: 5),
+            _StatusRow(
+              label: kCycleSettingsPauseReasonLabel,
+              value: reason.label,
+            ),
+          ],
+        ] else ...<Widget>[
+          const SizedBox(height: 10),
+          const LumenFieldLabel(kCycleSettingsPauseReasonLabel),
+          const SizedBox(height: 6),
+          _PauseReasonChips(
+            selected: form.selectedPauseReason,
+            enabled: enabled,
+            onSelect: onSelect,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A label and a value in the row treatment [LumenSelectableRow] draws, with
+/// no gesture and no selection.
+///
+/// It is not a [LumenSelectableRow] with a no-op `onTap`: that widget's
+/// `onTap` is required and non-nullable, and it announces itself as a button —
+/// which this is not. `MergeSemantics` so a screen reader hears
+/// "Status Paused" as one node rather than two loose strings.
+class _StatusRow extends StatelessWidget {
+  const _StatusRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).extension<LumenColors>()!;
+
+    return MergeSemantics(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: c.input,
+          border: Border.all(color: c.border),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 12, color: c.muted),
+              ),
+            ),
+            Text(value, style: TextStyle(fontSize: 12, color: c.ink)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The five C-12 reasons as a single-select wrap.
+///
+/// A [Wrap] rather than the `Expanded`-in-a-[Row] the regularity chips use:
+/// five labels, one of them `Hormonal suppression`, do not fit a 300-px row
+/// and squeezing them would truncate the vocabulary's own words.
+///
+/// The SELECTED chip keeps a null `onTap` — the regularity row's rule, for its
+/// reason: there is no way to un-set a pause reason (the request has no clear,
+/// and a null `pauseReason` means "leave alone" on the wire), so a deselect
+/// would be a gesture the server could not honour. The chip then reports
+/// itself as offering no action rather than staying a button that silently
+/// does nothing.
+class _PauseReasonChips extends StatelessWidget {
+  const _PauseReasonChips({
+    required this.selected,
+    required this.enabled,
+    required this.onSelect,
+  });
+
+  /// The picked WIRE code, or null when none is.
+  final String? selected;
+  final bool enabled;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: <Widget>[
+        for (final reason in CyclePauseReason.values)
+          LumenSelectableChip(
+            label: reason.label,
+            selected: selected == reason.wireName,
+            enabled: enabled,
+            onTap: selected == reason.wireName
+                ? null
+                : () => onSelect(reason.wireName),
+          ),
       ],
     );
   }

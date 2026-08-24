@@ -38,10 +38,25 @@
 //     server constant (`CycleSettingsSanityBand`) and are not restated on this
 //     side of the wire either.
 //
-// **The pause triple is NOT here.** `trackingPaused`, `pauseReason` and
-// `pausedSince` are screen 32's pause card, which is T22b's. They carry their
-// own 400s and their own state machine, and mixing them into this form is how
-// a partial-update surface becomes untestable.
+//  4. **The C-12 pause sub-flow arrived at P4b-T22b, and it is a SECOND write
+//     on the same row rather than six more fields on the first.** The two sets
+//     cannot be sent together: a `pauseReason` that arrives while the
+//     effective state is not paused is a 400, and the resumed user's own 200
+//     is exactly that body. `CycleSettingsRepository` therefore exposes three
+//     methods with disjoint parameter sets and no way to combine them; read
+//     its class dartdoc for the guard. Here, the consequences are:
+//
+//       * **`trackingPaused` is the state; `pauseReason` never is**
+//         ([CycleSettingsForm.trackingPaused]);
+//       * a pause 200 is adopted for its pause fields ONLY
+//         ([CycleSettingsForm.afterPauseSaved]), so it cannot discard an
+//         unsaved settings edit;
+//       * the two writes never overlap, and at most one failure is on the
+//         form at a time ([CycleSettingsForm.pauseFailure]).
+//
+// **`pausedSince` is NOT here, and is not on the wire either.** The server
+// defaults it to the caller's own user-local today; this client neither reads
+// nor sends it. That is also what keeps the no-clock rule below true.
 //
 // **No clock.** Nothing in this file reads `DateTime.now()`; there is no date
 // on this surface at all.
@@ -79,6 +94,30 @@ import 'package:lumen/features/settings/data/cycle_settings_repository.dart';
 /// fail. `goals_screen.dart`'s rule: the reason is never left to be guessed.
 const String kCycleSettingsNothingChangedMessage = 'Change a setting to save.';
 
+/// Why the pause control is disabled until a reason is picked.
+///
+/// **AUTHORED** — screen 32's mockup draws no pause card at all, so every
+/// string in the sub-flow is new. On the T25 PO copy list.
+///
+/// **It states a requirement, and says nothing about any reason.** R4: the
+/// five C-12 members are a vocabulary, not a diagnosis, and C-12 is PO-interim
+/// with the clinician sign-off still pending — so no copy on this screen
+/// characterises what a reason means, and nothing about `pregnancy` beyond the
+/// word itself.
+///
+/// The requirement is the server's, at the transition into paused:
+/// `CycleSettingsService.Validate` answers `pauseReason: required` when an
+/// unpaused user is moved to paused with no reason in the request, because
+/// *"an unpaused user is never paused for a reason they did not name in this
+/// request — the remembered reason is a screen-32 pre-selection, not
+/// consent"*. This message is that rule met as a disabled control with a
+/// stated reason rather than a round trip that can only fail
+/// (`goals_screen.dart`'s rule).
+///
+/// **There is no counterpart for RESUMING, and there must never be one.** R1 /
+/// C-12: resume is unconditional for every reason including `pregnancy`.
+const String kCycleSettingsChooseReasonMessage = 'Choose a reason to pause.';
+
 // ---------------------------------------------------------------------------
 // CycleSettingsForm
 // ---------------------------------------------------------------------------
@@ -103,8 +142,13 @@ class CycleSettingsForm {
     this.touchedPhasePredictionEnabled = false,
     this.touchedAutoDetectPeriodStartEnabled = false,
     this.touchedShowFertilityWindowEnabled = false,
+    this.trackingPaused = false,
+    this.pauseReason,
+    this.selectedPauseReason,
     this.submitting = false,
+    this.pausing = false,
     this.failure,
+    this.pauseFailure,
     this.warnings = const <String>[],
   });
 
@@ -138,7 +182,53 @@ class CycleSettingsForm {
       phasePredictionEnabled: settings.phasePredictionEnabled,
       autoDetectPeriodStartEnabled: settings.autoDetectPeriodStartEnabled,
       showFertilityWindowEnabled: settings.showFertilityWindowEnabled,
+      // R2 — the STATE is the flag. `pauseReason` is carried alongside it and
+      // is never consulted to answer "is this user paused"; see
+      // [trackingPaused] and [pauseReason].
+      trackingPaused: settings.trackingPaused ?? false,
+      pauseReason: settings.pauseReason,
+      // …and the remembered reason is used for exactly what the server says it
+      // is for: pre-selecting the chip this user last chose.
+      selectedPauseReason: settings.pauseReason,
       warnings: settings.warnings?.toList() ?? const <String>[],
+    );
+  }
+
+  /// This form after a successful `PATCH` from the SETTINGS save.
+  ///
+  /// The 200 is the whole stored resource and becomes the new seed — with the
+  /// pause card's pending [selectedPauseReason] carried across, because
+  /// nothing in that request concerned it. Without the carry-over, tapping a
+  /// reason chip and then saving an unrelated setting would silently reset the
+  /// chip to whatever the server remembers.
+  CycleSettingsForm afterSettingsSaved(CycleSettingsResponse saved) {
+    return CycleSettingsForm.seededFrom(
+      saved,
+    ).copyWith(selectedPauseReason: selectedPauseReason);
+  }
+
+  /// This form after a successful pause or resume.
+  ///
+  /// **Only the pause state is adopted.** The six values and their `touched*`
+  /// flags survive untouched, so a pause can never discard an answer the user
+  /// has typed but not yet saved — the response's copies of them are the
+  /// server's, and adopting them would be the same lost update the touched
+  /// flags exist to prevent. [warnings] is left alone for the same reason: it
+  /// describes the STORED values, which this request did not change, and the
+  /// user may be holding edits that already made it stale.
+  ///
+  /// `pauseReason` is adopted with `??`, which cannot clear it — and that is
+  /// the contract, not a convenience: `ReconcilePauseAsync`'s resume arm
+  /// leaves the column alone on purpose (*"row.PauseReason is deliberately
+  /// left alone"*), so a null here means "the server said nothing new", never
+  /// "forget it".
+  CycleSettingsForm afterPauseSaved(CycleSettingsResponse saved) {
+    return copyWith(
+      trackingPaused: saved.trackingPaused ?? false,
+      pauseReason: saved.pauseReason,
+      selectedPauseReason: saved.pauseReason,
+      pausing: false,
+      clearPauseFailure: true,
     );
   }
 
@@ -199,13 +289,51 @@ class CycleSettingsForm {
   /// Whether the user has moved the fertility-window toggle.
   final bool touchedShowFertilityWindowEnabled;
 
-  /// Whether `PATCH /settings/cycle` is in flight. Every control refuses input
-  /// while this is true.
+  /// **Whether cycle tracking is paused — the ONE field that answers that
+  /// question.**
+  ///
+  /// Never [pauseReason] `!= null`. `CycleSettingsResponse.PauseReason`'s own
+  /// contract doc: the reason for the most recent pause *"survives a resume on
+  /// purpose"*, and *"there is deliberately no CHECK tying it to
+  /// TrackingPaused"* — so **a non-null reason does not mean the user is
+  /// paused**. A client that read it as one would show every resumed user as
+  /// paused forever, with a Resume control they had already used.
+  final bool trackingPaused;
+
+  /// The reason for the user's MOST RECENT pause, which the server keeps after
+  /// a resume so this screen can pre-select it. Read [trackingPaused] for the
+  /// state; this is a memory, not a status.
+  final String? pauseReason;
+
+  /// The reason chip currently picked in the pause card, or `null` when none
+  /// is. Seeded from [pauseReason] — that is what the server keeps it for —
+  /// and it is what [CycleSettingsController.pause] sends.
+  ///
+  /// It is **not** a `touched*` flag's twin: nothing decides from it whether a
+  /// field is omitted from a merge body. It is the argument of a request that
+  /// either happens or does not.
+  final String? selectedPauseReason;
+
+  /// Whether the SETTINGS `PATCH /settings/cycle` is in flight. Every control
+  /// refuses input while this is true.
   final bool submitting;
 
-  /// Why the last attempt failed. Cleared the moment the user changes anything
-  /// again, or starts a new attempt.
+  /// Whether the PAUSE `PATCH /settings/cycle` is in flight. Both writes hit
+  /// the same row, so neither may start while the other is running.
+  final bool pausing;
+
+  /// Why the last SETTINGS attempt failed. Cleared the moment the user changes
+  /// anything again, or starts a new attempt of either kind.
   final Failure? failure;
+
+  /// Why the last PAUSE or RESUME attempt failed.
+  ///
+  /// **At most one of [failure] and this is ever non-null**: starting either
+  /// attempt clears both. Two simultaneous "this did not work" banners would
+  /// be two explanations on one screen and — since both CTAs relabel to
+  /// `Try again` — two controls with the same accessible name, which
+  /// `findRetryAffordance` could not tell apart either.
+  final Failure? pauseFailure;
 
   /// The frozen `CycleSettingsWarnings` codes the last SEED carried — the read
   /// on open, or a successful save. Never a rejection: the values are stored.
@@ -258,6 +386,25 @@ class CycleSettingsForm {
 
   bool get canSubmit => blockReason == null;
 
+  /// Why the pause control is disabled, or `null` when it is enabled.
+  ///
+  /// **Gated on [trackingPaused], and there is exactly one condition.**
+  ///
+  ///  * Paused → `null`, always. **R1 / C-12: resume is unconditional for
+  ///    every reason, `pregnancy` included** (*"resume is user-controlled and
+  ///    always available for every pause reason"*; the contract repeats it —
+  ///    *"no gate, no confirmation, not even for pregnancy"*). There is
+  ///    deliberately no branch here that can look at [pauseReason].
+  ///  * Not paused → blocked until a reason is named, because the server
+  ///    requires one on the transition in.
+  String? get pauseBlockReason {
+    if (trackingPaused) return null;
+    if (selectedPauseReason == null) return kCycleSettingsChooseReasonMessage;
+    return null;
+  }
+
+  bool get canTogglePause => pauseBlockReason == null;
+
   CycleSettingsForm copyWith({
     int? avgCycleLengthDays,
     bool clearAvgCycleLengthDays = false,
@@ -273,9 +420,15 @@ class CycleSettingsForm {
     bool? touchedPhasePredictionEnabled,
     bool? touchedAutoDetectPeriodStartEnabled,
     bool? touchedShowFertilityWindowEnabled,
+    bool? trackingPaused,
+    String? pauseReason,
+    String? selectedPauseReason,
     bool? submitting,
+    bool? pausing,
     Failure? failure,
     bool clearFailure = false,
+    Failure? pauseFailure,
+    bool clearPauseFailure = false,
     List<String>? warnings,
   }) {
     return CycleSettingsForm(
@@ -309,8 +462,19 @@ class CycleSettingsForm {
       touchedShowFertilityWindowEnabled:
           touchedShowFertilityWindowEnabled ??
           this.touchedShowFertilityWindowEnabled,
+      trackingPaused: trackingPaused ?? this.trackingPaused,
+      // No paired `clearX` for either of these, and that is the contract
+      // rather than an omission: the server never clears `pauseReason` (its
+      // resume arm leaves the column alone on purpose), and the pause card
+      // offers no deselect, so neither value can legitimately go back to null.
+      pauseReason: pauseReason ?? this.pauseReason,
+      selectedPauseReason: selectedPauseReason ?? this.selectedPauseReason,
       submitting: submitting ?? this.submitting,
+      pausing: pausing ?? this.pausing,
       failure: clearFailure ? null : (failure ?? this.failure),
+      pauseFailure: clearPauseFailure
+          ? null
+          : (pauseFailure ?? this.pauseFailure),
       warnings: warnings ?? this.warnings,
     );
   }
@@ -366,8 +530,9 @@ class CycleSettingsController extends AsyncNotifier<CycleSettingsForm> {
     final form = state.value;
     // Settled-gate and in-flight guard in one: an action on an unsettled
     // controller is a no-op, and a control touched mid-write would be
-    // discarded by the response a moment later.
-    if (form == null || form.submitting) return;
+    // discarded by the response a moment later. Both writes on this row count
+    // — a pause is as much a write as a save.
+    if (form == null || form.submitting || form.pausing) return;
     state = AsyncValue<CycleSettingsForm>.data(
       change(form).copyWith(clearFailure: true, warnings: const <String>[]),
     );
@@ -460,7 +625,11 @@ class CycleSettingsController extends AsyncNotifier<CycleSettingsForm> {
   ///    [CycleSettingsRepository.updateSettings] has no `pauseReason`
   ///    parameter, and `pauseReason` is precisely the member that makes the
   ///    echo a 400 (it survives a resume by design, and the server rejects it
-  ///    whenever the effective state is not paused).
+  ///    whenever the effective state is not paused). P4b-T22b writes the same
+  ///    row through the same endpoint and keeps that true rather than
+  ///    inheriting it: `pauseTracking` sends `trackingPaused: true` as a
+  ///    literal, `resumeTracking` takes no arguments at all, and neither can
+  ///    carry one of these six values back.
   ///
   /// **The warnings come in with the seed, here and on the read alike** —
   /// [CycleSettingsForm.seededFrom] adopts them, so a warned save and a warned
@@ -480,11 +649,17 @@ class CycleSettingsController extends AsyncNotifier<CycleSettingsForm> {
   /// structural reason rather than an accidental one.
   Future<bool> submit() async {
     final form = state.value;
-    if (form == null || form.submitting) return false;
+    if (form == null || form.submitting || form.pausing) return false;
     if (form.blockReason != null) return false;
 
     state = AsyncValue<CycleSettingsForm>.data(
-      form.copyWith(submitting: true, clearFailure: true),
+      form.copyWith(
+        submitting: true,
+        clearFailure: true,
+        // Both, so at most one banner is ever on screen — see
+        // [CycleSettingsForm.pauseFailure].
+        clearPauseFailure: true,
+      ),
     );
 
     Failure? rejected;
@@ -522,25 +697,150 @@ class CycleSettingsController extends AsyncNotifier<CycleSettingsForm> {
     if (rejected != null) {
       // R6 — state preserved intact. Rebuilt from the PRE-submit snapshot, so
       // every answer and every touched flag survives exactly as the user left
-      // them and the retry sends the identical request.
+      // them and the retry sends the identical request. `clearPauseFailure`
+      // because that snapshot also carries whatever the pause card last said,
+      // and only one message may be on the form at a time
+      // ([CycleSettingsForm.pauseFailure]).
       state = AsyncValue<CycleSettingsForm>.data(
-        form.copyWith(submitting: false, failure: rejected),
+        form.copyWith(
+          submitting: false,
+          failure: rejected,
+          clearPauseFailure: true,
+        ),
       );
       return false;
     }
 
     // The whole seed, warnings included — one adoption site for both the read
-    // and the write, so a mutation that drops the codes reddens both.
-    state = AsyncValue<CycleSettingsForm>.data(
-      CycleSettingsForm.seededFrom(saved!),
+    // and the write, so a mutation that drops the codes reddens both. The
+    // pause card's pending chip is the one thing carried across; see
+    // [CycleSettingsForm.afterSettingsSaved].
+    state = AsyncValue<CycleSettingsForm>.data(form.afterSettingsSaved(saved!));
+    return true;
+  }
+
+  // ── The C-12 pause sub-flow ───────────────────────────────────────────────
+
+  /// Records a reason chip tap. [code] MUST be one of the five ratified WIRE
+  /// codes; the screen owns the label→code mapping, exactly as it does for
+  /// regularity.
+  ///
+  /// A no-op while paused: the card draws no chips in that state, because
+  /// changing the reason of a pause in progress is a second gesture with its
+  /// own failure mode that C-12 does not ask for. Resume, then pause again.
+  void selectPauseReason(String code) {
+    final form = state.value;
+    if (form == null || form.trackingPaused) return;
+    _write(
+      (f) => f.copyWith(selectedPauseReason: code, clearPauseFailure: true),
     );
+  }
+
+  /// Pauses cycle tracking with the selected reason. Returns `true` on
+  /// success, `false` on a blocked, rejected or already-in-flight attempt.
+  ///
+  /// The reason travels **because this request is itself pausing** — R3, and
+  /// the coupling is structural rather than remembered:
+  /// `CycleSettingsRepository.pauseTracking` sends `trackingPaused: true` as a
+  /// literal and is the only method with a reason parameter at all.
+  Future<bool> pause() {
+    final form = state.value;
+    if (form == null) return Future<bool>.value(false);
+    final reason = form.selectedPauseReason;
+    if (form.trackingPaused || reason == null) {
+      return Future<bool>.value(false);
+    }
+    return _pauseWrite(
+      () => ref
+          .read(cycleSettingsRepositoryProvider)
+          .pauseTracking(reason: reason),
+    );
+  }
+
+  /// Resumes cycle tracking. Returns `true` on success.
+  ///
+  /// **Nothing gates this and nothing may.** R1 / C-12: resume is
+  /// unconditional for every one of the five reasons, `pregnancy` included —
+  /// no confirmation, no second question, and no branch anywhere in this file
+  /// that reads [CycleSettingsForm.pauseReason] to decide. The only refusal is
+  /// the in-flight one every write on this row shares.
+  Future<bool> resume() {
+    final form = state.value;
+    if (form == null || !form.trackingPaused) {
+      return Future<bool>.value(false);
+    }
+    return _pauseWrite(
+      ref.read(cycleSettingsRepositoryProvider).resumeTracking,
+    );
+  }
+
+  /// The write half both [pause] and [resume] share: one in-flight gate, one
+  /// failure slot, one adoption rule.
+  ///
+  /// On failure the form is rebuilt from the PRE-write snapshot, so the user's
+  /// selection and every settings edit survive and a retry sends the identical
+  /// request — [submit]'s rule, for [submit]'s reason.
+  Future<bool> _pauseWrite(
+    Future<CycleSettingsResponse> Function() write,
+  ) async {
+    final form = state.value;
+    if (form == null || form.submitting || form.pausing) return false;
+
+    state = AsyncValue<CycleSettingsForm>.data(
+      form.copyWith(pausing: true, clearFailure: true, clearPauseFailure: true),
+    );
+
+    Failure? rejected;
+    CycleSettingsResponse? saved;
+    try {
+      saved = await write();
+    } on Failure catch (failure) {
+      rejected = failure;
+    } catch (_) {
+      // Not a typed failure, so nothing about it is user-safe to render —
+      // [submit]'s precedent, for its reason.
+      rejected = const UnknownFailure();
+    }
+
+    if (!ref.mounted) return rejected == null;
+
+    if (rejected != null) {
+      // `clearFailure` even though the attempt cleared it on the way in: this
+      // arm rebuilds from the PRE-write snapshot, which still holds whatever
+      // the settings save last said. Without it the one-message invariant
+      // would hold only until a save failed and a pause failed after it —
+      // and the tests found exactly that.
+      state = AsyncValue<CycleSettingsForm>.data(
+        form.copyWith(
+          pausing: false,
+          clearFailure: true,
+          pauseFailure: rejected,
+        ),
+      );
+      return false;
+    }
+
+    state = AsyncValue<CycleSettingsForm>.data(form.afterPauseSaved(saved!));
     return true;
   }
 
   // ── Dependents ────────────────────────────────────────────────────────────
   //
   // **A successful save refreshes NO other provider, and that is a decision
-  // rather than an omission.** The repository invalidates the
+  // rather than an omission — and P4b-T22b re-measured it for the PAUSE
+  // writes rather than inheriting the answer.** Pausing is the one change on
+  // this row that could plausibly reach another screen, since
+  // `CycleSettingsResponse.phasesUnavailable` is
+  // `trackingPaused || !phasePredictionEnabled`. It does not, in this phase:
+  // that member still has no reader anywhere in `client/lib`, and
+  // `CyclePhaseAvailability.TrackingPaused` is declared and reserved for P6
+  // (`CycleContracts.cs` says so at the site) — P4a's calendar answers the
+  // literal `phase_engine_not_implemented` and never consults
+  // `user_cycle_settings`. `dependents — the pause sub-flow` in
+  // `cycle_settings_controller_test.dart` pins that across a pause AND a
+  // resume, with both providers alive and counting.
+  //
+  // The repository invalidates the
   // `GET:/settings/cycle` cache key, which is the whole of what has gone
   // stale. Measured at the source this session:
   //

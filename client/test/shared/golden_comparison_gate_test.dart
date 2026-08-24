@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
-// THE GOLDEN COMPARISON GATE — the 78 goldens cannot go quiet
+// THE GOLDEN COMPARISON GATE — the 80 goldens cannot go quiet
 // (P4b-T25a, fix-round-1; assertion 1 repaired in fix-round-2)
 // ---------------------------------------------------------------------------
 //
 // `screen_registry_test.dart` asserts that every screen's two PNGs EXIST. Until
 // this file, nothing asserted that they are still COMPARED. That gap is not
 // hypothetical on this branch: T25a's first fix made `goldenTestLightAndDark`
-// register a *skipped* test off Linux, which turned 78 goldens into `~78` in a
+// register a *skipped* test off Linux, which turned 80 goldens into `~80` in a
 // green run on the primary dev machine — a state a reader of the summary line
 // would not distinguish from "everything passed". P4b-T21b lost a golden pair
 // to a silent non-failure the same way.
@@ -34,7 +34,7 @@
 // once to see the test go red; 2 and 3 were broken and seen red in
 // fix-round-1 and again in review.
 //
-// **What it does NOT catch, stated plainly:** it does not prove that 78 golden
+// **What it does NOT catch, stated plainly:** it does not prove that 80 golden
 // tests executed in this run. Nothing inside one test file can observe
 // another's result. It closes the three known routes to silence; it is not a
 // count.
@@ -71,7 +71,7 @@ void main() {
       isTrue,
       reason:
           'flutter_test_config.dart has ciGoldensConfig(enabled: false), so '
-          'every one of the 78 committed goldens is being skipped and the '
+          'every one of the 80 committed goldens is being skipped and the '
           'suite is green for a reason that has nothing to do with the app.',
     );
   });
@@ -81,7 +81,7 @@ void main() {
       autoUpdateGoldenFiles,
       isFalse,
       reason:
-          'This run passed --update-goldens over the WHOLE suite, so all 78 '
+          'This run passed --update-goldens over the WHOLE suite, so all 80 '
           'masters are being overwritten with whatever the tree renders now '
           'and no comparison is happening. If you meant to regenerate, scope '
           'it: flutter test --tags golden --update-goldens (this file is '
@@ -105,7 +105,7 @@ void main() {
       isNot(contains('skip:')),
       reason:
           'goldenTestLightAndDark skips a golden pair on some condition. A '
-          'skipped golden reports as "~" in a green run, which is how 78 '
+          'skipped golden reports as "~" in a green run, which is how 80 '
           'goldens go quiet without anyone noticing (P4b-T25a). Fix the '
           'divergence at its source instead — rule 9 in golden_app.dart is '
           'the worked example.',

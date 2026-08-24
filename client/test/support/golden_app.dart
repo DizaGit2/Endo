@@ -234,12 +234,12 @@
 //        with a bare `Paint()`: **opaque black, antialiasing ON**. Its edge
 //        rows are coverage blends that encode the fractional y to ~1/255, so
 //        any sub-pixel difference shows. Such rects are the only source of
-//        pure `#000000` in a golden: **exactly 10 of 78 committed goldens
+//        pure `#000000` in a golden: **exactly 10 of 80 committed goldens
 //        contain pure black.**
 //      * Everything else is integral because the engine ROUNDS paragraph
 //        heights: measured, 22 px x 1.4 -> 31.0, 11 px x 1.45 -> 16.0,
 //        12 px x 1.43 -> 17.0. Integer geometry is bit-identical on any host,
-//        which is why 70 goldens never noticed.
+//        which is why 72 goldens never noticed.
 //
 //      **Predictive rule.** `InputDecorator` is the fragile surface, because
 //      it is the only widget in this app that turns a font-metric float into a
