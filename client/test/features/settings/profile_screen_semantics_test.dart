@@ -347,8 +347,9 @@ void main() {
     await _pump(tester, _FreshProfileController.new);
 
     expectNoDingbats(tester, screen: 'ProfileScreen');
-    // User card + Privacy & security row (P4b-T22c) + Sign out row.
-    expect(find.byIcon(Icons.chevron_right), findsNWidgets(3));
+    // User card + Cycle settings row (P4b-T22a) + Privacy & security row
+    // (P4b-T22c) + Sign out row.
+    expect(find.byIcon(Icons.chevron_right), findsNWidgets(4));
   });
 
   testWidgetsWithSemantics(

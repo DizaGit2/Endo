@@ -7,6 +7,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
+import 'package:lumen/features/settings/presentation/cycle_settings_screen.dart';
 import 'package:lumen/features/settings/presentation/privacy_screen.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
 import 'package:lumen/shared/widgets/lumen_retry_button.dart';
@@ -167,6 +168,16 @@ class _ProfileBody extends ConsumerWidget {
               _InfoRow(label: 'Timezone', value: me.timezone ?? '—', c: c),
 
               const SizedBox(height: 14),
+
+              // --- CYCLE SETTINGS (screen 32) ---
+              // Ships in the SAME commit as the route it points at (R-20,
+              // P4b-T22a). Screen 32 is the only surface in the app that can
+              // ever set `avgPeriodLengthDays`, so a route with no affordance
+              // would leave that field unreachable by every user who is not
+              // typing URLs.
+              _CycleSettingsRow(c: c),
+
+              const SizedBox(height: 5),
 
               // --- PRIVACY & SECURITY (screen 36) ---
               // Ships in the SAME commit as the route it points at (R-20,
@@ -534,6 +545,67 @@ class _EditDisplayNameDialogState extends State<_EditDisplayNameDialog> {
           child: const Text('Save'),
         ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cycle settings row — the entry affordance for screen 32
+// ---------------------------------------------------------------------------
+
+/// Navigates into screen 32 (`Routes.cycleSettings`), a CHILD of this branch
+/// root — [_PrivacyRow]'s shape, for [_PrivacyRow]'s reasons.
+///
+/// The row's name is [kCycleSettingsRowLabel] (`Cycle settings`) and not the
+/// destination's own title (`Cycle`): the bottom nav already announces a
+/// destination called `Cycle`, and two controls with one name is a
+/// screen-reader problem. The constant's own dartdoc carries that reasoning.
+class _CycleSettingsRow extends StatelessWidget {
+  const _CycleSettingsRow({required this.c});
+  final LumenColors c;
+
+  @override
+  Widget build(BuildContext context) {
+    // Shared callback reference: excludeSemantics:true drops the descendant
+    // GestureDetector's SemanticsAction.tap from the tree entirely, so
+    // Semantics itself needs its own onTap — wired to the SAME callback (not
+    // a second closure) so pointer taps and assistive-tech activation always
+    // do the same thing.
+    void onTap() => context.push(Routes.cycleSettings);
+    return Semantics(
+      button: true,
+      label: kCycleSettingsRowLabel,
+      container: true,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: c.input,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: c.border),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  kCycleSettingsRowLabel,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    color: c.ink,
+                  ),
+                ),
+              ),
+              // Decorative — the row's Semantics(button, label) above already
+              // excludes and replaces this subtree's semantics.
+              Icon(Icons.chevron_right, size: 16, color: c.muted),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

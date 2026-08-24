@@ -136,7 +136,10 @@ void testWidgetsWithSemantics(
 ///    lumen_input_field_semantics_test.dart:97` draws the same string).
 ///  * `—` U+2014 — `profile_screen.dart`'s three `_InfoRow` values and
 ///    `_UserCard`'s name use a lone em dash as the "not set" value, and
-///    `cycle_setup_controller.dart:74,77` uses one mid-sentence.
+///    `cycle_setup_controller.dart`'s `cycleWarningMessage` uses one
+///    mid-sentence in both of its two answers. (Cited by symbol since
+///    P4b-T22a, which added a paragraph to that function's dartdoc and moved
+///    the two lines the range used to name — R-23, third time in this phase.)
 ///    (This used to read `profile_screen.dart:151,156,158,279`, which was
 ///    already off by six at P4b-T22c's HEAD and which T22c's own edit would
 ///    have moved again — R-23: cite by symbol into a file the commit

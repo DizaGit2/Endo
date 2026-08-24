@@ -206,4 +206,31 @@ abstract final class Routes {
   /// by nobody — behind a screen that advertises the affordance. See the T22c
   /// entry in `docs/superpowers/plans/lumen-build.md`.
   static const privacy = '$more/$privacySegment';
+
+  /// The RELATIVE path segment screen 32 (cycle settings) registers as a CHILD
+  /// of [more] — go_router requires a sub-route's `path` to be relative, the
+  /// same shape [privacySegment] has. Not a usable navigation target on its
+  /// own; [cycleSettings] is the concrete path.
+  static const cycleSettingsSegment = 'cycle';
+
+  /// Screen 32 (cycle settings) — `/more/cycle`, a CHILD of [more]
+  /// (P4b-T22a, R-19: *"T22a then pushes screen 32 inside that branch"*).
+  ///
+  /// **A sibling of [privacy], for [privacy]'s reasons.** Screen 32 is a
+  /// settings leaf reached from screen 31, so it belongs inside that branch's
+  /// own Navigator: `context.pop()` returns to profile with the tab still
+  /// selected and the bottom nav still on screen.
+  ///
+  /// **`/more/cycle` and [cycle] are two different places, and the segment is
+  /// still `cycle`.** The parent supplies the meaning — this is the Cycle page
+  /// of Settings, exactly as [privacy] is the Privacy page of Settings — and
+  /// no other path in this file repeats its parent's word. The *label* on
+  /// screen 31 does not follow suit: `kCycleSettingsRowLabel` is
+  /// `Cycle settings`, because the bottom nav already announces a destination
+  /// called `Cycle` and two controls with one name is a screen-reader problem
+  /// a URL is not.
+  ///
+  /// Composed from [more] rather than spelled out, so renaming the branch root
+  /// cannot leave this pointing at a path that no longer exists.
+  static const cycleSettings = '$more/$cycleSettingsSegment';
 }

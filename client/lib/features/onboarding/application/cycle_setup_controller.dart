@@ -69,6 +69,16 @@ enum CycleRegularity {
 ///
 /// It lives beside the controller rather than in the screen because both need
 /// it, and the screen already depends on this file.
+///
+/// **There is a THIRD consumer since P4b-T22a, in another feature:** screen 32
+/// (`cycle_settings_screen.dart`) renders the same two sentences for the same
+/// two codes off the same endpoint. It imports this function rather than
+/// copying it — one sentence per code, or the two surfaces drift into
+/// describing the same server behaviour differently. Left here rather than
+/// promoted to `lib/shared/`: moving it would edit three files and falsify the
+/// inbound line citation in `a11y_guard.dart` for a tidiness gain, and the
+/// copy is the settings endpoint's either way. Recorded for T25 as a
+/// placement question, not a defect.
 String? cycleWarningMessage(String code) => switch (code) {
   'avg_cycle_length_out_of_sanity_band' =>
     "Saved. That cycle length is unusual — double-check the number if it "
