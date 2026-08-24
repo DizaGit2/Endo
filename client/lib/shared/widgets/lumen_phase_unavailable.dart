@@ -48,10 +48,48 @@ PhaseUnavailableCopy phaseUnavailableCopy(String? reason) {
 }
 
 // ---------------------------------------------------------------------------
+// The gate
+// ---------------------------------------------------------------------------
+
+/// Whether the phase-unavailable block should render at all, given the phase
+/// envelope's own `available` flag.
+///
+/// **Fix round 1, I-1: the block is gated on AVAILABILITY, never on the
+/// reason.** Before this function existed nothing in `lib/features/` or
+/// `lib/shared/` read `available` at all — all three call sites rendered
+/// [LumenPhaseUnavailable] unconditionally. That is invisible today, because
+/// `ARCHITECTURE.md` §C.0.3 fixes the envelope at `available: false` for every
+/// P4a account, so the block is always the right thing to draw; it becomes a
+/// lie the day P6 ships the engine, with three screens telling a user whose
+/// phases work that *"cycle phases aren't available yet"*.
+/// [phaseUnavailableCopy] cannot fix that on its own — it returns a
+/// non-nullable [PhaseUnavailableCopy] and therefore has no way to express
+/// *render nothing* — which is why the decision lives here, at the call sites,
+/// rather than as one more `case` in there.
+///
+/// **Every value other than `true` means unavailable**, deliberately:
+///  * `false` — P4a's answer, stated;
+///  * `null` because the response carried no `phase` envelope at all, or
+///    carried one with the flag omitted. Every generated DTO field is
+///    nullable, and an absent flag is not a claim that phases work. Inferring
+///    availability from silence would be §C.0.3's own mistake pointing the
+///    other way: *render the unavailable state; do not infer one.*
+///
+/// So only an explicit `available: true` hides the block, and P6 flipping that
+/// flag is the whole of what makes these three screens stop claiming the
+/// engine is missing.
+bool phasesAreUnavailable(bool? available) => available != true;
+
+// ---------------------------------------------------------------------------
 // The widget
 // ---------------------------------------------------------------------------
 
-/// What screens 8, 10 and 14 render where the mockups draw a phase band.
+/// What screens 8, 10 and 14 render where the mockups draw a phase band —
+/// **when, and only when, [phasesAreUnavailable] says the envelope reports
+/// phases unavailable.** The three call sites carry that gate (fix round 1,
+/// I-1); this widget itself is unconditional and draws the block it is given,
+/// which is what keeps `find.byType(LumenPhaseUnavailable)` a truthful
+/// question in every test that asks it.
 ///
 /// **Screen 11 is deliberately NOT in that list, and this line used to say it
 /// was** — P4b-T16 cut every phase treatment from the day detail, not because

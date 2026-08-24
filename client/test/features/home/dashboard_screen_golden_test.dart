@@ -31,8 +31,12 @@ void main() {
     todayMood: 4,
     yesterdayPain: 3,
     // The real P4a envelope (every account answers this today), not null —
-    // fix round 1, M5. Renders identically either way (the same neutral
-    // copy), but the fixture should say what production actually sends.
+    // T17 fix round 1, M5. Renders identically either way (the same neutral
+    // copy), but the fixture should say what production actually sends. Both
+    // halves of it since T23 fix round 1: `available: false` is what makes
+    // these goldens keep showing the block, and pinning it here is what makes
+    // "the block disappeared" a golden diff rather than a silent one.
+    phaseAvailable: false,
     phaseUnavailableReason: kPhaseEngineNotImplemented,
   );
 

@@ -130,6 +130,57 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // The gate (T23 fix round 1, I-1)
+  // -------------------------------------------------------------------------
+  //
+  // `phaseUnavailableCopy` decides WHAT the block says. `phasesAreUnavailable`
+  // decides WHETHER it says anything, and it exists because the copy half
+  // structurally cannot: it returns a non-nullable record, so every reason —
+  // `null` included — resolves to "cycle phases aren't available yet". Until
+  // this function nothing in `lib/features/` or `lib/shared/` read `available`
+  // at all, and all three call sites rendered the block unconditionally.
+
+  group('phasesAreUnavailable — the gate P6 flips', () {
+    test('only an explicit `available: true` hides the block', () {
+      expect(phasesAreUnavailable(true), isFalse);
+    });
+
+    test("`available: false` — P4a's stated answer — shows it", () {
+      expect(phasesAreUnavailable(false), isTrue);
+    });
+
+    test(
+      '`null` shows it: no envelope at all, or an envelope with the flag '
+      'omitted, is the ABSENCE of an answer and not a claim that phases work',
+      () {
+        expect(phasesAreUnavailable(null), isTrue);
+      },
+    );
+
+    test(
+      'the reason plays no part — this gate is about availability alone, and '
+      'no edit to the copy could have replaced it',
+      () {
+        // The defect was exactly this confusion: three screens decided what to
+        // SAY from the reason and never asked whether there was anything to
+        // say. `phasesAreUnavailable` takes no reason at all — and the loop
+        // below is why it must not: for every reason the envelope can carry,
+        // including `null`, the copy is the same true-but-wrong sentence, so
+        // "render nothing" is not expressible on that side of the split.
+        for (final reason in _allReasons) {
+          expect(
+            phaseUnavailableCopy(reason),
+            phaseUnavailableCopy(null),
+            reason:
+                'copy cannot express "render nothing" for $reason, which is '
+                'why the gate reads `available` instead',
+          );
+        }
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
   // Presentation
   // -------------------------------------------------------------------------
 

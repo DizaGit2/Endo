@@ -31,6 +31,7 @@ class DashboardView {
     required this.todayPain,
     required this.todayMood,
     required this.yesterdayPain,
+    required this.phaseAvailable,
     required this.phaseUnavailableReason,
   });
 
@@ -55,6 +56,25 @@ class DashboardView {
   /// requested months actually contains yesterday — the previous month
   /// whenever today is the 1st. `null` means nothing was logged yesterday.
   final int? yesterdayPain;
+
+  /// `CyclePhaseAvailabilityResponse.available` off the CURRENT month's own
+  /// response — the same envelope, read on the line above
+  /// [phaseUnavailableReason] in [DashboardController.build], so the two can
+  /// never end up describing different responses.
+  ///
+  /// **Fix round 1, I-1**: screen 8 rendered `LumenPhaseUnavailable`
+  /// unconditionally until this field existed, and nothing anywhere in the app
+  /// read `available`. `phasesAreUnavailable` holds the reasoning for gating on
+  /// the flag rather than on the reason, and for why `null` (no envelope, or an
+  /// envelope with the flag omitted) counts as unavailable rather than as
+  /// permission to hide the block.
+  ///
+  /// **Required, not defaulted**, for the reason the defect itself
+  /// illustrates: a default would let a future construction site inherit an
+  /// availability nobody stated, and an availability nobody stated is how
+  /// three call sites came to render this block without ever asking whether
+  /// there was anything to say.
+  final bool? phaseAvailable;
 
   /// `CyclePhaseAvailabilityResponse.unavailableReason` off the CURRENT
   /// month's own response — the same choice `CycleCalendarController` makes
@@ -242,7 +262,11 @@ class DashboardController extends AsyncNotifier<CacheResult<DashboardView>> {
       yesterdayPain: yesterdayRow?.pain,
       // Fix round 1, M5: the CURRENT month's own envelope — the same choice
       // `CycleCalendarController._loadMonth` makes for its analogous
-      // "which response's `phase` do we trust" question.
+      // "which response's `phase` do we trust" question. T23 fix round 1, I-1
+      // adds `available` off that same envelope, on the adjacent line: the
+      // screen needs BOTH halves, and reading them from one expression is what
+      // makes it impossible for the flag and the reason to disagree.
+      phaseAvailable: currentRead.value.phase?.available,
       phaseUnavailableReason: currentRead.value.phase?.unavailableReason,
     );
 

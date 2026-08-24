@@ -28,6 +28,14 @@
 //    them silently — the shape T22c used for screen 36's cut App-lock strings.
 //  * **R-08 — nothing on this screen can write.** The behavioural half: the
 //    screen offers exactly ONE control, and it is the one that leaves.
+//  * **I-1 (fix round 1) — the block is GATED on `available`.** Reading the
+//    reason correctly, which is all R2 asked for, turns out to be necessary
+//    and not sufficient: `phaseUnavailableCopy` maps every reason INCLUDING
+//    `null` to the same neutral sentence, so an ungated block goes on denying
+//    the phase engine after P6 ships it. The gate is inert across the whole
+//    P4a surface — §C.0.3 fixes `available: false` for every account — which
+//    is exactly why the `available: true` rows below had to be written by
+//    hand: nothing the server can currently answer would have exercised them.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -64,10 +72,16 @@ CycleCalendarView _view({required CyclePhaseAvailabilityResponse? phase}) {
   );
 }
 
-CyclePhaseAvailabilityResponse _envelope(String? reason) {
+/// [available] defaults to P4a's own answer (`false`, §C.0.3). The tests that
+/// pass `true` are simulating P6 and are the only ones in this file that no
+/// server response could produce today.
+CyclePhaseAvailabilityResponse _envelope(
+  String? reason, {
+  bool? available = false,
+}) {
   return CyclePhaseAvailabilityResponse(
     (b) => b
-      ..available = false
+      ..available = available
       ..unavailableReason = reason,
   );
 }
@@ -193,6 +207,54 @@ void main() {
         findsOneWidget,
       );
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // I-1 (fix round 1) — the block is gated on AVAILABILITY
+  // -------------------------------------------------------------------------
+
+  group('the block is gated on availability, not on the reason', () {
+    testWidgets(
+      'with phases AVAILABLE the block is gone — screen 14 says nothing '
+      'rather than denying an engine that works',
+      (tester) async {
+        await _pump(tester, phase: _envelope(null, available: true));
+
+        expect(find.byType(LumenPhaseUnavailable), findsNothing);
+        expect(find.text("Cycle phases aren't available yet"), findsNothing);
+        // The screen still mounts and Back still works: what is gated is the
+        // BLOCK, not the route. A screen holding only its chevron is the
+        // honest rendering of "this surface exists in P4b *because* phases
+        // are unavailable" — and it is unreachable regardless (R3), because
+        // the P6 task that flips this flag is the same task that ships the
+        // editor and the affordance.
+        expect(find.byIcon(Icons.chevron_left), findsOneWidget);
+        expect(find.byType(IconButton), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a stale reason does not resurrect it — availability decides, and the '
+      'reason only decides what the block would have said',
+      (tester) async {
+        await _pump(
+          tester,
+          phase: _envelope(kPhaseEngineNotImplemented, available: true),
+        );
+
+        expect(find.byType(LumenPhaseUnavailable), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'and `available: false` renders it exactly as before — the P4a answer, '
+      'which is every answer P4a has',
+      (tester) async {
+        await _pump(tester, phase: _envelope(kPhaseEngineNotImplemented));
+
+        expect(find.byType(LumenPhaseUnavailable), findsOneWidget);
+      },
+    );
   });
 
   // -------------------------------------------------------------------------

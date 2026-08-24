@@ -52,6 +52,28 @@
 // by `MaterialLocalizations`, and the block's own copy already ships on two
 // screens.
 //
+// **The block is GATED on the envelope's `available` flag** (fix round 1,
+// I-1 — `phasesAreUnavailable`), on all three call sites and on this one too.
+// The gate is inert while §C.0.3 holds: P4a answers `available: false` for
+// every account, so the block renders exactly as it did before. What it
+// changes is the day P6 answers `true`. On screens 8 and 10 the answer is
+// obvious — a landing screen must not deny an engine that works. Here the gate
+// leaves a screen holding only its back chevron, and that is still the right
+// call:
+//
+//  * screen 14 exists in P4b *because* phases are unavailable — the block is
+//    not decoration on top of its content, it IS its content — so once phases
+//    are available this screen has, by its own construction, nothing to say
+//    until P6 gives it the editor;
+//  * saying nothing is not the failure mode; saying something false is. R-16
+//    cut this mockup's copy rather than rewording it for exactly that reason,
+//    and gating two of the three call sites while leaving the third denying
+//    the engine would be the same defect kept on purpose;
+//  * nobody can reach the empty state anyway. Nothing navigates here (R3), and
+//    the P6 task that makes it reachable is the same task that flips the flag
+//    and ships the editor — the window in which this screen could render blank
+//    to a user does not exist.
+//
 // ## Nothing navigates here
 //
 // R-08 requires the route, the screen, the goldens and the semantics; it does
@@ -85,7 +107,18 @@ import 'package:lumen/shared/widgets/lumen_phase_unavailable.dart';
 /// on the nullable `unavailableReason` would have left the generated client
 /// unable to ever observe `null`; a screen that embeds the reason is that same
 /// defect wearing a different hat. [LumenPhaseUnavailable] resolves whatever
-/// arrives through `phaseUnavailableCopy`, which is the one function P6 edits.
+/// arrives through `phaseUnavailableCopy`.
+///
+/// **That is not, however, all P6 edits — this dartdoc said it was, and the
+/// sentence was wrong** (fix round 1, I-1). `phaseUnavailableCopy` returns a
+/// non-nullable [PhaseUnavailableCopy], so no edit inside it can express
+/// *render nothing*: it maps every reason, `null` included, to a true sentence
+/// about phases being unavailable. Reading the reason correctly is therefore
+/// necessary and not sufficient, and a P6 implementer who followed that
+/// sentence would have shipped a working phase engine behind three screens
+/// still announcing its absence. What actually stops the claim is
+/// `phasesAreUnavailable` reading `available` — which this screen now does,
+/// alongside screens 8 and 10.
 class PhaseCorrectionScreen extends ConsumerWidget {
   const PhaseCorrectionScreen({super.key});
 
@@ -125,11 +158,11 @@ class PhaseCorrectionScreen extends ConsumerWidget {
     // accessor that does (`riverpod-3.3.2/lib/src/core/async_value.dart`) —
     // and it is the same accessor every controller in this package reads its
     // own state through.
-    final reason = ref
-        .watch(cycleCalendarControllerProvider)
-        .value
-        ?.phase
-        ?.unavailableReason;
+    // The whole envelope rather than only its `unavailableReason` (fix round
+    // 1, I-1): `available` decides WHETHER the block renders and the reason
+    // decides only what it says, and both must come off the same response for
+    // the two answers to be about the same thing.
+    final phase = ref.watch(cycleCalendarControllerProvider).value?.phase;
 
     return Scaffold(
       backgroundColor: c.surface,
@@ -164,10 +197,11 @@ class PhaseCorrectionScreen extends ConsumerWidget {
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
-              child: LumenPhaseUnavailable(reason: reason),
-            ),
+            if (phasesAreUnavailable(phase?.available))
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+                child: LumenPhaseUnavailable(reason: phase?.unavailableReason),
+              ),
           ],
         ),
       ),

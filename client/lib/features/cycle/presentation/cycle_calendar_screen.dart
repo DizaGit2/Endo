@@ -10,7 +10,10 @@
 //  * the `.cf` confidence line is CUT entirely (no column backs it);
 //  * the `.p1`-`.p4` phase fills are CUT (`ARCHITECTURE.md` §C.0.3: render
 //    the unavailable state, do not infer one) — [LumenPhaseUnavailable]
-//    stands in for them and for the four-swatch legend;
+//    stands in for them and for the four-swatch legend, **gated since T23's
+//    fix round 1 on the envelope's own `available` flag** so that the day P6
+//    answers `available: true` the stand-in disappears instead of contradicting
+//    the engine that replaced it (`phasesAreUnavailable`);
 //  * the mockup's back chevron is CUT — this is a bottom-nav branch root,
 //    there is nothing to go back to;
 //  * a day tap now ROUTES to screen 11 (P4b-T16, `/cycle/day/:date`) — but
@@ -133,11 +136,19 @@ class _Body extends ConsumerWidget {
             ],
           ),
 
-          const SizedBox(height: 16),
-
           // Replaces the mockup's `.cf` confidence line AND its four-swatch
-          // phase legend — `ARCHITECTURE.md` §C.0.3.
-          LumenPhaseUnavailable(reason: view.phase?.unavailableReason),
+          // phase legend — `ARCHITECTURE.md` §C.0.3 — for exactly as long as
+          // the envelope reports phases unavailable (T23 fix round 1, I-1:
+          // `phaseUnavailableCopy` resolves every reason including `null` to
+          // "phases aren't available yet", so an UNGATED block would keep
+          // saying that on the Cycle tab's landing screen after P6 ships the
+          // engine). Its leading spacer is inside the gate; the trailing one is
+          // not, because the grid needs the same 16px below the month header
+          // either way.
+          if (phasesAreUnavailable(view.phase?.available)) ...<Widget>[
+            const SizedBox(height: 16),
+            LumenPhaseUnavailable(reason: view.phase?.unavailableReason),
+          ],
 
           const SizedBox(height: 16),
 

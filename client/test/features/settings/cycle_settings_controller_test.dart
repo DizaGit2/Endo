@@ -84,6 +84,7 @@ class _CountingDashboard extends DashboardController {
         todayPain: null,
         todayMood: null,
         yesterdayPain: null,
+        phaseAvailable: null,
         phaseUnavailableReason: null,
       ),
     );

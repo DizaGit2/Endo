@@ -23,7 +23,11 @@
 //    top-level landing surface with a phase-shaped hole in the middle of it,
 //    so it renders [LumenPhaseUnavailable] rather than nothing —
 //    `ARCHITECTURE.md` §C.0.3: *render the unavailable state; do not infer
-//    one.*
+//    one.* **Since T23's fix round 1 that block is GATED on the envelope's own
+//    `available` flag** (`phasesAreUnavailable`): it stands in for the hero
+//    card while P4a answers `available: false`, and it disappears the day P6
+//    answers `true` instead of denying, on the landing screen, an engine that
+//    works.
 //  * the insight card — `user_insight_snapshot` has zero rows, no read
 //    endpoint, and is structurally unreachable from the API (a NetArchTest
 //    fact).
@@ -167,12 +171,25 @@ class _LoadedBody extends ConsumerWidget {
             const SizedBox(height: 2),
             _GreetingLine(greeting: greeting, displayName: view.displayName),
             const SizedBox(height: 14),
-            // Fix round 1, M5: the response's OWN `unavailableReason`, not a
-            // hard-coded `null` — see `DashboardView.phaseUnavailableReason`'s
-            // dartdoc for why the distinction matters even though every P4a
-            // account renders the same neutral copy today.
-            LumenPhaseUnavailable(reason: view.phaseUnavailableReason),
-            const SizedBox(height: 12),
+            // T17 fix round 1, M5: the response's OWN `unavailableReason`,
+            // not a hard-coded `null` — see
+            // `DashboardView.phaseUnavailableReason`'s dartdoc for why the
+            // distinction matters even though every P4a account renders the
+            // same neutral copy today.
+            //
+            // T23 fix round 1, I-1: and the block is GATED, because
+            // forwarding the right reason is only half of not lying.
+            // `phaseUnavailableCopy` maps every reason INCLUDING `null` to the
+            // neutral "phases aren't available yet" copy, so an ungated block
+            // keeps denying the engine after P6 ships it — on the
+            // authenticated landing screen, to every user. The spacer moves
+            // inside the gate with it: a 12px gap left behind by a hidden
+            // block is the "nothing here, but it left a hole" shape the tab
+            // placeholders exist to avoid.
+            if (phasesAreUnavailable(view.phaseAvailable)) ...<Widget>[
+              LumenPhaseUnavailable(reason: view.phaseUnavailableReason),
+              const SizedBox(height: 12),
+            ],
             // IntrinsicHeight, not a bare `Row(crossAxisAlignment: stretch)`:
             // this Row sits inside a Column inside a SingleChildScrollView, so
             // it receives an UNBOUNDED height from its parent. `stretch` asks

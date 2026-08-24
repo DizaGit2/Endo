@@ -79,6 +79,7 @@ DashboardView _view({
   int? todayPain,
   int? todayMood,
   int? yesterdayPain,
+  bool? phaseAvailable,
   String? phaseUnavailableReason,
 }) {
   return DashboardView(
@@ -87,6 +88,7 @@ DashboardView _view({
     todayPain: todayPain,
     todayMood: todayMood,
     yesterdayPain: yesterdayPain,
+    phaseAvailable: phaseAvailable,
     phaseUnavailableReason: phaseUnavailableReason,
   );
 }
@@ -271,7 +273,12 @@ void main() {
         await _pump(
           tester,
           () => _FreshDashboard(
-            _view(phaseUnavailableReason: kPhaseEngineNotImplemented),
+            // P4a's real envelope, both halves (T23 fix round 1, I-1): the
+            // `false` is what makes the block render at all now.
+            _view(
+              phaseAvailable: false,
+              phaseUnavailableReason: kPhaseEngineNotImplemented,
+            ),
           ),
         );
 
@@ -283,6 +290,65 @@ void main() {
               .reason,
           kPhaseEngineNotImplemented,
         );
+      },
+    );
+
+    // -----------------------------------------------------------------------
+    // T23 fix round 1, I-1 — the P6 simulation, on the screen that matters
+    // most because it is the authenticated landing surface.
+    //
+    // These three tests are the only ones in the suite that drive
+    // `available: true`. Nothing in P4a can produce that value —
+    // `ARCHITECTURE.md` §C.0.3 fixes the envelope at `available: false` for
+    // every account — so they describe P6's day one and change nothing about
+    // today's. That is also precisely why the gate needed tests written for
+    // it: no existing test could have caught it being written backwards.
+    // -----------------------------------------------------------------------
+
+    testWidgets(
+      'DISAPPEARS when the envelope reports phases AVAILABLE — the day P6 '
+      'ships the engine, Home stops announcing its absence',
+      (tester) async {
+        await _pump(
+          tester,
+          () => _FreshDashboard(
+            _view(phaseAvailable: true, phaseUnavailableReason: null),
+          ),
+        );
+
+        expect(find.byType(LumenPhaseUnavailable), findsNothing);
+        expect(find.text("Cycle phases aren't available yet"), findsNothing);
+        // The screen itself is untouched — gating the block is not gating the
+        // dashboard, and a blank Home would be its own defect.
+        expect(find.text('Good morning, Maya'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'availability decides, not the reason: `available: true` hides the block '
+      'even when the envelope still carries a stale reason string',
+      (tester) async {
+        await _pump(
+          tester,
+          () => _FreshDashboard(
+            _view(
+              phaseAvailable: true,
+              phaseUnavailableReason: kPhaseEngineNotImplemented,
+            ),
+          ),
+        );
+
+        expect(find.byType(LumenPhaseUnavailable), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'an ABSENT flag still renders it — `null` is the absence of an answer, '
+      'and inferring availability from silence is §C.0.3 in reverse',
+      (tester) async {
+        await _pump(tester, () => _FreshDashboard(_view(phaseAvailable: null)));
+
+        expect(find.byType(LumenPhaseUnavailable), findsOneWidget);
       },
     );
   });

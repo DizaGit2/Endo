@@ -24,9 +24,28 @@
 // this package states.** `parseString`, no resolution: a call reaching the
 // endpoint through a variable, a dynamic dispatch or a second indirection is
 // invisible here, and so is a path string assembled from fragments. What it
-// does see is every identifier and every simple string literal written in LIVE
+// COLLECTS is every identifier and every simple string literal written in LIVE
 // code — doc comments are refused deliberately, which is what lets this screen
 // name in prose the endpoint it must not call.
+//
+// **What it CHECKS, stated separately, because collecting is not asserting.**
+// Fix round 1, I-2: this header used to describe the collector and leave the
+// coverage to be inferred, which over-described the guard — the R-08 half
+// tested identifiers only, so a phase-override symbol reached through a string
+// would have passed. The three subjects, and which half each is checked
+// against:
+//
+//   * [kPhaseOverrideSymbols] — the five GENERATED names, checked against the
+//     IDENTIFIERS. A call through the generated client names one of them.
+//   * [kPhaseOverridePath] — the endpoint PATH, checked against the STRINGS.
+//     A write that bypasses the generated client entirely names no generated
+//     symbol at all, and `dioProvider` is reachable from feature code, so that
+//     shape is not theoretical. Exactly one production file is exempt
+//     ([kPathHolders]) and a positive control keeps the exemption honest.
+//   * screen 14's route constants and [Routes.cyclePhase]'s own literal,
+//     checked against BOTH halves — that is the R3 tripwire below.
+//
+// Everything else this audit can see, it collects and does not judge.
 
 import 'dart:io';
 
@@ -131,6 +150,25 @@ const List<String> kPhaseOverrideSymbols = <String>[
   'PhaseOverridesResponse',
 ];
 
+/// The endpoint itself, checked as a STRING literal rather than as a symbol.
+///
+/// Fix round 1, I-2. [kPhaseOverrideSymbols] are generated Dart names, so a
+/// write that never touches the generated client names none of them:
+/// `ref.read(dioProvider).post('/cycle/phase-override', data: …)` reaches P6's
+/// endpoint while satisfying every identifier assertion in this file. The
+/// collector has gathered string literals since it was written; until this
+/// constant existed only the R3 half ever asked it anything.
+const String kPhaseOverridePath = '/cycle/phase-override';
+
+/// The only production file allowed to hold [kPhaseOverridePath] as a literal.
+///
+/// `dio_provider.dart` lists it among `_kRouteTemplates` so the PII-safe logger
+/// can redact that path rather than print it — it HOLDS the string, it does not
+/// call the endpoint, and an endpoint missing from that list logs as
+/// `(unrouted)`. The positive control below asserts the file really still holds
+/// it, so this exemption cannot outlive the line it exempts.
+const Set<String> kPathHolders = <String>{'lib/core/network/dio_provider.dart'};
+
 const String kScreenPath =
     'lib/features/cycle/presentation/phase_correction_screen.dart';
 
@@ -193,6 +231,20 @@ const int untilP6 = 6;
       },
     );
 
+    test('sees a RAW dio write to the endpoint — the shape that names no '
+        'generated symbol at all (fix round 1, I-2)', () {
+      final live = _liveSourceOf('''
+Future<void> save(dynamic ref, Object body) async {
+  await ref.read(dioProvider).post('/cycle/phase-override', data: body);
+}
+''', path: 'fixture.dart');
+
+      // Not one of the five generated names appears — which is exactly why
+      // checking the identifiers alone was not enough.
+      expect(live.identifiers.any(kPhaseOverrideSymbols.contains), isFalse);
+      expect(live.strings, contains(kPhaseOverridePath));
+    });
+
     test('sees a route path written as a bare string literal', () {
       final live = _liveSourceOf('''
 const String somewhere = '/cycle/phase';
@@ -228,25 +280,70 @@ const String somewhere = '/cycle/phase';
       },
     );
 
-    test('and no production file has grown one since', () {
-      final root = resolvePackageRoot();
-      final offenders = <String>[];
-      for (final relative in auditedFiles(root)) {
-        final live = _liveSource(relative);
-        if (kPhaseOverrideSymbols.any(live.identifiers.contains)) {
-          offenders.add(relative);
-        }
-      }
+    test('nor the endpoint PATH as a live string — the generated client is not '
+        'the only way to reach it (fix round 1, I-2)', () {
+      final live = _liveSource(kScreenPath);
 
       expect(
-        offenders,
-        isEmpty,
+        live.strings,
+        isNot(contains(kPhaseOverridePath)),
         reason:
-            'P4b writes no phase override anywhere (R-08). When P6 wires it, '
-            'this assertion is what it edits — deliberately, and in the same '
-            'commit as the screen that offers the control.',
+            '$kScreenPath holds $kPhaseOverridePath as a live string. The '
+            'screen names that endpoint in PROSE deliberately — this audit '
+            'refuses comments, which is what makes prose safe — but a '
+            'literal is a call waiting for an argument.',
       );
     });
+
+    test(
+      'and no production file has grown one since — by SYMBOL or by PATH',
+      () {
+        final root = resolvePackageRoot();
+        final offenders = <String>[];
+        for (final relative in auditedFiles(root)) {
+          final live = _liveSource(relative);
+          final namesSymbol = kPhaseOverrideSymbols.any(
+            live.identifiers.contains,
+          );
+          // The path half skips its one holder (`dio_provider.dart`, which
+          // REDACTS the path rather than calling it) — one file, pinned
+          // by the positive control below.
+          final namesPath =
+              !kPathHolders.contains(relative) &&
+              live.strings.contains(kPhaseOverridePath);
+          if (namesSymbol || namesPath) offenders.add(relative);
+        }
+
+        expect(
+          offenders,
+          isEmpty,
+          reason:
+              'P4b writes no phase override anywhere (R-08). When P6 wires it, '
+              'this assertion is what it edits — deliberately, and in the same '
+              'commit as the screen that offers the control.',
+        );
+      },
+    );
+
+    test(
+      'the ONE file exempted from the path check really does hold the literal '
+      '— a positive control, so a dead exemption cannot silently excuse a '
+      'file that has stopped needing it',
+      () {
+        for (final holder in kPathHolders) {
+          final live = _liveSource(holder);
+          expect(
+            live.strings,
+            contains(kPhaseOverridePath),
+            reason:
+                '$holder no longer holds $kPhaseOverridePath. If the '
+                'redaction template list moved or was renamed, DELETE the '
+                'exemption rather than leaving a production file blanket-'
+                'excused from the path check.',
+          );
+        }
+      },
+    );
   });
 
   // -------------------------------------------------------------------------

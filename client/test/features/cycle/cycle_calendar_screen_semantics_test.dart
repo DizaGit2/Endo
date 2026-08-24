@@ -500,6 +500,86 @@ void main() {
         );
       },
     );
+
+    // -----------------------------------------------------------------------
+    // T23 fix round 1, I-1 — the gate, driven with `available: true`.
+    //
+    // No P4a account can answer `true` (`ARCHITECTURE.md` §C.0.3 fixes the
+    // envelope at `false` for everyone), so these tests change nothing about
+    // today's behaviour and everything about P6's. Before the gate, this
+    // screen — the Cycle tab's LANDING screen — kept saying "cycle phases
+    // aren't available yet" no matter what the envelope reported, because
+    // `phaseUnavailableCopy` maps every reason including `null` to that same
+    // neutral sentence.
+    // -----------------------------------------------------------------------
+
+    testWidgetsWithSemantics(
+      'the phase-unavailable block DISAPPEARS when the envelope reports '
+      'phases available — and the month grid it stood in front of does not',
+      (tester) async {
+        await pump(
+          tester,
+          CycleCalendarView(
+            visibleMonth: DateTime(2026, 4),
+            today: Date(2026, 4, 22),
+            phase: CyclePhaseAvailabilityResponse(
+              (b) => b
+                ..available = true
+                ..unavailableReason = null,
+            ),
+            dayByDate: const <Date, CycleCalendarDay>{},
+          ),
+        );
+
+        expect(find.byType(LumenPhaseUnavailable), findsNothing);
+        expect(find.text("Cycle phases aren't available yet"), findsNothing);
+        // The calendar itself is untouched: the block is gated, the screen is
+        // not. (What replaces the block — real phase fills and the four-swatch
+        // legend the mockup draws — is P6's, with the engine that supplies
+        // them.)
+        expect(find.byKey(cycleCalendarGridKey), findsOneWidget);
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'availability decides, not the reason: a stale reason alongside '
+      '`available: true` still hides the block',
+      (tester) async {
+        await pump(
+          tester,
+          CycleCalendarView(
+            visibleMonth: DateTime(2026, 4),
+            today: Date(2026, 4, 22),
+            phase: CyclePhaseAvailabilityResponse(
+              (b) => b
+                ..available = true
+                ..unavailableReason = kPhaseEngineNotImplemented,
+            ),
+            dayByDate: const <Date, CycleCalendarDay>{},
+          ),
+        );
+
+        expect(find.byType(LumenPhaseUnavailable), findsNothing);
+      },
+    );
+
+    testWidgetsWithSemantics(
+      'an ABSENT envelope still renders it — `phase: null` answers neither '
+      'half, and silence is not availability',
+      (tester) async {
+        await pump(
+          tester,
+          CycleCalendarView(
+            visibleMonth: DateTime(2026, 4),
+            today: Date(2026, 4, 22),
+            phase: null,
+            dayByDate: const <Date, CycleCalendarDay>{},
+          ),
+        );
+
+        expect(find.byType(LumenPhaseUnavailable), findsOneWidget);
+      },
+    );
   });
 
   // ---------------------------------------------------------------------------

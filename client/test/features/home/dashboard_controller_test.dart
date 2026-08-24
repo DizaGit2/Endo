@@ -349,6 +349,65 @@ void main() {
               .value;
       expect(view.phaseUnavailableReason, isNull);
     });
+
+    test(
+      'phaseAvailable comes from that SAME envelope — T23 fix round 1, I-1',
+      () async {
+        when(meRepo.getMe).thenAnswer((_) async => Fresh(meResponseFixture()));
+        // `available: true` is a value no P4a account can answer (§C.0.3), and
+        // that is the point: the screen's gate can only be exercised if this
+        // field carries the wire value rather than a constant, and nothing the
+        // real backend sends today would tell the two apart.
+        answerMonth(
+          DateTime(2026, 4),
+          cycleCalendarFixture(
+            phase: CyclePhaseAvailabilityResponse(
+              (b) => b
+                ..available = true
+                ..unavailableReason = null,
+            ),
+          ),
+        );
+        // Again the PREVIOUS month disagrees, so reading the wrong response
+        // fails rather than coincidentally passing.
+        answerMonth(
+          DateTime(2026, 3),
+          cycleCalendarFixture(
+            phase: CyclePhaseAvailabilityResponse(
+              (b) => b
+                ..available = false
+                ..unavailableReason = kPhaseEngineNotImplemented,
+            ),
+          ),
+        );
+
+        container = buildContainer();
+        await settle();
+
+        final view =
+            (container.read(dashboardControllerProvider).value!
+                    as Fresh<DashboardView>)
+                .value;
+        expect(view.phaseAvailable, isTrue);
+        expect(view.phaseUnavailableReason, isNull);
+      },
+    );
+
+    test('phaseAvailable is null when there is no phase envelope at all — an '
+        'absent envelope answers neither half, and the view says so', () async {
+      when(meRepo.getMe).thenAnswer((_) async => Fresh(meResponseFixture()));
+      answerMonth(DateTime(2026, 4), cycleCalendarFixture());
+      answerMonth(DateTime(2026, 3), cycleCalendarFixture());
+
+      container = buildContainer();
+      await settle();
+
+      final view =
+          (container.read(dashboardControllerProvider).value!
+                  as Fresh<DashboardView>)
+              .value;
+      expect(view.phaseAvailable, isNull);
+    });
   });
 
   group(
