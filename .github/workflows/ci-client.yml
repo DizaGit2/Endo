@@ -106,8 +106,26 @@ jobs:
       # what `tool/tz_probe.dart` exists to catch: it asserts the offset is
       # actually Madrid's BEFORE the tests run, so if the runner ignores `TZ`
       # this step fails loudly instead of passing while proving nothing.
+      #
+      # CONFIRMED 2026-08-24 (P4b). This step is no longer "unproven": it has
+      # been watched to fail, which is the only thing that makes it a control.
+      #   * The probe measured the runner honestly: `TZ=Europe/Madrid — Dart
+      #     reports zone "CEST", offset 120 min`. The same variable on the
+      #     Windows dev box yields offset 0 with the zone NAME unchanged, which
+      #     is why these three files cannot be proven locally at all.
+      #   * Deliberate red, on a throwaway branch since deleted: the T17 DST
+      #     defect was reintroduced as `subtract(Duration(hours: 24))` — the
+      #     form `duration_days_guard` documents as slipping past, since it is
+      #     syntactic and flags only `days:`/`weeks:`. On Windows every test
+      #     passed. Here, `flutter test --coverage` ALSO passed all 2113 tests,
+      #     and THIS step went red on exactly one: dashboard_controller_test's
+      #     calendar-arithmetic test, `Expected: <3> / Actual: <7>` — it read
+      #     March 28's row instead of March 29's across the Madrid boundary.
+      # So the ordinary suite is green on that defect, on BOTH hosts, and this
+      # step is the only thing between it and a green build. Do not delete it,
+      # and do not "simplify" it by dropping the probe.
       # -----------------------------------------------------------------------
-      - name: Timezone-sensitive tests (TZ=Europe/Madrid) — UNCONFIRMED control
+      - name: Timezone-sensitive tests (TZ=Europe/Madrid) — CONFIRMED control
         working-directory: client
         env:
           TZ: Europe/Madrid
