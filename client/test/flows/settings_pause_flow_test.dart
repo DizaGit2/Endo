@@ -22,6 +22,12 @@
 // The five reasons are walked in ONE mounted app rather than five, because the
 // interesting input to reason N+1 is the row reason N left behind.
 //
+// **Fix round 1 adds the SAVE leg**, at the bottom of this file. The pause
+// sub-flow crosses `pauseTracking`/`resumeTracking`; it never presses **Save
+// cycle settings**, which is where T22a's six `touched*` guards actually live
+// — so the literal T22a site survived this file 21/21 green. It does not any
+// more.
+//
 // R3 — nothing settles; frame counts and the one route duration are stated.
 
 import 'package:flutter/material.dart';
@@ -54,6 +60,13 @@ Finder _tab(String label) =>
 final Finder _pauseCta = find.descendant(
   of: find.byType(CycleSettingsScreen),
   matching: find.byType(OutlinedButton),
+);
+
+/// Screen 32's SETTINGS save. A `FilledButton`, where the pause/resume
+/// control is an `OutlinedButton` — same footer, told apart by ROLE.
+final Finder _saveCta = find.descendant(
+  of: find.byType(CycleSettingsScreen),
+  matching: find.byType(FilledButton),
 );
 
 Finder _reasonChip(String label) => find.descendant(
@@ -367,6 +380,121 @@ void main() {
       expect(stored.regularity, 'somewhat');
       expect(stored.autoDetectPeriodStartEnabled, isTrue);
       expect(stored.showFertilityWindowEnabled, isFalse);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // The SAVE path — the literal T22a site, which the pause sub-flow never
+  // touches (fix round 1)
+  // -------------------------------------------------------------------------
+  //
+  // The four flows R-06 named cover screen 32's PAUSE card. Nothing in them
+  // ever presses **Save cycle settings**, so the exact site T22a's six
+  // `if (touchedX)` guards live on was unreachable: replacing all six with
+  // `if (x != null)` left this file 21/21 green while a seeded, untouched form
+  // re-asserted six stale values on every save. The mutation is caught here.
+  //
+  // It is still a SEAM test, not a re-run of `cycle_settings_screen_semantics
+  // _test.dart`. What it uniquely proves is the one thing neither existing
+  // test can reach: the screen-32 semantics test stubs the repository, so it
+  // never sees a wire body at all, and `cycle_settings_repository_test.dart`
+  // builds its `touched*` matrix by hand, so it can never show that a form
+  // SEEDED BY A REAL READ arrives with those flags false. Only a flow can put
+  // a real `GET /settings/cycle` in front of a real save.
+
+  testWidgets(
+    'a screen 32 seeded from the server and saved after ONE toggle sends '
+    'exactly that one key — and the value another writer changed while the '
+    'form sat open survives',
+    (WidgetTester tester) async {
+      final world = FlowWorld();
+      await world.mount(tester);
+
+      await _openCycleSettings(tester);
+
+      // The premise, and it is the whole discrimination: the form is FULL —
+      // it is showing five real values it read from the server — and yet
+      // nothing is touched, so there is nothing to send. A guard derived from
+      // the value instead of the flag cannot tell this state from an edited
+      // one.
+      expect(find.text('28 days'), findsOneWidget);
+      expect(find.text(kCycleSettingsNotSetValue), findsOneWidget);
+      expect(find.text(kCycleSettingsNothingChangedMessage), findsOneWidget);
+      expect(
+        tester.widget<FilledButton>(_saveCta).onPressed,
+        isNull,
+        reason:
+            'seeding marks nothing touched — `CycleSettingsForm.seededFrom` — '
+            'so a freshly-read form has nothing that would reach the wire',
+      );
+
+      // A SECOND writer moves the row while the form sits open. This is not a
+      // contrived race: `user_cycle_settings` is written by
+      // `POST /onboarding/cycle` and by the pause card as well as by this
+      // save, and the form was seeded from a read with a 5-minute TTL. Under
+      // MERGE the stale seed is harmless *only* while it stays off the wire.
+      world.cycleSettings = cycleSettingsFixture(
+        avgCycleLengthDays: 31,
+        regularity: 'irregular',
+      );
+
+      world.clearWire();
+
+      // ONE field. `Show fertility window` is seeded false, so this tap is
+      // the only touched control on the form.
+      await tester.ensureVisible(find.text(kCycleSettingsFertilityLabel));
+      await tester.pump();
+      await tester.tap(find.text(kCycleSettingsFertilityLabel));
+      await tester.pump();
+      expect(find.text(kCycleSettingsNothingChangedMessage), findsNothing);
+
+      await tester.ensureVisible(_saveCta);
+      await tester.pump();
+      await tester.tap(_saveCta);
+      // Two frames: the PATCH resolves and the form re-seeds from the 200.
+      await pumpFlowFrames(tester, 2);
+
+      expect(
+        _body(world.settingsPatches.single),
+        <String, dynamic>{'showFertilityWindowEnabled': true},
+        reason:
+            'ONE key. The other five values are on this screen, in this form, '
+            'in memory — and every one of them is a key the server would '
+            'MERGE. `if (touchedShowFertilityWindowEnabled)` is what keeps '
+            'them off the wire; `if (showFertilityWindowEnabled != null)` '
+            'would send all five and nothing on screen would look different.',
+      );
+
+      // The lost update, asserted where a user would eventually find it: on
+      // the STORED row. The 31 and the `irregular` this form never saw are
+      // still there.
+      expect(world.cycleSettings.showFertilityWindowEnabled, isTrue);
+      expect(
+        world.cycleSettings.avgCycleLengthDays,
+        31,
+        reason:
+            "the other writer's value. An echoed `avgCycleLengthDays: 28` "
+            'would have silently put it back to what this form read minutes '
+            'ago — a lost update with no error, no banner and no way for the '
+            'user to know',
+      );
+      expect(world.cycleSettings.regularity, 'irregular');
+
+      // One request, and the settings key is the whole of what went stale.
+      expect(world.wire, <String>['PATCH /settings/cycle']);
+      expect(world.cache.invalidations, <String>[CacheKeys.cycleSettings]);
+
+      // The save re-seeded the form from its own 200, so Save is inert again
+      // — a second tap cannot re-send anything, which is the same duplicate
+      // door screen 12 closes by leaving.
+      expect(find.text(kCycleSettingsNothingChangedMessage), findsOneWidget);
+      expect(tester.widget<FilledButton>(_saveCta).onPressed, isNull);
+
+      // …and the user-visible half of the merge: the row the screen is now
+      // showing is the STORED one, so the other writer's 31 is on screen. A
+      // form that had echoed its stale seed would be sitting here showing a
+      // confident, wrong 28.
+      expect(find.text('31 days'), findsOneWidget);
     },
   );
 }

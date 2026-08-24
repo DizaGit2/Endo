@@ -39,6 +39,24 @@ it down, because it means a flow test is missing or wrong.
 
 ---
 
+## 0.1 The shell every command below assumes
+
+**Windows PowerShell 5.1** (`$PSVersionTable.PSVersion` measured here: **5.1.26100.9168**) — the shell
+`CLAUDE.md` names as this project's primary. Every command in this document has been checked against it,
+because a pre-flight step that dies on a parameter-binding error tells you nothing about whether the stack
+is healthy. Three 5.1 rules shape what you will read below, and each has already broken a line here:
+
+| 5.1 rule | what it means for this walk |
+|---|---|
+| **`\` is not a line continuation.** PowerShell's continuation character is a backtick. | Every command below is written on ONE line. If you copy a wrapped command out of some other document, join it first. |
+| **`Invoke-RestMethod` has no `-SkipCertificateCheck`.** It arrived in PowerShell **6**; on 5.1 the line dies with a parameter-binding error before any request is made. | Nothing here probes an HTTPS endpoint. The API is published directly on `127.0.0.1:8085` (`docker-compose.yml`), which is also the port the app itself talks to — so the plain-HTTP probe is both the working one and the more faithful one. |
+| **There is no inline `VAR=value cmd` prefix.** | Set `$env:PUB_CACHE` as its own statement before `flutter`. |
+
+If you are running this from bash or WSL instead, the docker lines are unchanged and the two
+`Invoke-RestMethod` lines become `curl`.
+
+---
+
 ## 1. Before you touch the app — two traps that will cost you an hour each
 
 Both have already happened on this project. Neither announces itself; both look like a P4b bug.
@@ -64,15 +82,18 @@ container answers, and every write that needs a DEK fails. The `vault-init` serv
 
 Probe it, and read the output rather than the exit code:
 
-```bash
-docker compose -f deploy/docker-compose.yml exec -T vault \
-  sh -lc 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault read transit/keys/lumen-dev-kek'
+```powershell
+docker compose -f deploy/docker-compose.yml exec -T vault sh -lc 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault read transit/keys/lumen-dev-kek'
 ```
+
+One line, deliberately: a `\` at the end of the first line is a line continuation in bash and **not** in
+PowerShell 5.1, where it would run `... exec -T vault \` and fail on a container argument you never meant to
+pass. The single quotes survive PowerShell unchanged, so the inner `VAR=value` prefixes reach `sh` intact.
 
 - **Expected:** a key description with `latest_version 1` (or higher).
 - **If it says the key does not exist**, recover before going further:
 
-```bash
+```powershell
 docker compose -f deploy/docker-compose.yml up vault-init
 ```
 
@@ -84,29 +105,53 @@ then probe again. **Do not start the walk on an un-probed Vault.**
 
 Run each command and **read its output** — an exit code of 0 is not the assertion here.
 
-```bash
+```powershell
 docker compose -f deploy/docker-compose.yml up -d
 docker compose -f deploy/docker-compose.yml ps                    # every service running/healthy
 docker compose -f deploy/docker-compose.yml exec -T postgres pg_isready -U postgres
 ```
 
 ```powershell
-Invoke-RestMethod "http://localhost:8080/realms/lumen/.well-known/openid-configuration" |
-  Select-Object issuer                                            # the Keycloak realm exists
-Invoke-RestMethod -SkipCertificateCheck "https://localhost/health" # the API answers
+Invoke-RestMethod "http://localhost:8080/realms/lumen/.well-known/openid-configuration" | Select-Object issuer
+Invoke-RestMethod "http://localhost:8085/health"
 ```
+
+- The first prints the realm's `issuer`. If it errors, Keycloak is not up and **step 3 cannot run**.
+- The second must print `status : healthy` — that is `Program.cs`'s `/health`, returning
+  `{ "status": "healthy" }`.
+
+**Why `8085` and not `https://localhost`.** Compose publishes the API directly on `127.0.0.1:8085`
+(`docker-compose.yml`: `"127.0.0.1:8085:8080"`), and that is the port the app itself is built against —
+the `--dart-define` default is `10.0.2.2:8085`, which is the same publication seen from the emulator. So
+this probe answers the question the walk actually has ("can the app's API be reached?") rather than Caddy's,
+and it needs no TLS bypass — which matters, because `Invoke-RestMethod -SkipCertificateCheck` **does not
+exist in Windows PowerShell 5.1** and would fail here before sending anything. Caddy's `https://localhost`
+is worth a look only if you are debugging Caddy; nothing else in this walk goes through it.
 
 …and Trap B's Vault probe, which is part of this list and not optional.
 
-**Build and install the app.** From `client`, with `PUB_CACHE='C:\pub_cache'`:
+**Build and install the app.** From `client` — `$env:PUB_CACHE` is its own statement, because PowerShell has
+no inline `VAR=value cmd` prefix:
 
-```bash
-flutter run --dart-define=LUMEN_API_BASE=http://<host>:<port> \
-            --dart-define=LUMEN_OIDC_ISSUER=http://<host>:<port>/realms/lumen
+```powershell
+$env:PUB_CACHE = 'C:\pub_cache'
+Set-Location C:\Proyectos\Endo\client
+flutter devices                                    # find the id you want to run on
+flutter run -d <device-id>
 ```
 
-- **Android emulator:** the defaults already target it (`10.0.2.2:8085` / `10.0.2.2:8080`) — pass nothing.
-- **Real device:** pass the host's **LAN IP**, not `localhost`, for both.
+- **Android emulator:** the two `--dart-define` defaults already target it (`10.0.2.2:8085` /
+  `10.0.2.2:8080`) — pass nothing at all.
+- **Real device:** `10.0.2.2` is an emulator-only alias, so both defines must be overridden with the host's
+  **LAN IP**. Find it with `Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike
+  '127.*' }` (or `ipconfig`), then, on ONE line:
+
+```powershell
+flutter run -d <device-id> --dart-define=LUMEN_API_BASE=http://<lan-ip>:8085 --dart-define=LUMEN_OIDC_ISSUER=http://<lan-ip>:8080/realms/lumen
+```
+
+  The device must be on the same network as the host, and Windows Firewall must allow inbound 8085/8080 —
+  a device that cannot reach either port looks exactly like a broken app on step 1.
 
 **Record:** the device (model + OS version), whether it is an emulator or physical, the two `--dart-define`
 values you used, and the commit SHA you built from.
@@ -120,7 +165,16 @@ what a step lists before moving on — half of these facts disappear the moment 
 
 ### Step 1 — Cold start, signed out
 
-**Do:** launch the app on a device with no stored session.
+**Do:** launch the app on a device with **no stored session**. If this device has run Lumen before, clear it
+first — the session lives in `FlutterSecureStorage`, which survives a reinstall-over on some Android
+versions, so prefer clearing app data outright:
+
+```powershell
+adb shell pm clear com.lumen.lumen      # or: Settings > Apps > Lumen > Storage > Clear data
+```
+
+(`adb shell pm list packages | Select-String lumen` if you are unsure of the id.) Signing out from inside the
+app is **not** equivalent — this step is about what a first-ever launch does.
 
 **Observe:** the splash appears and gives way to the **welcome** screen. It does **not** sit spinning, and it
 does **not** flash the dashboard.

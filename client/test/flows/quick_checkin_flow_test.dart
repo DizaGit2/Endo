@@ -92,8 +92,12 @@ Future<void> _openSheet(WidgetTester tester) async {
   await tester.pump();
   await tester.tap(_moodTile);
   // The modal's own entrance animation, driven by hand rather than settled:
-  // 250 ms is `showModalBottomSheet`'s duration, and `pumpRouteTransition`
-  // advances a stated 350 ms — long enough for that and nothing else.
+  // 250 ms is `showModalBottomSheet`'s duration
+  // (`_kBottomSheetEnterDuration`, measured in the SDK — `showLumenBottomSheet`
+  // overrides neither it nor the animation controller), and
+  // `pumpRouteTransition` advances a stated `kFlowTransition` of 800 ms — past
+  // that entrance and still an order of magnitude short of the nearest thing
+  // this app schedules on a timer (the onboarding gate's 8 s bounded wait).
   await pumpRouteTransition(tester);
   expect(find.byType(LumenBottomSheet), findsOneWidget);
 }

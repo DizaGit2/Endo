@@ -54,6 +54,22 @@
 // OBJECT for every write, so a flow asserts the serialized body rather than
 // "it did not throw".
 //
+// ## This harness is a MODEL of the server, and that is its largest limit
+//
+// [applyCycleSettingsPatch], [applyDayLogPatch] and the goals FULL REPLACE
+// apply the server's own documented write rules BY HAND. A mock that echoed
+// its request could not tell a client that re-sent stale values from one that
+// sent nothing, which is precisely the T22a shape — but the cost is that **if
+// the shipped service ever disagrees with what this file believes, the flow is
+// green and the app is broken.** Nothing in CI can catch that; step 8 of the
+// manual walk is where it gets checked.
+//
+// The stubs also model only ONE of the server's `Validate` 400s — the day
+// log's all-absent rejection, because that 400 is the entire consequence of
+// the T16b defect shape. Every other body production would reject is accepted
+// here, so a *"this would be a 400"* reason string is asserted only indirectly,
+// through the exact-map body assertions.
+//
 // ## Frames (R3)
 //
 // Nothing here settles. `pumpAndSettle` advances the fake clock through async
@@ -74,6 +90,7 @@ import 'package:lumen/api/model/create_symptoms_request.dart';
 import 'package:lumen/api/model/create_symptoms_response.dart';
 import 'package:lumen/api/model/cycle_calendar_day.dart';
 import 'package:lumen/api/model/cycle_calendar_response.dart';
+import 'package:lumen/api/model/cycle_day_log_response.dart';
 import 'package:lumen/api/model/cycle_day_response.dart';
 import 'package:lumen/api/model/cycle_settings_response.dart';
 import 'package:lumen/api/model/date.dart';
@@ -84,6 +101,7 @@ import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/api/model/quick_checkin_request.dart';
 import 'package:lumen/api/model/quick_checkin_response.dart';
 import 'package:lumen/api/model/goals_response.dart';
+import 'package:lumen/api/model/log_cycle_day_request.dart';
 import 'package:lumen/api/model/register_device_request.dart';
 import 'package:lumen/api/model/register_device_response.dart';
 import 'package:lumen/api/model/save_baseline_request.dart';
@@ -100,6 +118,7 @@ import 'package:lumen/app.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cache_keys.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
+import 'package:lumen/core/error/failure.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../support/harness.dart';
@@ -204,6 +223,7 @@ void registerFlowFallbacks() {
   registerFallbackValue(SaveHormonePrefsRequest((b) => b));
   registerFallbackValue(SaveNotificationPrefsRequest((b) => b));
   registerFallbackValue(QuickCheckinRequest((b) => b));
+  registerFallbackValue(LogCycleDayRequest((b) => b));
   registerFallbackValue(CreateSymptomsRequest((b) => b));
   registerFallbackValue(UpdateCycleSettingsRequest((b) => b));
   registerFallbackValue(RegisterDeviceRequest((b) => b));
@@ -248,6 +268,7 @@ class FlowWorld {
       <SaveBaselineRequest>[];
   final List<QuickCheckinRequest> checkinPosts = <QuickCheckinRequest>[];
   final List<CreateSymptomsRequest> symptomPosts = <CreateSymptomsRequest>[];
+  final List<LogCycleDayRequest> dayLogPosts = <LogCycleDayRequest>[];
   final List<UpdateCycleSettingsRequest> settingsPatches =
       <UpdateCycleSettingsRequest>[];
 
@@ -280,6 +301,11 @@ class FlowWorld {
       <String, SymptomListResponse>{};
 
   // ── The answers writes give, injectable per test ─────────────────────────
+
+  /// What `POST /cycle/day/{date}` does. Defaults to [applyDayLogPatch] over
+  /// the stored day, INCLUDING the endpoint's own all-absent 400.
+  Future<CycleDayLogResponse> Function(Date date, LogCycleDayRequest request)?
+  onDayLogPost;
 
   /// What `POST /checkin/quick` does. Defaults to storing and echoing.
   Future<QuickCheckinResponse> Function(QuickCheckinRequest request)?
@@ -568,6 +594,55 @@ class FlowWorld {
       );
     });
 
+    // POST /cycle/day/{date} — screen 11's day-log editor (T16b).
+    //
+    // The server's rules are APPLIED, not echoed, and this stub applies one
+    // more of them than the others do: `CycleDayService.LogDayAsync`'s
+    // all-absent 400. That 400 is the whole consequence of the T16b defect
+    // shape — a `notes` guard re-derived from the VALUE lets an emptied note
+    // box submit `notes: ""`, which the server trims to nothing, matches
+    // against `request.Pain is null && request.Mood is null && notes is not
+    // { Length: > 0 }`, and rejects. A stub that answered 200 to that body
+    // would let the flow assert the wipe the defect does NOT cause and miss
+    // the round trip it does.
+    when(
+      () => api.cycleDayDatePost(
+        date: any(named: 'date'),
+        logCycleDayRequest: any(named: 'logCycleDayRequest'),
+      ),
+    ).thenAnswer((Invocation call) async {
+      final Date date = call.namedArguments[#date] as Date;
+      final LogCycleDayRequest request =
+          call.namedArguments[#logCycleDayRequest] as LogCycleDayRequest;
+      wire.add('POST /cycle/day/${_ymd(date)}');
+      dayLogPosts.add(request);
+      final handler = onDayLogPost;
+      if (handler != null) return _ok(await handler(date, request));
+
+      final String? notes = request.notes?.trim();
+      if (request.pain == null &&
+          request.mood == null &&
+          (notes == null || notes.isEmpty)) {
+        throw const ValidationFailure(
+          message: 'One or more validation errors occurred.',
+          detail: 'One or more validation errors occurred.',
+          fields: <String, List<String>>{
+            'request': <String>[kServerDayLogEmpty],
+          },
+        );
+      }
+
+      final String key = _ymd(date);
+      final CycleDayResponse day = days[key] ?? cycleDayFixture(date: date);
+      final CycleDayLogResponse saved = applyDayLogPatch(
+        day.log,
+        date,
+        request,
+      );
+      days[key] = day.rebuild((b) => b..log.replace(saved));
+      return _ok(saved);
+    });
+
     // POST /checkin/quick
     when(
       () => api.checkinQuickPost(
@@ -697,6 +772,54 @@ CycleSettingsResponse applyCycleSettingsPatch(
                   true) ==
               false
       ..createdAt = current.createdAt ?? DateTime.utc(2026, 1, 1)
+      ..updatedAt = DateTime.utc(2026, 4, 20, 8),
+  );
+}
+
+/// `CycleDayService`'s cross-field 400, verbatim
+/// (`CycleContracts.cs`, `CycleValidationMessages.DayLogEmpty`).
+///
+/// Spelled out here rather than imported because it is the SERVER's sentence;
+/// the client has its own, deliberately different one
+/// (`kDayLogEmptyChangeMessage`, whose dartdoc records why the two are not
+/// mirrored). A flow that saw this string in a banner would be seeing a round
+/// trip the client should have prevented.
+const String kServerDayLogEmpty =
+    'at least one of pain, mood or notes is required';
+
+/// `POST /cycle/day/{date}`'s MERGE semantics, applied to [current].
+///
+/// `CycleDayService.LogDayAsync`, rule for rule:
+///
+///  * **pain and mood merge on `is { } value`**, so a supplied `0` OVERWRITES
+///    and an omitted key leaves the column alone. `patch.pain ?? current?.pain`
+///    is that, exactly — `0 ?? x` is `0` in Dart — and it is why the harness
+///    must not use a truthiness test either (D-08).
+///  * **A blank or whitespace-only note is ABSENT TEXT, not an erase.** The
+///    service trims first and only writes `NotesEnc` when the result is
+///    non-empty; otherwise it echoes the STORED note back, *"reporting null
+///    would render the day as note-less on the very screen that wrote the
+///    note, which is the read half of the same wipe"*. So an emptied box
+///    cannot destroy a note on this endpoint — what it can do is make the
+///    whole request all-absent, which is the 400 the stub above raises.
+///
+/// **This is a MODEL of the server, and the flow suite's largest limit.** If
+/// the shipped service ever diverges from these three lines, every flow that
+/// asserts through them stays green while the app is wrong — which is why
+/// step 8 of the manual walk exists.
+CycleDayLogResponse applyDayLogPatch(
+  CycleDayLogResponse? current,
+  Date day,
+  LogCycleDayRequest patch,
+) {
+  final String? notes = patch.notes?.trim();
+  return CycleDayLogResponse(
+    (b) => b
+      ..day = day
+      ..pain = patch.pain ?? current?.pain
+      ..mood = patch.mood ?? current?.mood
+      ..notes = (notes != null && notes.isNotEmpty) ? notes : current?.notes
+      ..createdAt = current?.createdAt ?? DateTime.utc(2026, 4, 20, 8)
       ..updatedAt = DateTime.utc(2026, 4, 20, 8),
   );
 }
