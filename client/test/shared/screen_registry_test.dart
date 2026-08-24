@@ -55,7 +55,11 @@
 //
 // Use `goldenTestLightAndDark(...)` from `test/support/golden_app.dart` and the
 // filenames come out right by construction. Regenerate the PNGs with
-// `flutter test --update-goldens --tags golden`.
+// `flutter test --update-goldens --tags golden` **on Linux** — since P4b-T25a
+// the committed images are Linux renders and the harness skips the comparison
+// off Linux, so that command is a no-op on Windows or macOS. Off Linux, run
+// the `regenerate-goldens` workflow (`ci-client.yml`) instead. This rule is
+// about the files EXISTING; it does not care which host wrote them.
 //
 // ---------------------------------------------------------------------------
 // THE WIDGET RULE — every shared widget ships with the same coverage

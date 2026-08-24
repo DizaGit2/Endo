@@ -12,6 +12,10 @@ on:
       - "client/**"
       - "backend/contract/openapi.json"
       - ".github/workflows/ci-client.yml"
+  # Manual entry point for `regenerate-goldens` below. It also re-runs the
+  # `flutter` job, which is harmless and gives the regeneration a green/red
+  # baseline in the same run.
+  workflow_dispatch:
 
 concurrency:
   group: ci-client-${{ github.ref }}
@@ -127,3 +131,58 @@ jobs:
             client/coverage/lcov.info
             client/test/**/failures/**
           if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # regenerate-goldens (manual only)
+  #
+  # ⚠ STATUS: UNPROVEN — this job has never executed. It is written from the
+  # `flutter` job above, which HAS run on this runner, but nothing here has
+  # been observed to work. Treat its first run as the test of the job, not as
+  # a trustworthy regeneration: read the uploaded PNGs against the committed
+  # ones before committing them.
+  #
+  # WHY IT EXISTS (P4b-T25a). `test/support/golden_app.dart` rule 9 has the
+  # measured mechanism; the operational half is that the committed
+  # `client/test/**/goldens/ci/*.png` are LINUX renders and only Linux can
+  # legitimately rewrite them. A developer on Windows or macOS therefore
+  # cannot use `flutter test --update-goldens` at all — the harness skips the
+  # comparison off Linux precisely so that a host-specific image can never be
+  # written over a Linux master, which is exactly how this branch went red.
+  #
+  # HOW TO USE IT. Actions → ci-client → Run workflow, on the branch whose
+  # goldens need updating. Download the `regenerated-goldens` artifact, copy
+  # it over `client/test/**/goldens/ci/`, LOOK AT THE DIFF (an unexpected
+  # geometry change is indistinguishable from a legitimate update in these
+  # images), and commit. A Linux container running the same Flutter version
+  # is an equivalent route and does not need a push.
+  # ---------------------------------------------------------------------------
+  regenerate-goldens:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.1"
+          channel: stable
+          cache: true
+
+      - name: pub get
+        working-directory: client
+        run: flutter pub get
+
+      # `--update-goldens` never fails on a mismatch, so this step going green
+      # says the suite ran, not that anything matched. The evidence is the
+      # artifact's diff against the committed files.
+      - name: Regenerate CI goldens
+        working-directory: client
+        run: flutter test --tags golden --update-goldens
+
+      - name: Upload regenerated goldens
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-goldens
+          path: client/test/**/goldens/ci/*.png
+          if-no-files-found: error

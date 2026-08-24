@@ -257,7 +257,9 @@ void main() {
   // Deleting `const LumenPhaseUnavailable(reason: null)` from
   // `dashboard_screen.dart` left 41 of 43 `test/features/home/` tests
   // green; only the goldens caught it, and `--update-goldens` is run
-  // routinely. Mirrors `cycle_calendar_screen_semantics_test.dart:487`'s
+  // routinely (on Linux — since P4b-T25a it is the only host that can write
+  // these images, which makes the point sharper, not weaker: off Linux the
+  // goldens are skipped entirely and this deletion would have been green). Mirrors `cycle_calendar_screen_semantics_test.dart:487`'s
   // own pattern exactly: `phaseUnavailableCopy` renders the SAME neutral
   // text for every reason today, so a text assertion alone cannot tell "the
   // real reason was forwarded" apart from "null was silently substituted"
