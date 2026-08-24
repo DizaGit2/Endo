@@ -14,6 +14,7 @@
 // parameter that has one possible value.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/shared/widgets/lumen_input_field.dart';
@@ -27,7 +28,7 @@ import '../support/harness.dart';
 Future<TextEditingController> _pumpField(
   WidgetTester tester, {
   String label = 'Email',
-  String hint = 'you@example.com',
+  String? hint = 'you@example.com',
   bool obscure = false,
   bool enabled = true,
   String? errorText,
@@ -144,6 +145,66 @@ void main() {
       // second, duplicate label — and `labelText` is also the exact ingredient
       // in the AlertDialog teardown crash this task fixes elsewhere.
       expect(_decoration(tester).labelText, isNull);
+    });
+
+    // -----------------------------------------------------------------------
+    // hint: null vs hint: '' (P4b-T25a, fix-round-1)
+    // -----------------------------------------------------------------------
+
+    testWidgets('hint: null builds no hint widget at all', (tester) async {
+      await _pumpField(tester, hint: null);
+
+      // Not "an empty hint": no hint child. An empty one still lays out a
+      // full-width paragraph box, which is both a solid block in a
+      // blocked-text golden and the thing that pushes the input's paint
+      // offset off the pixel grid. See the class doc's measurement.
+      expect(_decoration(tester).hint, isNull);
+      expect(_decoration(tester).hintText, isNull);
+    });
+
+    testWidgets('hint: null paints the input on the same pixel grid a real '
+        'hint does, and an empty hint does not', (tester) async {
+      Future<double> inputTop(String? hint) async {
+        await _pumpField(tester, hint: hint, text: '165');
+        RenderEditable? editable;
+        void walk(RenderObject o) {
+          if (o is RenderEditable) editable = o;
+          o.visitChildren(walk);
+        }
+
+        walk(tester.renderObject(find.byType(TextField)));
+        return editable!.localToGlobal(Offset.zero).dy;
+      }
+
+      // The measured discriminator behind rule 9 in `golden_app.dart`. An
+      // empty hint reports a LARGER alphabetic baseline than a shaped one in
+      // the identical style, so `InputDecorator` leaves
+      // `hintBaseline - inputBaseline` in the input's paint offset; that
+      // fraction is the one quantity two host font backends disagreed about,
+      // and it reddened four goldens on this branch's first push.
+      final double withRealHint = await inputTop('Maya');
+      final double withNoHint = await inputTop(null);
+
+      expect(withNoHint, withRealHint);
+      // Whole or half pixels only — the property that makes a golden
+      // reproducible on another host.
+      expect((withNoHint * 2) % 1, 0);
+    });
+
+    test("hint: '' is rejected: pass null for no placeholder", () {
+      final TextEditingController controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      expect(
+        () => LumenInputField(controller: controller, label: 'L', hint: ''),
+        throwsA(
+          isA<AssertionError>().having(
+            (AssertionError e) => e.message.toString(),
+            'message',
+            allOf(contains('hint: null'), contains('1.031421661376953')),
+          ),
+        ),
+      );
     });
 
     testWidgets('obscure: true hides the entered text', (tester) async {

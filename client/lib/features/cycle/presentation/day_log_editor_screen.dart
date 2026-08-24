@@ -257,10 +257,11 @@ class _DayLogEditorScreenState extends ConsumerState<DayLogEditorScreen> {
           LumenInputField(
             controller: _notes,
             label: kDayLogEditorNoteLabel,
-            // Empty on purpose: screen 11's mockup draws no placeholder for
+            // `null` on purpose: screen 11's mockup draws no placeholder for
             // the note, the caption above already names the field, and a hint
-            // would be another authored string bought for nothing.
-            hint: '',
+            // would be another authored string bought for nothing. NOT `''`
+            // — the widget asserts against it, and P4b-T25a is why.
+            hint: null,
             minLines: 3,
             maxLines: 5,
             // Mirrors `FieldLimits.MaxNotesLength = 2000`, which the server

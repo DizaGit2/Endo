@@ -61,13 +61,39 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 /// this field's placeholder in both themes; a mutation to the hint's font size
 /// reddens both, so they are watching it.
 ///
+/// **A field with no placeholder passes `hint: null`, NEVER `hint: ''`
+/// (P4b-T25a/fix-round-1).** The two look identical on a phone and are not the
+/// same thing at all. `hint: ''` still builds the [Text] above, so
+/// `InputDecorator` still has a hint child to lay out and baseline-align — and
+/// an EMPTY paragraph reports a larger alphabetic baseline than a shaped one in
+/// the identical style. Measured in the golden environment, at `fontSize: 14`
+/// with `height: 1.5`, reading the `RenderEditable`'s global `dy`:
+///
+/// | `hint`   | input `dy` | hint paragraph          |
+/// |----------|-----------|--------------------------|
+/// | `''`     | 14.531421661376953 | exists, 264 x 21 |
+/// | `'Maya'` | 13.5               | exists, 264 x 21 |
+/// | `null`   | 13.5               | absent           |
+///
+/// So an empty hint, and only an empty hint, injects
+/// `hintBaseline - inputBaseline = 1.031421661376953` into where the text is
+/// PAINTED — and that float is the one quantity in this app that two host font
+/// backends disagree about. It is what reddened four goldens on this branch's
+/// first push. The empty hint is also not invisible to a golden: the table
+/// shows `''` laying out the same 264 x 21 box as `'Maya'`, which Alchemist
+/// paints as a full-width block either way. `null` removes both effects, and
+/// removes nothing a user could see. The constructor asserts against `''` so
+/// the trap cannot be re-entered; `test/support/golden_app.dart` rule 9 has the
+/// whole measurement.
+///
 /// Props:
 /// - [controller] — the caller owns it, and must dispose it.
 /// - [label] — the field's accessible name; pass the same string the screen
 ///   renders above the field.
 /// - [hint] — placeholder text, drawn but not announced; there is no floating
 ///   label by design (the design system puts the label above the field, see
-///   `LumenFieldLabel`).
+///   `LumenFieldLabel`). `null` for a field the mockup draws without one —
+///   see above, and never `''`.
 /// - [obscure] — password entry.
 /// - [errorText] — the rejection to draw under the field; `null` when clean.
 /// - [keyboardType] — e.g. [TextInputType.emailAddress].
@@ -100,6 +126,19 @@ class LumenInputField extends StatelessWidget {
          'than one visual line has no sane rendering. Pass obscure: false '
          'for a multiline field (screen 12\'s notes), or leave maxLines at '
          'its default of 1 for a password field (account_screen.dart).',
+       ),
+       assert(
+         hint != '',
+         'LumenInputField: pass hint: null for a field with no '
+         'placeholder, never an empty string. An empty hint still '
+         'builds the hint Text, so InputDecorator still baseline-aligns '
+         'the input against it — and an EMPTY paragraph reports a larger '
+         'alphabetic baseline than a shaped one, which moves the painted '
+         'text down by 1.031421661376953 px and is the exact float two '
+         'host font backends disagree about. It also lays out a '
+         'full-width box that a blocked-text golden paints as a solid '
+         'block. This reddened four goldens on P4b-T25a. See the class '
+         'doc and test/support/golden_app.dart rule 9.',
        );
 
   /// The text being edited. Owned (and disposed) by the caller.
@@ -108,11 +147,14 @@ class LumenInputField extends StatelessWidget {
   /// The field's accessible name — the same string the screen renders above it.
   final String label;
 
-  /// Placeholder shown while the field is empty.
+  /// Placeholder shown while the field is empty, or `null` for a field the
+  /// mockup draws without one.
   ///
   /// Drawn, never announced — it is not part of the field's accessible name.
-  /// See the class doc.
-  final String hint;
+  ///
+  /// **`null`, never `''`** — the empty string is a different, worse thing and
+  /// the constructor rejects it. See the class doc for the measurement.
+  final String? hint;
 
   /// Whether to obscure the entered characters (password entry).
   final bool obscure;
@@ -264,15 +306,17 @@ class LumenInputField extends StatelessWidget {
           // both be given (`InputDecoration`'s own assert), and the style has
           // to be composed here because `InputDecorator` applies `hintStyle`
           // only to the `Text` it builds itself.
-          hint: ExcludeSemantics(
-            child: Text(
-              hint,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyLarge!.merge(inputStyle).merge(hintStyle),
-              textAlign: TextAlign.start,
-            ),
-          ),
+          hint: hint == null
+              ? null
+              : ExcludeSemantics(
+                  child: Text(
+                    hint!,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge!.merge(inputStyle).merge(hintStyle),
+                    textAlign: TextAlign.start,
+                  ),
+                ),
           suffixText: suffixText,
           suffixStyle: TextStyle(fontSize: 10, color: c.muted),
           // Load-bearing for [suffixText] and inert for everything else — see

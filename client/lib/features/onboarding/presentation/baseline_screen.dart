@@ -243,8 +243,10 @@ class _BodyState extends ConsumerState<_Body> {
                     controller: _height,
                     label: 'Height',
                     // The mockup draws no placeholder — a `.fld` box holds a
-                    // value and a unit, and nothing else.
-                    hint: '',
+                    // value and a unit, and nothing else. `null`, not `''`:
+                    // the widget asserts against the empty string, and
+                    // P4b-T25a is why.
+                    hint: null,
                     // The mockup's `.fu` span. A suffix rather than a hint
                     // because a hint vanishes as soon as the field has
                     // content, and a prefilled `165` with no unit beside it is
@@ -283,7 +285,7 @@ class _BodyState extends ConsumerState<_Body> {
         LumenInputField(
           controller: _weight,
           label: 'Weight',
-          hint: '',
+          hint: null,
           suffixText: 'kg',
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           enabled: !form.submitting,

@@ -77,10 +77,8 @@
 //      golden — 22% apart, not "close" — which is why that equal-length
 //      swap reddened both goldens by 847 px. **Treat every copy edit,
 //      length-changing or not, as needing `--update-goldens` and a look at
-//      the diff** (on Linux — see rule 9; off Linux the goldens are
-//      skipped and the command writes nothing) — neither character count
-//      nor "it's just a synonym of similar length" is a safe test either
-//      way.
+//      the diff** — neither character count nor "it's just a synonym of
+//      similar length" is a safe test either way.
 //   7. **TEXT OPACITY IS INVISIBLE TO A BLOCKED-TEXT GOLDEN — this is the
 //      second false self-description this file has carried** (P4b-T13 found
 //      the copy-insensitivity one above; P4b-T15/fix-round-1 found this one).
@@ -124,104 +122,118 @@
 //      own layout (bound to the `size` parameter), not measured from
 //      whatever glyph the chosen font happens to contain, and the branch
 //      above never inspects the glyph at all.
-//   9. **A GOLDEN IMAGE IS A LINUX ARTIFACT AND IS ONLY COMPARED ON LINUX —
-//      P4b-T25a.** The first push of this branch turned `ci-client` red on
+//   9. **`hint: ''` ON A `LumenInputField` MOVES PAINTED TEXT BY A
+//      HOST-DEPENDENT FRACTION OF A PIXEL — P4b-T25a, corrected in
+//      fix-round-1.** The first push of this branch turned `ci-client` red on
 //      four screens (`day_log_editor`, `period_editor`, `baseline`,
-//      `onboarding_shell`, both themes) while ~70 other goldens passed. It is
-//      not a visual regression and not a blanket platform difference. What
-//      follows separates what was MEASURED from what remains open, because
-//      this file has shipped a plausible-sounding mechanism four times
-//      already (rules 6, 7, 8) and a fifth would be worse than an admission.
+//      `onboarding_shell`, both themes) while the other 70 goldens passed. It
+//      was not a visual regression and not a blanket platform difference: it
+//      was one production typo-of-intent, `hint: ''` where the field wanted no
+//      placeholder at all, and it is fixed at the source.
 //
-//      MEASURED, on the CI artifacts and reproduced on the dev machine:
-//      * Every differing pixel is the TOP or BOTTOM row of a blocked text
-//        rectangle. Every interior row and every x-extent is byte-identical,
-//        so the font, its glyph advances, and every box height are the same
-//        on both hosts. The disagreement is SUB-PIXEL and VERTICAL.
+//      **The discriminator, measured directly.** Same widget, same style, same
+//      golden environment (`loadFonts()`, 390x844, DPR 1), reading the
+//      `RenderEditable`'s global `dy` and the hint paragraph's box:
+//
+//        | `hint`   | input `dy`           | hint paragraph   |
+//        |----------|----------------------|------------------|
+//        | `''`     | 14.531421661376953   | exists, 264 x 21 |
+//        | `'Maya'` | 13.5                 | exists, 264 x 21 |
+//        | `null`   | 13.5                 | absent           |
+//
+//      An EMPTY hint, and only an empty hint, is fragile, for TWO independent
+//      reasons that between them account for all eight failures:
+//        (a) `InputDecorator` positions input and hint by baseline
+//            (`offset.dy = baseline - box.getDistanceToBaseline(alphabetic)`),
+//            which with an `OutlineInputBorder` resolves to `dy =
+//            max(hintBaseline, inputBaseline) - ownBaseline + (containerHeight
+//            - inputHeight) / 2`. An empty paragraph reports a LARGER
+//            alphabetic baseline than a shaped one in the identical style, so
+//            `max(...)` picks the hint and leaves `hintBaseline -
+//            inputBaseline = 1.031421661376953` in the input's paint offset.
+//            With a real hint the two are equal and the term is 0; with `null`
+//            there is no hint operand at all. **That float is the only
+//            non-integer term in any blocked rect's position in this app**,
+//            and it is the one quantity the two host font backends disagree
+//            about (Windows placed `baseline_screen`'s editables at y =
+//            146.53142, Linux at 146.7608; `day_log_editor`'s at 645.03142 vs
+//            645.7608).
+//        (b) An empty hint is NOT invisible to a blocked-text golden. The
+//            table above shows `''` laying out the same 264 x 21 box as
+//            `'Maya'` — `InputDecorator` stretches the hint to the field —
+//            and Alchemist paints that box as a solid full-width block whose
+//            hard edges land on exact half-pixels (`onboarding_shell`'s two
+//            sat at y = 215.5 and 299.5). A non-antialiased edge exactly on a
+//            half-pixel is a rounding tie, and the two rasterizers broke it
+//            differently: Linux painted 22 rows, Windows 21.
+//
+//      **The fix (fix-round-1): `hint` is `String?` and every no-placeholder
+//      call site passes `null`.** The constructor asserts against `''` so the
+//      trap cannot be re-entered. Measured after the change, on this Windows
+//      machine: `baseline_screen`'s editable rects land on exactly
+//      [145.5, 166.5], height exactly 21.0, both edge rows an exact 50/50
+//      blend (125, 123, 119); `day_log_editor`'s and `period_editor`'s land on
+//      exactly [644.0, 686.0] and [632.0, 674.0], height exactly 42.0, with no
+//      edge blend at all; and `onboarding_shell`'s two diverging rects **no
+//      longer exist**, because the paragraph that drew them is not built.
+//      Nothing else in any of the eight images moved.
+//
+//      **The control that shows the new geometry survives the host crossing.**
+//      `lumen_input_field_light.png` — a golden CI has compared successfully
+//      on Linux — carries a blocked-text rect at exactly [185.5, 206.5],
+//      height exactly 21.0, with both edge rows the same exact 50/50 blend
+//      (125, 123, 119). That is the new `baseline_screen` geometry byte for
+//      byte, already proven to cross Windows -> Linux unchanged. What does
+//      NOT survive the crossing is a fractional position (146.53142) or a
+//      hard edge on a half-pixel; the fix produces neither.
+//
+//      MEASURED AND STILL TRUE, about the images generally:
 //      * Alchemist blocks text through two paints and only one is
 //        antialiased. A `RenderParagraph` child goes through
 //        `BlockedTextPaintingContext.paintChild`, which sets
-//        `isAntiAlias = false` and the text's own colour — hard rows. Text
-//        painted by a render object that is NOT a `RenderParagraph` — here
-//        that is exclusively `RenderEditable`, i.e. a `TextField` WITH TEXT
-//        IN IT — goes through `BlockedTextCanvasAdapter.drawParagraph`, which
-//        draws with a bare `Paint()`: **opaque black, antialiasing ON**. Its
-//        two edge rows are coverage blends that encode the fractional y to
-//        ~1/255, so ANY sub-pixel difference shows. Such rects are the only
-//        source of pure `#000000` in a golden: **exactly 10 of 78 committed
-//        goldens contain pure black.**
-//      * Reading those blends back gives the geometry directly. Windows:
-//        `baseline_screen`'s two editables sit at y = 146.53142 and 230.53142
-//        (matching the layout measured in-process to five decimals),
-//        `day_log_editor`'s at 645.03142. Linux: both land on .7608. So the
-//        editable rects moved DOWN by 0.23 px and 0.73 px respectively.
-//      * The fractional part comes from ONE place. `InputDecorator` positions
-//        input and hint by BASELINE (`offset.dy = baseline -
-//        box.getDistanceToBaseline(alphabetic)`), and with an
-//        `OutlineInputBorder` that resolves to `dy = max(hintBaseline,
-//        inputBaseline) - ownBaseline + (containerHeight - inputHeight) / 2`.
-//        For the HINT the first term is 0, leaving 13.5 or 13.0 — integer
-//        arithmetic. For the INPUT it leaves `hintBaseline - inputBaseline`,
-//        measured here as **16.625713348388672 - 15.594292 = 1.031421** — the
-//        only non-integer term in any blocked rect's position in this app.
-//        (Everything else is integral because the engine ROUNDS paragraph
+//        `isAntiAlias = false` and the text's own colour — hard rows, and a
+//        rounding tie if an edge lands on exactly `.5`. Text painted by a
+//        render object that is NOT a `RenderParagraph` — here that is
+//        exclusively `RenderEditable`, i.e. a `TextField` WITH TEXT IN IT —
+//        goes through `BlockedTextCanvasAdapter.drawParagraph`, which draws
+//        with a bare `Paint()`: **opaque black, antialiasing ON**. Its edge
+//        rows are coverage blends that encode the fractional y to ~1/255, so
+//        any sub-pixel difference shows. Such rects are the only source of
+//        pure `#000000` in a golden: **exactly 10 of 78 committed goldens
+//        contain pure black.**
+//      * Everything else is integral because the engine ROUNDS paragraph
 //        heights: measured, 22 px x 1.4 -> 31.0, 11 px x 1.45 -> 16.0,
-//        12 px x 1.43 -> 17.0.)
-//      * `lumen_input_field`'s own goldens hold pure-black rects and PASS:
-//        its scenarios pass no `hint`, so `hintBaseline` is 0, the float term
-//        cancels, and the rects land on 185.5 and 425.0.
+//        12 px x 1.43 -> 17.0. Integer geometry is bit-identical on any host,
+//        which is why 70 goldens never noticed.
 //
-//      OPEN, and stated as open: `onboarding_shell`'s two differing rects are
-//      HINTS, not editables — hard-edged, `--mut` at 0.6 alpha, 21 px tall,
-//      measured at exactly y = 215.5 and 299.5, i.e. the pure integer branch
-//      above. In the Linux image each is one row TALLER AT THE TOP with the
-//      bottom row unchanged, which is a bigger ascent, not a translation
-//      (a translation would move both edges). **The obvious explanation —
-//      that a hard edge exactly on a half-pixel is a rounding tie the two
-//      rasterizers break differently — is REFUTED here, not merely
-//      unverified: `account_screen`'s three hint rects sit at exactly 228.5,
-//      313.5 and 398.5, the same .5, and that golden passes on Linux.**
-//      A wholesale font-metric swap is ruled out too: Alchemist's own caption
-//      (`GoldenTestTheme.nameTextStyle`, `fontSize: 18` with NO `height:`, so
-//      its box is pure font metrics) renders 22 rows in BOTH images, so the
-//      two hosts agree on Roboto's natural line height. Whatever moves the
-//      `onboarding_shell` hints is not determinable from a Windows machine,
-//      and nothing here should be read as knowing it.
+//      **Predictive rule.** `InputDecorator` is the fragile surface, because
+//      it is the only widget in this app that turns a font-metric float into a
+//      paint offset — and the only thing that made it produce one was an empty
+//      hint, which no longer compiles past the assert. The next golden at risk
+//      is still the next one that photographs a `LumenInputField`, and the
+//      cheap check on any suspect image is whether it contains pure black; but
+//      the known cause is closed at the source rather than absorbed by a
+//      tolerance or by pinning the images to one operating system.
 //
-//      **Predictive rule — use the granularity the evidence supports.** All
-//      eight failures are inside a `LumenInputField`, and nothing outside one
-//      failed. `InputDecorator` is the fragile surface, because it is the
-//      only widget in this app that turns a font-metric float into a paint
-//      offset. A field WITH TEXT is reliably fragile (3 screens of 3); a
-//      field showing only its hint is sometimes fragile (`onboarding_shell`
-//      yes, `account_screen` no) for a reason we cannot yet name. **So: the
-//      next golden to break will be the next one that photographs a
-//      `LumenInputField`** — and the cheap check on any suspect image is
-//      whether it contains pure black.
-//
-//      **Consequence, and it is a process rule.** The committed
-//      `goldens/ci/*.png` are now **Linux renders** (T25a took the CI
-//      runner's own images as the masters for the eight), and
-//      `goldenTestLightAndDark` therefore COMPARES THEM ONLY ON LINUX; on any
-//      other host it registers the pair as a skipped test. Do NOT run
-//      `flutter test --update-goldens` on Windows or macOS expecting it to
-//      help: it now writes nothing, which is deliberate — a Windows
-//      regeneration is what put the branch in this state. To update a golden,
-//      run the `regenerate-goldens` workflow (`ci-client.yml`,
-//      `workflow_dispatch`) and commit the artifact, or run the suite in a
-//      Linux container. To SEE a failure on Windows, set
-//      `LUMEN_GOLDEN_COMPARE=1`: the four screens above then fail by exactly
-//      614/614/400/400/110/110 px, which is the platform delta and not a
-//      regression.
-//      **This supersedes `flutter_test_config.dart`'s original claim that
-//      blocked text makes the output "identical regardless of the host OS or
-//      font renderer". That claim was false, and it is why the divergence
-//      went unnoticed until the branch was first pushed.**
-
-import 'dart:io' show Platform;
+//      **What this file used to say here, and what was wrong with it.** T25a
+//      shipped a rule 9 claiming `lumen_input_field`'s goldens pass because
+//      *"its scenarios pass no `hint`, so `hintBaseline` is 0"*. `hint` was a
+//      REQUIRED NON-NULLABLE `String` at the time and every one of those
+//      scenarios passes a real string — the control case was false about the
+//      code it cited, and it was the only thing separating the fragile fields
+//      from the safe ones in that model. On the same false premise T25a
+//      declared the half-pixel-tie explanation of `onboarding_shell`
+//      *"REFUTED, not merely unverified"*, comparing `onboarding_shell`'s
+//      hints with `account_screen`'s and calling them identical: one set was
+//      `''` and the other real text, which is the entire variable. The tie is
+//      now the measured explanation of (b), not a refuted one. **This is the
+//      FIFTH false self-description this file has carried (rule 6 twice, 7,
+//      8), and the first one that also foreclosed the fix.** The lesson is
+//      narrower than "do not guess": T25a DID separate measured from open and
+//      still shipped this, because the false sentence sat in the MEASURED
+//      half. Cite the file and line for a claim about code, or do not make it.
 
 import 'package:alchemist/alchemist.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
@@ -289,30 +301,6 @@ Widget _goldenFrame({required Widget app, required List<Override> overrides}) {
 // The light/dark pair
 // ---------------------------------------------------------------------------
 
-/// Whether the committed `goldens/ci/*.png` may be compared on this host.
-///
-/// The masters are **Linux renders** (see rule 9). Comparing them anywhere
-/// else measures the host's font backend, not the app: it is how P4b-T25a's
-/// four screens went red on their first push. So the comparison runs on
-/// Linux — the CI runner, and the only host that can also regenerate them —
-/// and nowhere else.
-///
-/// `LUMEN_GOLDEN_COMPARE` forces the comparison on regardless. It exists to
-/// let a non-Linux machine SEE a failure (the four T25a screens will fail by
-/// exactly 614/614/400/400/110/110 px), never to update a golden: a
-/// `--update-goldens` run under that flag would write host-specific images
-/// over the Linux masters and put the branch straight back where it was.
-final bool kGoldensAreComparedHere =
-    Platform.isLinux ||
-    Platform.environment.containsKey('LUMEN_GOLDEN_COMPARE');
-
-/// Why a golden pair did not run, printed by the test runner on non-Linux
-/// hosts so the skip is self-explaining rather than mysterious.
-const String kGoldensSkipReason =
-    'CI goldens are Linux artifacts (see golden_app.dart rule 9). Regenerate '
-    'via the regenerate-goldens workflow; set LUMEN_GOLDEN_COMPARE=1 to '
-    'compare here anyway.';
-
 /// Declares the two goldens every screen ships: `<fileName>_light` and
 /// `<fileName>_dark`.
 ///
@@ -330,16 +318,6 @@ void goldenTestLightAndDark({
   required String fileName,
   required Widget Function(Brightness brightness) build,
 }) {
-  if (!kGoldensAreComparedHere) {
-    // Registered, not silently dropped: `goldenTest`'s own `skip:` returns
-    // before declaring anything, which would leave a golden file with zero
-    // tests and make `flutter test <that file>` an error. A real skipped test
-    // keeps the pair visible in the run and names why it did not execute.
-    test('\$subject light theme', () {}, skip: kGoldensSkipReason);
-    test('\$subject dark theme', () {}, skip: kGoldensSkipReason);
-    return;
-  }
-
   goldenTest(
     '$subject light theme',
     fileName: '${fileName}_light',

@@ -687,13 +687,14 @@ class _NotesFieldState extends State<_NotesField> {
       // `aria-labelledby`, so a field with only hint text announces its
       // PLACEHOLDER (`LumenInputField`'s own dartdoc).
       label: 'Notes',
-      // **Empty on purpose** — `baseline_screen.dart`'s precedent for a field
-      // its mockup draws no placeholder for. Screen 12's mockup draws no
+      // **`null` on purpose** (not `''`, which the widget asserts against —
+      // P4b-T25a) — `baseline_screen.dart`'s precedent for a field its mockup
+      // draws no placeholder for. Screen 12's mockup draws no
       // notes box AT ALL, so any placeholder here would be a fifth authored
       // string on a screen whose copy is already queued for a PO/clinician
       // pass (§T25), bought for nothing: the "NOTES" caption above the box
       // and this field's own accessible name already say what it is.
-      hint: '',
+      hint: null,
       // `minLines` is what makes this read as a notes box on first paint
       // rather than a one-line field that grows; `maxLength` mirrors the
       // contract's own `FieldLimits.MaxNotesLength = 2000`, which the server

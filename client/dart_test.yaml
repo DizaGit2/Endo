@@ -2,3 +2,8 @@
 # Alchemist tags its generated golden tests with `golden`.
 tags:
   golden:
+  # `test/shared/golden_comparison_gate_test.dart` — the checks that say the
+  # goldens are still being compared. Tagged so that the deliberate
+  # `flutter test --tags golden --update-goldens` regeneration does not run
+  # them (one of them asserts `--update-goldens` is OFF).
+  gate:

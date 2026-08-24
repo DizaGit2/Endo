@@ -713,7 +713,9 @@ class _EditLengthDialogState extends State<_EditLengthDialog> {
       content: LumenInputField(
         controller: _controller,
         label: widget.label,
-        hint: '',
+        // No placeholder: the dialog title already names the value. `null`,
+        // not `''` — the widget asserts against the empty string (P4b-T25a).
+        hint: null,
         keyboardType: TextInputType.number,
         inputFormatters: <TextInputFormatter>[
           FilteringTextInputFormatter.digitsOnly,

@@ -530,21 +530,11 @@ List<String> _missingArtifacts({
     }
   }
 
-  // The instruction names Linux deliberately: since P4b-T25a the committed
-  // images are Linux renders and `goldenTestLightAndDark` skips the
-  // comparison elsewhere, so `--update-goldens` on Windows or macOS writes
-  // nothing and this message would send the reader in a circle.
   if (!File('$root/$lightPng').existsSync()) {
-    missing.add(
-      '$lightPng (run: flutter test --update-goldens ON LINUX, or the '
-      'regenerate-goldens workflow)',
-    );
+    missing.add('$lightPng (run: flutter test --update-goldens)');
   }
   if (!File('$root/$darkPng').existsSync()) {
-    missing.add(
-      '$darkPng (run: flutter test --update-goldens ON LINUX, or the '
-      'regenerate-goldens workflow)',
-    );
+    missing.add('$darkPng (run: flutter test --update-goldens)');
   }
 
   final semanticsSource = _readOrNull('$root/$semanticsTest');

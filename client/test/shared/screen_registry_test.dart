@@ -55,11 +55,12 @@
 //
 // Use `goldenTestLightAndDark(...)` from `test/support/golden_app.dart` and the
 // filenames come out right by construction. Regenerate the PNGs with
-// `flutter test --update-goldens --tags golden` **on Linux** — since P4b-T25a
-// the committed images are Linux renders and the harness skips the comparison
-// off Linux, so that command is a no-op on Windows or macOS. Off Linux, run
-// the `regenerate-goldens` workflow (`ci-client.yml`) instead. This rule is
-// about the files EXISTING; it does not care which host wrote them.
+// `flutter test --update-goldens --tags golden`, on any host — P4b-T25a's
+// fix-round-1 closed the one thing that made a golden host-dependent
+// (`hint: ''`, see `support/golden_app.dart` rule 9), so a regeneration here
+// is the same bytes CI compares. LOOK AT THE DIFF either way: an unexpected
+// geometry change is indistinguishable from a legitimate update in these
+// images. This rule is about the files EXISTING.
 //
 // ---------------------------------------------------------------------------
 // THE WIDGET RULE — every shared widget ships with the same coverage

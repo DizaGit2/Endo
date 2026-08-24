@@ -13,23 +13,28 @@ import 'package:alchemist/alchemist.dart';
 ///
 /// **What this file used to claim, and why it was wrong (P4b-T25a).** The
 /// sentence here said blocking text made the output *"identical regardless of
-/// the host OS or font renderer"*. It is not, and believing it is what let
-/// four screens diverge silently until the branch was first pushed. Blocking
-/// makes the image insensitive to which GLYPHS are drawn; it does not make it
-/// insensitive to WHERE the blocks land. Some placements in this app are
-/// sub-pixel and host-dependent — see `support/golden_app.dart` rule 9 for
-/// the measured mechanism, the predictive rule, and the consequence that
-/// follows from it: **the committed masters are Linux renders and
-/// `goldenTestLightAndDark` compares them on Linux only.** `diffThreshold`
-/// stays at Alchemist's default 0.0 (P4b-T21b R14): a tolerance wide enough to
-/// absorb the 614 px seen here would also absorb a real regression.
+/// the host OS or font renderer"*. It does not. Blocking makes the image
+/// insensitive to which GLYPHS are drawn; it does not make it insensitive to
+/// WHERE the blocks land, and believing otherwise is what let four screens
+/// diverge silently until this branch was first pushed. Placement is
+/// host-independent only while it comes out of integer or exact-half
+/// arithmetic — which, since T25a's fix-round-1, it does everywhere in this
+/// app. See `support/golden_app.dart` rule 9 for the measurement, the one
+/// production construct that broke it (`hint: ''`), and the assert that now
+/// prevents it.
+///
+/// `diffThreshold` stays at Alchemist's default 0.0 (P4b-T21b R14): a tolerance
+/// wide enough to absorb the 614 px seen on that push would also absorb a real
+/// regression. The cause was removed instead.
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   return AlchemistConfig.runWithConfig(
     config: const AlchemistConfig(
       // Disable human-readable platform goldens so OS font differences
       // (macOS vs Linux vs Windows) never cause spurious failures.
       platformGoldensConfig: PlatformGoldensConfig(enabled: false),
-      // CI goldens: obscure text + no shadows → identical pixels everywhere.
+      // CI goldens: text is blocked out and shadows are off, so the images
+      // record geometry rather than glyphs. NOT "identical pixels everywhere"
+      // — see the doc above and golden_app.dart rule 9.
       ciGoldensConfig: CiGoldensConfig(
         enabled: true,
         obscureText: true,

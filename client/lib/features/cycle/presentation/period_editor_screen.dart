@@ -318,10 +318,11 @@ class _PeriodEditorScreenState extends ConsumerState<PeriodEditorScreen> {
           LumenInputField(
             controller: _notes,
             label: kPeriodEditorNoteLabel,
-            // Empty on purpose: no mockup draws a placeholder here, the caption
-            // already names the field, and a hint would be another authored
-            // string bought for nothing.
-            hint: '',
+            // `null` on purpose: no mockup draws a placeholder here, the
+            // caption already names the field, and a hint would be another
+            // authored string bought for nothing. NOT `''` — the widget
+            // asserts against it, and P4b-T25a is why.
+            hint: null,
             minLines: 3,
             maxLines: 5,
             // Mirrors `FieldLimits.MaxNotesLength = 2000`, which the server
