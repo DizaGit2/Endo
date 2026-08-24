@@ -51,7 +51,14 @@ PhaseUnavailableCopy phaseUnavailableCopy(String? reason) {
 // The widget
 // ---------------------------------------------------------------------------
 
-/// What screens 8, 10, 11 and 14 render where the mockups draw a phase band.
+/// What screens 8, 10 and 14 render where the mockups draw a phase band.
+///
+/// **Screen 11 is deliberately NOT in that list, and this line used to say it
+/// was** — P4b-T16 cut every phase treatment from the day detail, not because
+/// it would have needed a second read, but because screen 10 is one tap away
+/// and already carries this block, so repeating a constant string on every day
+/// view is noise rather than information. Screen 14 became the third real call
+/// site at P4b-T23.
 ///
 /// P4a answers `phase: { available: false, unavailableReason: ... }` for every
 /// user, and no day row carries a phase, cycle-day or confidence value. The

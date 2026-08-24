@@ -88,10 +88,11 @@ abstract final class Routes {
 
   /// Cycle tab (screens 10/11/14) — branch 1.
   ///
-  /// Screen 10 (calendar) shipped at P4b-T15. P4b-T16 adds screen 11 (day
+  /// Screen 10 (calendar) shipped at P4b-T15. P4b-T16 added screen 11 (day
   /// detail) as a child route (`/cycle/day/:date`); P4b-T23 adds screen 14
-  /// (phase correction) — see the **T23** entry in
-  /// `docs/superpowers/plans/lumen-build.md` for the ledger.
+  /// (phase correction) as its sibling ([cyclePhase]), reachable by deep link
+  /// only — see the **T23** entry in `docs/superpowers/plans/lumen-build.md`
+  /// for the ledger and [cyclePhase]'s own dartdoc for why.
   ///
   /// (Citation history, kept because it is the case R-23 exists for: this
   /// cited `:1132` at T16, was "corrected" to `:1136` in the same breath, and
@@ -162,6 +163,50 @@ abstract final class Routes {
   static String _pad2(int value) => value.toString().padLeft(2, '0');
 
   static String _pad4(int value) => value.toString().padLeft(4, '0');
+
+  /// The RELATIVE path segment screen 14 (phase correction) registers as a
+  /// CHILD of [cycle] — go_router requires a sub-route's `path` to be
+  /// relative, the same shape [cycleDaySegment] has. Not a usable navigation
+  /// target on its own; [cyclePhase] is the concrete path.
+  static const cyclePhaseSegment = 'phase';
+
+  /// Screen 14 (phase correction) — `/cycle/phase`, a CHILD of [cycle]
+  /// (P4b-T23).
+  ///
+  /// **Nothing in the app navigates here, and that is the ruling, not an
+  /// oversight.** R-08 ships screen 14 as the documented phase-unavailable
+  /// state and defers its `POST /cycle/phase-override` write to P6: there is
+  /// no predicted timeline to correct *from*, no endpoint to read a cycle's
+  /// existing overrides back, and `ARCHITECTURE.md` §C.0.1 calls that field
+  /// *"the most dangerous on the P4a surface"*. R-08 requires the route, the
+  /// screen, the goldens and the semantics — it does not require
+  /// reachability. An affordance whose destination can only answer *"phases
+  /// aren't available yet"* is inert navigation, which R-10 **hides** rather
+  /// than disables, and R-20 forbids shipping half an affordance; so the
+  /// entry point lands in P6, in the same commit as the write it belongs to.
+  /// `test/features/cycle/phase_correction_source_test.dart` holds the
+  /// tripwire that keeps every other production file from naming this
+  /// constant, and names itself as the thing P6 deletes.
+  ///
+  /// *The contrast with screen 36 is deliberate and it holds.* Screen 36 was
+  /// unreachable while **advertising a working feature** — `DELETE /me` had
+  /// worked end to end since P4a behind a screen nobody could open, which is
+  /// a compliance exposure. Screen 14 advertises nothing and can do nothing;
+  /// the only thing hidden from a user is a sentence they already read on
+  /// screens 8 and 10.
+  ///
+  /// A COLD deep link here is legal and lands on the screen with the Cycle
+  /// tab selected — go_router materialises [cycle]'s own page beneath a child
+  /// route, so Back reaches the calendar (see `phase_correction_screen.dart`'s
+  /// `_leavePhaseCorrection`, and
+  /// `test/core/router/phase_correction_route_test.dart` for the test that
+  /// pins it).
+  ///
+  /// `phase` rather than `phase-correction`: the screen corrects nothing in
+  /// P4b, and P6's editor will be the same surface at the same address.
+  /// Composed from [cycle] rather than spelled out, so renaming the branch
+  /// root cannot leave this pointing at a path that no longer exists.
+  static const cyclePhase = '$cycle/$cyclePhaseSegment';
 
   /// Hormones tab (screens 15–21) — branch 2. Not built in P4b.
   static const hormones = '/hormones';

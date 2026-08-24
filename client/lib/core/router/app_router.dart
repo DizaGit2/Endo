@@ -5,6 +5,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/features/cycle/presentation/cycle_calendar_screen.dart';
 import 'package:lumen/features/cycle/presentation/day_detail_screen.dart';
+import 'package:lumen/features/cycle/presentation/phase_correction_screen.dart';
 import 'package:lumen/features/home/presentation/dashboard_screen.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
@@ -277,7 +278,9 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
       // it — the app's FIRST parameterised route. A child, not a sibling in
       // this branch's own `routes:` list, so it stacks on top of the
       // calendar in the branch's own Navigator (system back / `context.pop()`
-      // returns to the calendar) rather than replacing it.
+      // returns to the calendar) rather than replacing it. P4b-T23 adds
+      // screen 14 (`/cycle/phase`) as a second child, with NO affordance
+      // reaching it — see the comment at that route.
       StatefulShellBranch(
         routes: <RouteBase>[
           GoRoute(
@@ -304,6 +307,26 @@ List<RouteBase> lumenRoutes() => <RouteBase>[
                   if (date == null) return const _InvalidDayDateScreen();
                   return DayDetailScreen(date: date);
                 },
+              ),
+              // Screen 14 (P4b-T23) — a SIBLING of `day/:date` under the same
+              // branch root, so a cold deep link materialises the calendar
+              // beneath it and Back reaches the calendar rather than throwing.
+              //
+              // **NOTHING IN THE APP NAVIGATES HERE, ON PURPOSE.** R-08 ships
+              // screen 14 as the documented phase-unavailable state and defers
+              // `POST /cycle/phase-override` to P6; it requires the route, the
+              // screen, the goldens and the semantics, not reachability. An
+              // affordance whose destination can only answer "phases aren't
+              // available yet" is the inert navigation R-10 hides rather than
+              // disables, and R-20 forbids shipping half an affordance — so
+              // the entry point lands in P6 with the write. This is the ONE
+              // place in `lib/` besides `Routes.cyclePhase`'s own declaration
+              // that may name it; `phase_correction_source_test.dart` fails if
+              // a third appears. Do NOT read the missing affordance as an
+              // oversight and "fix" it — see `Routes.cyclePhase`'s dartdoc.
+              GoRoute(
+                path: Routes.cyclePhaseSegment,
+                builder: (_, _) => const PhaseCorrectionScreen(),
               ),
             ],
           ),
