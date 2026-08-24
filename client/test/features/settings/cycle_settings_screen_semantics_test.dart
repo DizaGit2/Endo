@@ -17,11 +17,19 @@
 //     request.** All three, because the first two can be true while the third
 //     is false (a second code path that submits) and the third can be true for
 //     the wrong reason (a dead button with no explanation).
-//  3. **R3/R-17 — the sanity warnings never block a save.** A value far
-//     outside the server's band is submitted without argument, and the note
-//     appears only after the 200 carrying it. Clinical bounds are
-//     estimator-only and NEVER entry blockers, because endometriosis cycles
-//     are irregular.
+//  3. **R3/R-17 — the sanity warnings never block a save, and they render on
+//     LOAD as well as after one.** A value far outside the server's band is
+//     submitted without argument. Clinical bounds are estimator-only and NEVER
+//     entry blockers, because endometriosis cycles are irregular. The
+//     load half arrived in T22a's fix round 1: the server computes the codes
+//     on the GET so this screen can show the hint on arrival, and without that
+//     the hint could never reach a user whose value went out of band in an
+//     earlier session.
+//  4. **The message zone is PINNED** — advisory, banner, block reason and CTA
+//     sit outside the scroll view, screen 12's shape since T20b's fix round 1.
+//     Asserted structurally (no `Scrollable` ancestor) rather than only by a
+//     golden, because a golden of a screen that does not scroll yet cannot
+//     tell the two layouts apart.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart';
@@ -35,6 +43,7 @@ import 'package:lumen/features/settings/application/cycle_settings_controller.da
 import 'package:lumen/features/settings/data/cycle_settings_repository.dart';
 import 'package:lumen/features/settings/presentation/cycle_settings_screen.dart';
 import 'package:lumen/shared/widgets/lumen_error_banner.dart';
+import 'package:lumen/shared/widgets/lumen_field_message.dart';
 import 'package:lumen/shared/widgets/lumen_selectable_chip.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -498,7 +507,7 @@ void main() {
 
   // ── R3 / R-17: the advisory ───────────────────────────────────────────────
 
-  group('R3 — the sanity warning is an advisory AFTER a successful save', () {
+  group('R3 — the sanity warning is an advisory, and never a blocker', () {
     const outOfBand = 'avg_cycle_length_out_of_sanity_band';
 
     testWidgets(
@@ -527,7 +536,10 @@ void main() {
           find.widgetWithText(FilledButton, kCycleSettingsSaveLabel),
         );
         expect(cta.onPressed, isNotNull);
-        expect(find.text(cycleWarningMessage(outOfBand)!), findsNothing);
+        expect(
+          find.text(cycleSettingsWarningMessage(outOfBand)!),
+          findsNothing,
+        );
 
         await tester.tap(
           find.widgetWithText(FilledButton, kCycleSettingsSaveLabel),
@@ -537,7 +549,10 @@ void main() {
         // AFTER: the value was SAVED, and the note is on screen.
         expect(calls, hasLength(1));
         expect(calls.single.avgCycleLengthDays, 200);
-        expect(find.text(cycleWarningMessage(outOfBand)!), findsOneWidget);
+        expect(
+          find.text(cycleSettingsWarningMessage(outOfBand)!),
+          findsOneWidget,
+        );
       },
     );
 
@@ -551,13 +566,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(calls, hasLength(1));
-      expect(find.text(cycleWarningMessage(outOfBand)!), findsNothing);
+      expect(find.text(cycleSettingsWarningMessage(outOfBand)!), findsNothing);
     });
 
     testWidgets(
-      'the note is not drawn on LOAD, even when the stored value is out of '
-      'band — R3 makes it an advisory after a SAVE, and nothing has been '
-      'saved yet',
+      'the note IS drawn on LOAD when the stored value is out of band — the '
+      'server computes the codes on the GET for exactly this, and a value '
+      'typed in an earlier session has no other way of ever being mentioned',
       (tester) async {
         await pumpScreen(
           tester,
@@ -570,9 +585,113 @@ void main() {
         );
 
         expect(find.text('200 days'), findsOneWidget);
-        expect(find.text(cycleWarningMessage(outOfBand)!), findsNothing);
+        expect(
+          find.text(cycleSettingsWarningMessage(outOfBand)!),
+          findsOneWidget,
+        );
       },
     );
+
+    testWidgets(
+      'a hint on LOAD still blocks NOTHING: the only reason Save is disabled '
+      'on arrival is that nothing has been touched, and one edit makes the '
+      'CTA live and puts the request on the wire (R-17)',
+      (tester) async {
+        await pumpScreen(
+          tester,
+          read: Fresh(
+            stored(
+              avgCycleLengthDays: 200,
+              warnings: const <String>[outOfBand],
+            ),
+          ),
+        );
+
+        // The block that IS in force names the empty body, not the number.
+        expect(find.text(kCycleSettingsNothingChangedMessage), findsOneWidget);
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.widgetWithText(FilledButton, kCycleSettingsSaveLabel),
+              )
+              .onPressed,
+          isNull,
+        );
+
+        await tester.tap(find.text(kCycleSettingsFertilityLabel));
+        await tester.pumpAndSettle();
+
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.widgetWithText(FilledButton, kCycleSettingsSaveLabel),
+              )
+              .onPressed,
+          isNotNull,
+        );
+
+        await tester.tap(
+          find.widgetWithText(FilledButton, kCycleSettingsSaveLabel),
+        );
+        await tester.pumpAndSettle();
+
+        expect(calls, hasLength(1));
+      },
+    );
+
+    testWidgets(
+      'the hint is DROPPED when the user changes a value — it describes what '
+      'the server stores, not what is on screen',
+      (tester) async {
+        await pumpScreen(
+          tester,
+          read: Fresh(
+            stored(
+              avgCycleLengthDays: 200,
+              warnings: const <String>[outOfBand],
+            ),
+          ),
+        );
+        expect(
+          find.text(cycleSettingsWarningMessage(outOfBand)!),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.text(kCycleSettingsFertilityLabel));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(cycleSettingsWarningMessage(outOfBand)!),
+          findsNothing,
+        );
+      },
+    );
+
+    test('screen 32 says what screen 3 says, minus the save acknowledgement — '
+        'the two copies are duplicated on purpose and this is what stops them '
+        'drifting into describing the same server behaviour differently', () {
+      for (final code in <String>[
+        'avg_cycle_length_out_of_sanity_band',
+        'avg_period_length_out_of_sanity_band',
+      ]) {
+        expect(
+          cycleSettingsWarningMessage(code),
+          cycleWarningMessage(code)!.replaceFirst('Saved. ', ''),
+          reason:
+              'screen 3 only ever shows the hint in the moment after a '
+              'save, so `Saved.` is true there. Screen 32 shows it on load '
+              'too, where it would be a statement about something the user '
+              'did not just do.',
+        );
+        // And the prefix really was there to remove — otherwise the
+        // assertion above would pass on two identical strings.
+        expect(cycleWarningMessage(code), startsWith('Saved. '));
+      }
+    });
+
+    test('an unknown code has nothing to say, on both surfaces', () {
+      expect(cycleSettingsWarningMessage('some_code_from_p6'), isNull);
+    });
   });
 
   // ── R6: the designed failure ──────────────────────────────────────────────
@@ -608,8 +727,11 @@ void main() {
 
     testWidgets(
       'the failure message does not scroll away from the control that caused '
-      'it — banner, block reason and CTA are adjacent inside one scroll view '
-      '(T20b\'s amended S9)',
+      'it — banner, block reason and CTA are adjacent, and pinned together '
+      'BELOW the scroll view (T20b\'s amended S9). This is the geometric '
+      'half; the structural half is the "message zone is PINNED" group, '
+      'because `getRect` reports OFF-SCREEN rectangles and would stay green '
+      'on a banner that had scrolled away.',
       (tester) async {
         stubSave(throws: const NetworkFailure('offline'));
         await pumpScreen(tester);
@@ -623,15 +745,17 @@ void main() {
             .getRect(find.byType(LumenErrorBanner))
             .bottom;
         final ctaTop = tester
-            .getRect(find.widgetWithText(FilledButton, kCycleSettingsRetryLabel))
+            .getRect(
+              find.widgetWithText(FilledButton, kCycleSettingsRetryLabel),
+            )
             .top;
         expect(ctaTop - bannerBottom, lessThan(40));
       },
     );
 
-    testWidgets('a 400 keyed to a field renders under that field', (
-      tester,
-    ) async {
+    testWidgets('a 400 keyed to a field renders under that field — the ONE '
+        'message class that stays with the scrolling content, because it '
+        'names a row rather than the button', (tester) async {
       stubSave(
         throws: const ValidationFailure(
           fields: <String, List<String>>{
@@ -670,6 +794,148 @@ void main() {
         tester,
         requestCount: () => log.calls,
         label: kCycleSettingsRetryLabel,
+      );
+    });
+  });
+
+  // ── the pinned message zone ───────────────────────────────────────────────
+
+  group('the message zone is PINNED, outside the scroll view', () {
+    // **Structural, not geometric, and not a golden.** T22a shipped the
+    // banner, the block reason and the CTA inside the `SingleChildScrollView`
+    // and pinned their adjacency with `getRect` — which reports OFF-SCREEN
+    // rectangles, so it stays green on a screen that has begun to scroll. The
+    // goldens cannot tell the two layouts apart either while
+    // `maxScrollExtent` is 0.0, which it is today at 390x844. T22b adds a
+    // pause card to this screen; the day the content exceeds the viewport,
+    // only an assertion about the TREE catches a banner that has floated away.
+    // (T20b's review made the same point about a pinned footer proven by a
+    // golden alone.)
+
+    /// The probe the assertions below rely on, exercised against something
+    /// that really is inside the scroll view — otherwise a `findsNothing`
+    /// could just be a finder pair that never matches anything.
+    void expectProbeCanSeeAScrollAncestor(WidgetTester tester) {
+      expect(
+        find.byType(SingleChildScrollView),
+        findsOneWidget,
+        reason: 'the FORM still scrolls; only the message zone does not',
+      );
+      expect(
+        find.ancestor(
+          of: find.text(kCycleSettingsAvgCycleLabel),
+          matching: find.byType(Scrollable),
+        ),
+        findsWidgets,
+      );
+    }
+
+    testWidgets('the failure banner has no Scrollable ancestor', (
+      tester,
+    ) async {
+      stubSave(throws: const NetworkFailure('offline'));
+      await pumpScreen(tester);
+
+      await tester.tap(find.text(kCycleSettingsFertilityLabel));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(kCycleSettingsSaveLabel));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LumenErrorBanner), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: find.byType(LumenErrorBanner),
+          matching: find.byType(Scrollable),
+        ),
+        findsNothing,
+        reason:
+            'the user is AT the CTA when a failure arrives — that is the '
+            'control they just pressed — and the announcement has to stay '
+            'next to the retry control that answers it (T20b amended S9 to '
+            'say so; this screen converges on it)',
+      );
+      expectProbeCanSeeAScrollAncestor(tester);
+    });
+
+    testWidgets('the block reason and the CTA have no Scrollable ancestor', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+
+      // A freshly-opened form is blocked, so both are on screen at once.
+      expect(find.text(kCycleSettingsNothingChangedMessage), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: find.byType(LumenFieldMessage),
+          matching: find.byType(Scrollable),
+        ),
+        findsNothing,
+        reason:
+            'a block reason that scrolls away leaves a disabled button with '
+            'no explanation — S7, and the same class of message as the banner',
+      );
+      expect(
+        find.ancestor(
+          of: find.widgetWithText(FilledButton, kCycleSettingsSaveLabel),
+          matching: find.byType(Scrollable),
+        ),
+        findsNothing,
+      );
+      expectProbeCanSeeAScrollAncestor(tester);
+    });
+
+    testWidgets('the advisory has no Scrollable ancestor either — it renders '
+        'on LOAD, when the user is at the TOP of the page, and after a save, '
+        'when they are at the bottom; pinning is the only placement that is '
+        'on screen for both', (tester) async {
+      await pumpScreen(
+        tester,
+        read: Fresh(
+          stored(
+            avgCycleLengthDays: 200,
+            warnings: const <String>['avg_cycle_length_out_of_sanity_band'],
+          ),
+        ),
+      );
+
+      final advisory = find.text(
+        cycleSettingsWarningMessage('avg_cycle_length_out_of_sanity_band')!,
+      );
+      expect(advisory, findsOneWidget);
+      expect(
+        find.ancestor(of: advisory, matching: find.byType(Scrollable)),
+        findsNothing,
+      );
+      expectProbeCanSeeAScrollAncestor(tester);
+    });
+
+    testWidgets('a field-keyed 400 stays WITH its row, inside the scroll '
+        'view — it names a row, not the button, and the pin is about the '
+        'message zone rather than about every message', (tester) async {
+      stubSave(
+        throws: const ValidationFailure(
+          fields: <String, List<String>>{
+            'avgCycleLengthDays': <String>['value must be between 1 and 32767'],
+          },
+        ),
+      );
+      await pumpScreen(tester);
+
+      await tester.tap(find.text(kCycleSettingsAvgCycleLabel));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '99999');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(kCycleSettingsEditSaveLabel));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(kCycleSettingsSaveLabel));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.ancestor(
+          of: find.text('value must be between 1 and 32767'),
+          matching: find.byType(Scrollable),
+        ),
+        findsWidgets,
       );
     });
   });

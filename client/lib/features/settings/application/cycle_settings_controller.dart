@@ -16,12 +16,21 @@
 //     precisely the input every seeded field starts at: "holding a value the
 //     user has not edited".
 //
-//  2. **The two sanity warnings are an ADVISORY AFTER A SUCCESSFUL SAVE, never
-//     a validator.** R-17 is a PO ruling: clinical bounds are estimator-only
-//     and NEVER entry blockers, because endometriosis cycles are irregular. A
-//     value outside the server's sanity band is **stored** and answered with a
-//     200 carrying a non-blocking code, so the save happens first and the note
-//     exists only afterwards. Nothing in this file inspects a number's size.
+//  2. **The two sanity warnings are an ADVISORY, and NEVER a blocker.** R-17
+//     is a PO ruling: clinical bounds are estimator-only and NEVER entry
+//     blockers, because endometriosis cycles are irregular. A value outside
+//     the server's sanity band is **stored** and answered with a 200 carrying
+//     a non-blocking code. Nothing in this file inspects a number's size.
+//
+//     **They render on LOAD as well as after a save** (T22a fix round 1,
+//     amending R3's "after a save"). The server computes the codes on the GET
+//     too, and `CycleSettingsResponse.Warnings`' own contract doc says why:
+//     *"because screen 32 shows the hint when it loads and not only after a
+//     save"*. Dropping the read's codes made the hint unreachable for exactly
+//     the user it exists for — someone whose bad value was stored in an
+//     earlier session, who sees nothing on open and cannot re-save an
+//     unchanged form past the empty-body block. Both seeds therefore carry
+//     them; [CycleSettingsForm.seededFrom] is the ONE place they are adopted.
 //
 //  3. **No clinical bound and no clinical inference lives here** (R-17). The
 //     C-03 figures appear nowhere in `client/lib` — not as a validator, not as
@@ -106,13 +115,21 @@ class CycleSettingsForm {
   /// value is the server's, not the user's, and asserting it back would be the
   /// lost update this design exists to make unreachable.
   ///
-  /// **[CycleSettingsResponse.warnings] is deliberately NOT adopted.** The
-  /// server computes the codes on the GET as well as the PATCH, but R3 makes
-  /// the note an advisory after a *successful save*, and on open nothing has
-  /// been saved. See [CycleSettingsController.submit] for the one place
-  /// warnings enter this form. (The cost is recorded in the T22a report: a
-  /// value stored in an earlier session never shows its hint, because a second
-  /// save of unchanged values is blocked.)
+  /// **[CycleSettingsResponse.warnings] IS adopted, from either seed** — the
+  /// read on open and the 200 after a save both come through here, and this is
+  /// the only place the codes enter the form.
+  ///
+  /// The server computes them on the GET as well as the PATCH, on the STORED
+  /// values, precisely so this screen can show the hint on arrival. Adopting
+  /// them here does not make them a blocker: [blockReason] cannot see them,
+  /// and a seeded form has every `touched*` flag false, so the codes describe
+  /// values the server already holds rather than anything about to be sent.
+  ///
+  /// A body whose `warnings` member is ABSENT is "no warnings", never a third
+  /// state — the two must not render differently.
+  ///
+  /// The clear is [CycleSettingsController._write]'s: the moment the user
+  /// changes one of these values, a hint about them stops being true.
   factory CycleSettingsForm.seededFrom(CycleSettingsResponse settings) {
     return CycleSettingsForm(
       avgCycleLengthDays: settings.avgCycleLengthDays,
@@ -121,6 +138,7 @@ class CycleSettingsForm {
       phasePredictionEnabled: settings.phasePredictionEnabled,
       autoDetectPeriodStartEnabled: settings.autoDetectPeriodStartEnabled,
       showFertilityWindowEnabled: settings.showFertilityWindowEnabled,
+      warnings: settings.warnings?.toList() ?? const <String>[],
     );
   }
 
@@ -189,8 +207,8 @@ class CycleSettingsForm {
   /// again, or starts a new attempt.
   final Failure? failure;
 
-  /// The frozen `CycleSettingsWarnings` codes the last **successful** save came
-  /// back with. Never a rejection: the value was stored.
+  /// The frozen `CycleSettingsWarnings` codes the last SEED carried — the read
+  /// on open, or a successful save. Never a rejection: the values are stored.
   final List<String> warnings;
 
   /// Whether the average cycle length would actually reach the wire.
@@ -325,7 +343,9 @@ class CycleSettingsForm {
 class CycleSettingsController extends AsyncNotifier<CycleSettingsForm> {
   @override
   Future<CycleSettingsForm> build() async {
-    final result = await ref.read(cycleSettingsRepositoryProvider).getSettings();
+    final result = await ref
+        .read(cycleSettingsRepositoryProvider)
+        .getSettings();
     return switch (result) {
       Fresh(:final value) => CycleSettingsForm.seededFrom(value),
       Stale(:final value) => CycleSettingsForm.seededFrom(value),
@@ -390,9 +410,7 @@ class CycleSettingsController extends AsyncNotifier<CycleSettingsForm> {
   /// WIRE codes; the screen owns the label→code mapping and this method does
   /// not re-derive it.
   void setRegularity(String value) {
-    _write(
-      (form) => form.copyWith(regularity: value, touchedRegularity: true),
-    );
+    _write((form) => form.copyWith(regularity: value, touchedRegularity: true));
   }
 
   /// Records a phase-prediction toggle.
@@ -444,17 +462,22 @@ class CycleSettingsController extends AsyncNotifier<CycleSettingsForm> {
   ///    echo a 400 (it survives a resume by design, and the server rejects it
   ///    whenever the effective state is not paused).
   ///
-  /// **The warnings are attached only here, only after a 200.** R-17: a value
-  /// outside the sanity band is stored and answered with a non-blocking code,
-  /// so the save has already happened by the time a hint exists. Nothing on
-  /// this path can refuse a save because of a number's size.
+  /// **The warnings come in with the seed, here and on the read alike** —
+  /// [CycleSettingsForm.seededFrom] adopts them, so a warned save and a warned
+  /// open reach the screen by the same route. R-17: a value outside the sanity
+  /// band is stored and answered with a non-blocking code, so nothing on this
+  /// path can refuse a save because of a number's size.
   ///
-  /// They are deliberately NOT cleared at the start of an attempt. They can
-  /// only be non-empty immediately after a warned save, and at that point
-  /// every flag is false, so [CycleSettingsForm.blockReason] returns early
-  /// above and the only route back into this method is a change — which
-  /// [_write] has already cleared them on. A clear here would be a line no
-  /// test could ever redden.
+  /// They are deliberately NOT cleared at the start of an attempt, and the
+  /// reason is now an invariant rather than a convenience: a form that can
+  /// submit at all has had at least one `touched*` flag set, every setter goes
+  /// through [_write], and [_write] clears the warnings — so `warnings` is
+  /// ALWAYS empty by the time this method is reachable. Equivalently: warnings
+  /// non-empty means nothing is touched, which means
+  /// [CycleSettingsForm.blockReason] is non-null. A clear here would be a line
+  /// no test could ever redden, and
+  /// the in-flight states the ordering test samples are warning-free for a
+  /// structural reason rather than an accidental one.
   Future<bool> submit() async {
     final form = state.value;
     if (form == null || form.submitting) return false;
@@ -506,12 +529,10 @@ class CycleSettingsController extends AsyncNotifier<CycleSettingsForm> {
       return false;
     }
 
+    // The whole seed, warnings included — one adoption site for both the read
+    // and the write, so a mutation that drops the codes reddens both.
     state = AsyncValue<CycleSettingsForm>.data(
-      CycleSettingsForm.seededFrom(saved!).copyWith(
-        // A body whose `warnings` member is absent is "no warnings", never a
-        // third state: the two must not render differently.
-        warnings: saved.warnings?.toList() ?? const <String>[],
-      ),
+      CycleSettingsForm.seededFrom(saved!),
     );
     return true;
   }

@@ -137,7 +137,9 @@ void testWidgetsWithSemantics(
 ///  * `—` U+2014 — `profile_screen.dart`'s three `_InfoRow` values and
 ///    `_UserCard`'s name use a lone em dash as the "not set" value, and
 ///    `cycle_setup_controller.dart`'s `cycleWarningMessage` uses one
-///    mid-sentence in both of its two answers. (Cited by symbol since
+///    mid-sentence in both of its two answers — as does
+///    `cycle_settings_screen.dart`'s `cycleSettingsWarningMessage`, screen
+///    32's own copy of those two sentences. (Cited by symbol since
 ///    P4b-T22a, which added a paragraph to that function's dartdoc and moved
 ///    the two lines the range used to name — R-23, third time in this phase.)
 ///    (This used to read `profile_screen.dart:151,156,158,279`, which was

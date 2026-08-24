@@ -14,12 +14,19 @@
 //     omit-nulls serializer, and deleting either would leave it green
 //     (P4b-T18's own defect).
 //
-//  2. **The two sanity warnings are an advisory AFTER a successful save, never
-//     a validator.** R-17 is a PO ruling and not a style preference: clinical
-//     bounds are estimator-only and NEVER entry blockers, because
-//     endometriosis cycles are irregular. So the ordering is pinned in both
-//     directions — a value the server will warn about still SAVES, and the
-//     note appears only once the 200 carrying it has landed.
+//  2. **The two sanity warnings are an advisory, and NEVER a blocker.** R-17
+//     is a PO ruling and not a style preference: clinical bounds are
+//     estimator-only and NEVER entry blockers, because endometriosis cycles
+//     are irregular. So the ordering is pinned in both directions — a value
+//     the server will warn about still SAVES, and the note produced BY a save
+//     appears only once the 200 carrying it has landed.
+//
+//     Since T22a's fix round 1 the codes are also adopted from the READ, so
+//     the hint renders on LOAD: the server computes them on the GET for that
+//     purpose, and dropping them made the hint unreachable for the one user it
+//     exists for — someone whose value went out of band in an earlier session,
+//     who sees nothing on open and cannot re-save an unchanged form. Both
+//     halves are pinned here: it appears on load, AND it still blocks nothing.
 
 import 'dart:async';
 
@@ -312,8 +319,9 @@ void main() {
     );
 
     test(
-      'the warnings the READ carries are not adopted — R3 makes the note an '
-      'advisory after a SUCCESSFUL SAVE, and nothing has been saved yet',
+      'the warnings the READ carries ARE adopted — the hint renders on LOAD '
+      'and not only after a save, which is the only way it can reach the user '
+      'whose bad value was stored in an earlier session',
       () async {
         stubRead(
           Fresh(
@@ -327,7 +335,75 @@ void main() {
 
         final form = await settled(container);
 
+        expect(form.warnings, <String>['avg_cycle_length_out_of_sanity_band']);
+
+        // Advisory, never a blocker: adopting the codes changes nothing about
+        // what the form will let the user do. The block that IS in force here
+        // is the empty-body one — nothing has been touched yet — and it says
+        // so in those words rather than anything about the number.
+        expect(form.blockReason, kCycleSettingsNothingChangedMessage);
+      },
+    );
+
+    test(
+      'a read whose `warnings` member is ABSENT seeds an empty list, never '
+      'null — "no warnings" and "the server said nothing" must not render '
+      'differently',
+      () async {
+        stubRead(Fresh(stored(warnings: null)));
+        final container = buildContainer();
+
+        final form = await settled(container);
+
         expect(form.warnings, isEmpty);
+      },
+    );
+
+    test(
+      'a hint adopted on LOAD is dropped the moment the user changes '
+      'something — it describes the STORED values, and stops being true about '
+      'the ones on screen',
+      () async {
+        stubRead(
+          Fresh(
+            stored(
+              avgCycleLengthDays: 200,
+              warnings: const <String>['avg_cycle_length_out_of_sanity_band'],
+            ),
+          ),
+        );
+        final container = buildContainer();
+        await settled(container);
+
+        notifier(container).setAvgCycleLengthDays(29);
+
+        expect(current(container).warnings, isEmpty);
+      },
+    );
+
+    test(
+      'a form carrying a LOAD warning still submits: the hint is advisory, so '
+      'the save it does not block goes out with the touched field on it '
+      '(R-17)',
+      () async {
+        stubRead(
+          Fresh(
+            stored(
+              avgCycleLengthDays: 200,
+              warnings: const <String>['avg_cycle_length_out_of_sanity_band'],
+            ),
+          ),
+        );
+        stubSave(body: stored(avgCycleLengthDays: 300));
+        final container = buildContainer();
+        await settled(container);
+
+        notifier(container).setAvgCycleLengthDays(300);
+        expect(current(container).blockReason, isNull);
+
+        expect(await notifier(container).submit(), isTrue);
+        expect(calls, hasLength(1));
+        expect(calls.single.avgCycleLengthDays, 300);
       },
     );
   });
@@ -628,6 +704,12 @@ void main() {
       'a warning-bearing 200 puts the note on the form ONLY after the save '
       'has succeeded — the save comes first, the note second',
       () async {
+        // Still true with warnings adopted on the READ too, and for a
+        // structural reason rather than a lucky fixture: a form that can
+        // submit has had a setter called, every setter goes through `_write`,
+        // and `_write` clears the warnings. So the in-flight states below are
+        // warning-free no matter what the read carried.
+
         // **Only the IN-FLIGHT states are collected, and this is the fix for a
         // false-green the mutation round found.** The first version recorded
         // every observed state and asserted `observed.first` was empty — but

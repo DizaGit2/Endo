@@ -32,7 +32,9 @@
 // **No bound, anywhere.** The C-03 clinical figures appear nowhere in
 // `client/lib`, and the server's own sanity band is not restated here either.
 // A value outside it is SAVED and answered with a non-blocking code, which
-// this screen renders as an advisory note **after** the save (R-17).
+// this screen renders as an advisory note that NEVER blocks anything (R-17) —
+// on LOAD as well as after a save (fix round 1; see
+// [cycleSettingsWarningMessage] for the copy that had to change with it).
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -44,7 +46,7 @@ import 'package:lumen/core/locale/locale_provider.dart';
 import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/onboarding/application/cycle_setup_controller.dart'
-    show CycleRegularity, cycleWarningMessage;
+    show CycleRegularity;
 import 'package:lumen/features/settings/application/cycle_settings_controller.dart';
 import 'package:lumen/shared/widgets/lumen_error_banner.dart';
 import 'package:lumen/shared/widgets/lumen_error_retry.dart';
@@ -141,6 +143,49 @@ const String kCycleSettingsEditCancelLabel = 'Cancel';
 /// The number editor's confirmation. **SHIPPED-PRECEDENT** — screen 31's
 /// display-name dialog.
 const String kCycleSettingsEditSaveLabel = 'Save';
+
+/// The hint for `avg_cycle_length_out_of_sanity_band`.
+///
+/// **AUTHORED, and it is screen 3's sentence minus its first word.** Screen 3
+/// (`cycle_setup_controller.dart`'s `cycleWarningMessage`) opens both of its
+/// answers with *"Saved."*, which is true there — that screen only ever shows
+/// the hint immediately after a `POST /onboarding/cycle`. Screen 32 shows it
+/// on LOAD as well, where a save acknowledgement would be a statement about
+/// something the user did not just do, so the acknowledgement is dropped and
+/// the remaining sentence is true in both states.
+///
+/// **The duplication is deliberate and self-checking.** The alternative —
+/// splitting the prefix out of the shared function — edits screen 3's copy,
+/// its tests and its feature for a screen-32 problem. Instead
+/// `cycle_settings_screen_semantics_test.dart` asserts these two strings ARE
+/// screen 3's two, without the leading `Saved. `, so a PO reword of one names
+/// the other rather than letting the two surfaces drift into describing the
+/// same server behaviour differently. Booked for T25 with the placement
+/// question that was already open on `cycleWarningMessage`.
+const String kCycleSettingsCycleLengthWarning =
+    "That cycle length is unusual — double-check the number if it wasn't "
+    'intended.';
+
+/// The hint for `avg_period_length_out_of_sanity_band`. See
+/// [kCycleSettingsCycleLengthWarning].
+const String kCycleSettingsPeriodLengthWarning =
+    "That period length is unusual — double-check the number if it wasn't "
+    'intended.';
+
+/// What screen 32 says about one frozen `CycleSettingsWarnings` code, or
+/// `null` when it has nothing to say about it.
+///
+/// **An unknown code answers null**, the same load-bearing choice
+/// `cycleWarningMessage` makes: the vocabulary is append-only on the server, so
+/// a third code WILL arrive at a build that has never seen it, and inventing a
+/// sentence for it would be authoring copy about behaviour nobody has
+/// described. (That a new code then renders as nothing at all, with no signal,
+/// is booked as a T25 item across both surfaces.)
+String? cycleSettingsWarningMessage(String code) => switch (code) {
+  'avg_cycle_length_out_of_sanity_band' => kCycleSettingsCycleLengthWarning,
+  'avg_period_length_out_of_sanity_band' => kCycleSettingsPeriodLengthWarning,
+  _ => null,
+};
 
 /// The failure text for the banner above the CTA.
 ///
@@ -260,9 +305,20 @@ class CycleSettingsScreen extends ConsumerWidget {
                   message: error is Failure
                       ? error.message
                       : 'Something went wrong. Please try again.',
-                  onRetry: () => ref.invalidate(cycleSettingsControllerProvider),
+                  onRetry: () =>
+                      ref.invalidate(cycleSettingsControllerProvider),
                 ),
-                data: (form) => _Body(form: form),
+                // S7's shape, converged with screen 12 (T20b fix round 1):
+                // the FORM scrolls and the message zone does NOT. See
+                // [_Footer] for why the failure banner is down there rather
+                // than inside the scroll view with the fields it belongs to.
+                data: (form) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Expanded(child: _Body(form: form)),
+                    _Footer(form: form),
+                  ],
+                ),
               ),
             ),
           ],
@@ -276,6 +332,10 @@ class CycleSettingsScreen extends ConsumerWidget {
 // The form
 // ---------------------------------------------------------------------------
 
+/// Everything above the pinned footer: the two sections and their controls.
+///
+/// No advisory, no banner, no block reason and no CTA — all four live in
+/// [_Footer], outside this scroll view.
 class _Body extends ConsumerWidget {
   const _Body({required this.form});
 
@@ -289,13 +349,11 @@ class _Body extends ConsumerWidget {
     final rejected = form.failure is ValidationFailure
         ? form.failure! as ValidationFailure
         : null;
-    final bannerMessage = cycleSettingsBannerMessage(form.failure);
-    final blockReason = form.blockReason;
     final enabled = !form.submitting;
 
     return SingleChildScrollView(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 4, 22, 20),
+        padding: const EdgeInsets.fromLTRB(22, 4, 22, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -388,73 +446,131 @@ class _Body extends ConsumerWidget {
             // under R-16. `cycle_settings_screen_semantics_test.dart` pins both
             // absences so neither can drift back in without the column and the
             // machinery behind them.
-            const SizedBox(height: 18),
-
-            // After a SUCCESSFUL save, never before one: the band does not
-            // block a write, so a hint about a value only exists once the
-            // server has stored it and said so (R-17).
-            for (final code in form.warnings)
-              if (cycleWarningMessage(code) case final message?) ...<Widget>[
-                _Advisory(message),
-                const SizedBox(height: 10),
-              ],
-
-            // The banner, the block reason and the CTA are adjacent and inside
-            // the SAME scroll view, so the message explaining a failure can
-            // never scroll away from the control that caused it, and a screen
-            // reader's next swipe after the announcement reaches `Try again`
-            // (T20b's amended S9).
-            if (bannerMessage != null) ...<Widget>[
-              LumenErrorBanner(message: bannerMessage),
-              const SizedBox(height: 10),
-            ],
-            if (blockReason != null) ...<Widget>[
-              // Rendered STRAIGHT from `CycleSettingsForm.blockReason`, never
-              // composed here.
-              //
-              // Deliberately NOT a live region: it sits directly above the
-              // control it disables.
-              LumenFieldMessage(blockReason),
-              const SizedBox(height: 8),
-            ],
-            FilledButton(
-              // Gated on `canSubmit`, which is `blockReason == null` — never on
-              // a condition recomputed here. `submit()` carries the same guard
-              // itself; this is the screen-level half of that pair, and it is
-              // what stops the endpoint's all-fields-absent 400 from ever being
-              // sent for.
-              onPressed: (!form.canSubmit || form.submitting)
-                  ? null
-                  : controller.submit,
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                textStyle: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-                elevation: 0,
-              ),
-              child: form.submitting
-                  ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: c.surface,
-                        semanticsLabel: 'Loading',
-                      ),
-                    )
-                  : Text(
-                      form.failure != null
-                          ? kCycleSettingsRetryLabel
-                          : kCycleSettingsSaveLabel,
-                    ),
-            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The pinned footer
+// ---------------------------------------------------------------------------
+
+/// The advisory, the failure banner, the block reason and the CTA — outside
+/// the scroll view, always on screen.
+///
+/// **Converged with screen 12's `_Footer` (T22a fix round 1), before T22b
+/// makes it matter.** T20b's fix round 1 moved screen 12's banner out of its
+/// scroll view and amended S9 to say so; this screen shipped the banner
+/// inside. Measured, that was not a live defect — at 390x844 screen 32's
+/// `maxScrollExtent` is 0.0 before and after a failure, so nothing could
+/// scroll away — but the property held by accident of content height rather
+/// than by construction, and T22b adds a whole pause card to this same screen.
+/// The moment the content exceeds the viewport, a banner in the scroll view is
+/// a message the user never sees.
+///
+/// T20b's three reasons, all of which apply here unchanged:
+///  * a failure banner and a block reason are the same class of message —
+///    "here is why the button did not do what you asked" — and pinning one
+///    while the other scrolls splits a rule in half;
+///  * the user is by construction AT the CTA when a failure arrives, because
+///    that is the control they just pressed;
+///  * it keeps the live region adjacent to the retry control, so a screen
+///    reader user's next swipe after the announcement reaches `Try again`.
+///
+/// **The advisory is pinned too**, which screen 12 has no equivalent of. It is
+/// the same class again — a remark about the values, rendered without the user
+/// asking for it — and it now appears on LOAD as well as after a save, so
+/// neither anchor (the top of the page, the bottom of the page) keeps it on
+/// screen in both cases. Pinning it is the only placement that does.
+///
+/// Footer height is the real cost of pinning, and it is bounded: the advisory
+/// and the banner are mutually exclusive in practice. Warnings can only be
+/// non-empty on a seed, a seed has every `touched*` flag false, and a form
+/// with nothing touched cannot submit — so a form holding warnings has never
+/// had a failure, and a failure rebuild carries the warning-free pre-submit
+/// snapshot. Field-keyed 400s stay at their rows, where [_LengthRow] renders
+/// them.
+class _Footer extends ConsumerWidget {
+  const _Footer({required this.form});
+
+  final CycleSettingsForm form;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = Theme.of(context).extension<LumenColors>()!;
+    final controller = ref.read(cycleSettingsControllerProvider.notifier);
+    final bannerMessage = cycleSettingsBannerMessage(form.failure);
+    final blockReason = form.blockReason;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 4, 22, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          // On LOAD as well as after a save (fix round 1). The band never
+          // blocks a write — R-17 — so this is a remark about values the
+          // server already holds, and the codes reach the form only through
+          // `CycleSettingsForm.seededFrom`.
+          for (final code in form.warnings)
+            if (cycleSettingsWarningMessage(code)
+                case final message?) ...<Widget>[
+              _Advisory(message),
+              const SizedBox(height: 10),
+            ],
+
+          if (bannerMessage != null) ...<Widget>[
+            LumenErrorBanner(message: bannerMessage),
+            const SizedBox(height: 10),
+          ],
+          if (blockReason != null) ...<Widget>[
+            // Rendered STRAIGHT from `CycleSettingsForm.blockReason`, never
+            // composed here.
+            //
+            // Deliberately NOT a live region: it sits directly above the
+            // control it disables.
+            LumenFieldMessage(blockReason),
+            const SizedBox(height: 8),
+          ],
+          FilledButton(
+            // Gated on `canSubmit`, which is `blockReason == null` — never on
+            // a condition recomputed here. `submit()` carries the same guard
+            // itself; this is the screen-level half of that pair, and it is
+            // what stops the endpoint's all-fields-absent 400 from ever being
+            // sent for.
+            onPressed: (!form.canSubmit || form.submitting)
+                ? null
+                : controller.submit,
+            style: FilledButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              textStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              elevation: 0,
+            ),
+            child: form.submitting
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: c.surface,
+                      semanticsLabel: 'Loading',
+                    ),
+                  )
+                : Text(
+                    form.failure != null
+                        ? kCycleSettingsRetryLabel
+                        : kCycleSettingsSaveLabel,
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -765,9 +881,15 @@ class _TogglePill extends StatelessWidget {
 /// A non-blocking hint about a value the server has ALREADY stored.
 ///
 /// Screen 3's `_Advisory` in the sage-soft treatment the mockup gives its
-/// footer card, reused here because it is the same kind of statement: the save
-/// succeeded, and this is a remark about it. `liveRegion` because it appears
-/// without the user moving focus to it.
+/// footer card, reused here because it is the same kind of statement — a
+/// remark about a value that WAS accepted, never a rejection of one.
+///
+/// It renders on LOAD as well as after a save (fix round 1), so its copy is
+/// screen 32's own rather than screen 3's: see [cycleSettingsWarningMessage].
+///
+/// `liveRegion` because it appears without the user moving focus to it — after
+/// a save, and on arrival for the user whose stored value has been out of band
+/// since some earlier session, who is the one this hint exists for.
 class _Advisory extends StatelessWidget {
   const _Advisory(this.message);
 
