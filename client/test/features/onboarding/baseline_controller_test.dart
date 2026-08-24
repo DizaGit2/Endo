@@ -24,6 +24,7 @@ import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/time/server_today.dart';
 import 'package:lumen/features/onboarding/application/baseline_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
@@ -86,6 +87,7 @@ class _World {
     }
 
     container = ProviderContainer(
+      retry: lumenRetry,
       overrides: <Override>[
         onboardingFlowControllerProvider.overrideWith(_SettledFlow.new),
         meRepositoryProvider.overrideWithValue(meRepo),

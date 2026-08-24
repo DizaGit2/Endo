@@ -28,18 +28,35 @@
 /// distinction is deliberately NOT reused here, and the reason is that the
 /// layer below has already applied it.**
 ///
-///  * A `NetworkFailure`/`ServerFailure` on a READ never reaches a provider
-///    build as a throw. `_resolveFailure` catches exactly those two and answers
-///    `Stale(cached)` when there is a cached value and `NetworkRequired(...)`
-///    when there is not — both of which are *values*, and both of which the
-///    screens render as designed offline states. Retrying them here would
-///    re-litigate, silently and behind a spinner, a decision `cachedRead`
-///    already made explicitly.
-///  * What DOES arrive as a thrown `Failure` is therefore the set
-///    `_resolveFailure` classifies as real: auth, validation, not-found,
-///    conflict, rate-limit, TLS, unknown — plus a controller's own deliberate
-///    `throw failure` on a `NetworkRequired`, which is the screen *asking* for
-///    its error state. Not one of those improves by being repeated: a
+///  * On a READ that pair is already classified one layer down, and this is
+///    the load-bearing half: `_resolveFailure` catches exactly `NetworkFailure`
+///    and `ServerFailure` and answers `Stale(cached)` when there is a cached
+///    value and `NetworkRequired(...)` when there is not — both *values*, not
+///    throws. Retrying here would re-litigate that decision silently, behind a
+///    spinner.
+///
+///    **What it does NOT mean is that those two never reach a provider build
+///    as a throw — they do, and an earlier draft of this file said otherwise.**
+///    The cache-less half comes back out as one: `NetworkRequired(:final
+///    failure) => throw failure` in `CycleCalendarController.build`,
+///    `DayDetailController.build` (twice) and `CycleSettingsController.build`.
+///    With no cached value there is nothing to render, so those screens
+///    deliberately ask for their error/retry body rather than an empty one —
+///    which is an ERROR state, not the "designed offline state" the sentence
+///    above used to claim.
+///
+///    So name the trade this policy actually makes: on screens 10, 11 and 32 an
+///    uncached read that fails transiently and would have succeeded on attempt
+///    2 used to heal itself within ~38 s with no user action, and now surfaces
+///    the error body and waits for a tap. That is the intended exchange — the
+///    user could not tell that recovery from a hang, and the identical silent
+///    ten-attempt loop was being spent on a `ServerFailure` from a malformed
+///    2xx body — but it is behaviour REMOVED, not behaviour that was never
+///    there.
+///  * So the full set that arrives as a thrown `Failure` is the one
+///    `_resolveFailure` classifies as real — auth, validation, not-found,
+///    conflict, rate-limit, TLS, unknown — plus the three re-throws above.
+///    Not one of those improves by being repeated: a
 ///    `RateLimitFailure` retried ten times makes the rate limit worse, an
 ///    `AuthFailure` has already been through `AuthInterceptor`'s refresh, and
 ///    `TlsFailure`'s own dartdoc says in capitals that it must NEVER be
@@ -62,10 +79,21 @@
 /// At the container, which is the only place that reaches every provider:
 /// `LumenRootScope` (`app.dart`) in production, and `pump_app.dart` /
 /// `golden_app.dart` in tests, so a widget test observes what a user observes.
-/// The four providers above additionally name it at their own declaration —
-/// belt-and-braces for the controller tests that build a bare
-/// `ProviderContainer` of their own, where no root scope exists to inherit
-/// from.
+/// **Every bare `ProviderContainer` a test builds names it too** — all ~40 of
+/// them, and `pump_app.dart` REJECTS a caller-supplied container that does
+/// not. That uniformity is fix round 1: applying the policy on only one of
+/// `_pumpScoped`'s two branches had left `container:` as a way back to
+/// `defaultRetry` straight through the harness meant to prevent it, and
+/// `provider_retry_policy_test.dart`'s source audit now walks BOTH
+/// constructors so the next site cannot omit it. The four providers above
+/// additionally name it at their own declaration, which is what covers the
+/// controller tests' containers from the other side. Note that a provider's own
+/// `retry` WINS over its container's — `ProviderElement.triggerRetry`
+/// (`element.dart`) resolves `origin.retry ?? container.retry ??
+/// ProviderContainer.defaultRetry` — so those four are governed by this symbol
+/// rather than by whichever scope mounts them. Both spellings name the same
+/// function today, so there is no divergence; a future per-scope override would
+/// not reach those four, and that is the thing to remember before writing one.
 ///
 /// Returning `null` means "do not retry"; the signature is riverpod's `Retry`
 /// (`provider_container.dart`, the `Retry` typedef — not exported by

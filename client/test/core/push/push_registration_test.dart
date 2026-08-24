@@ -37,6 +37,7 @@ import 'package:lumen/api/model/register_device_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/push/push_registration_controller.dart';
 import 'package:lumen/core/push/push_token_source.dart';
 import 'package:lumen/features/settings/data/device_repository.dart';
@@ -107,6 +108,7 @@ ProviderContainer _appStart({
   AuthStatus auth = AuthStatus.authenticated,
 }) {
   final container = ProviderContainer(
+    retry: lumenRetry,
     overrides: <Override>[
       authStatusProvider.overrideWith(() => _SwitchableAuth(auth)),
       if (source != null) pushTokenSourceProvider.overrideWithValue(source),
@@ -156,6 +158,7 @@ void main() {
     // of its own.
     final api = MockLumenApiApi();
     final container = ProviderContainer(
+      retry: lumenRetry,
       overrides: <Override>[...lumenOverrides(api: api)],
     );
     addTearDown(container.dispose);

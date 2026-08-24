@@ -25,6 +25,7 @@ import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/locale/locale_provider.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
@@ -76,6 +77,7 @@ void main() {
   /// without an 8-second test.
   ProviderContainer makeContainer(AuthStatus status, {Duration? gateTimeout}) {
     final container = ProviderContainer(
+      retry: lumenRetry,
       overrides: [
         authStatusProvider.overrideWith(() => _FakeAuthController(status)),
         meRepositoryProvider.overrideWithValue(repo),

@@ -87,6 +87,42 @@ Future<void> _pump(
   );
 }
 
+/// Mounts screen 2 on a controller whose `build()` THROWS — **without
+/// settling** — and drives the frames by hand.
+///
+/// `settle: false` is the load-bearing part (P4b-T26 fix round 1).
+/// `accountControllerProvider` names no `retry:` of its own, so these three
+/// tests are governed by whatever policy the container carries. `pumpApp`
+/// defaults to `settle: true`, and `pumpAndSettle` **advances the fake clock**:
+/// under riverpod 3.3.2's `defaultRetry` it walks straight through all ten
+/// backoffs (~38 s of fake time) and observes the state AFTER the retries are
+/// exhausted. A widget test that settles is therefore structurally blind to a
+/// provider being retried into a spinner — which is exactly why these three
+/// were green before `lumenRetry` existed, and why they were missed in the
+/// first sweep for tests that were green for a reason production did not have.
+///
+/// Pumping frames instead observes what the user gets: with the policy on, the
+/// designed error body is on screen; with it off, a spinner is.
+Future<void> _pumpFailedBuild(
+  WidgetTester tester,
+  AccountController Function() controller,
+) async {
+  await _pump(tester, controller, settle: false);
+  await tester.pump();
+  await tester.pump();
+  // ...then one short frame WITH time on it, for a reason that is about
+  // Material and not about riverpod: `InputDecorator` fades `errorText` in
+  // over ~167 ms, and a `RenderOpacity` at alpha 0 drops its children from
+  // the semantics tree entirely (`visitChildrenForSemantics`). The field
+  // error is in the widget tree on the frame above — `find.text` sees it —
+  // but `find.bySemanticsLabel` does not until the fade has run. 400 ms is
+  // two orders of magnitude short of the ~38 s of backoff the defect needs,
+  // so this buys the animation without buying the retries: under
+  // `defaultRetry` the tree here is still AsyncLoading(retrying: true), i.e.
+  // a spinner.
+  await tester.pump(const Duration(milliseconds: 400));
+}
+
 void main() {
   testWidgetsWithSemantics(
     'Continue CTA exposes button semantics with its visible label',
@@ -123,7 +159,7 @@ void main() {
   testWidgetsWithSemantics('Error banner announces via a live region', (
     tester,
   ) async {
-    await _pump(tester, _ErrorAccountController.new);
+    await _pumpFailedBuild(tester, _ErrorAccountController.new);
 
     expectLiveRegion(
       tester,
@@ -166,7 +202,7 @@ void main() {
       // The message has to be a node of its own; and because a node the user
       // has not swiped onto is silent, the banner keeps its live region so the
       // failure is ANNOUNCED at the moment it happens.
-      await _pump(tester, _FieldErrorAccountController.new);
+      await _pumpFailedBuild(tester, _FieldErrorAccountController.new);
 
       expect(
         find.bySemanticsLabel('Enter a valid email address.'),
@@ -188,7 +224,7 @@ void main() {
   ) async {
     // The rejected state draws copy the idle golden and the idle dingbat check
     // never see.
-    await _pump(tester, _FieldErrorAccountController.new);
+    await _pumpFailedBuild(tester, _FieldErrorAccountController.new);
 
     // PIN THE PREMISE. `expectNoDingbats` only requires that SOME `Text`
     // exists, so on its own this test would stay green if screen 2 stopped

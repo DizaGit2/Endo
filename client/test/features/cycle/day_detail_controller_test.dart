@@ -17,6 +17,7 @@ import 'package:lumen/api/model/symptom_list_response.dart';
 import 'package:lumen/api/model/symptom_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/features/cycle/application/day_detail_controller.dart';
 import 'package:lumen/features/cycle/data/cycle_repository.dart';
 import 'package:lumen/features/symptoms/data/symptoms_repository.dart';
@@ -46,6 +47,7 @@ void main() {
 
   ProviderContainer buildContainer() {
     final c = ProviderContainer(
+      retry: lumenRetry,
       overrides: <Override>[
         cycleRepositoryProvider.overrideWithValue(cycleRepo),
         symptomsRepositoryProvider.overrideWithValue(symptomsRepo),

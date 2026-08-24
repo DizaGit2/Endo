@@ -17,6 +17,7 @@ import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/symptom_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/time/server_today.dart';
 import 'package:lumen/features/cycle/application/cycle_calendar_controller.dart';
 import 'package:lumen/features/cycle/application/day_detail_controller.dart';
@@ -140,6 +141,7 @@ void main() {
 
   ProviderContainer buildContainer() {
     final c = ProviderContainer(
+      retry: lumenRetry,
       overrides: <Override>[
         symptomsRepositoryProvider.overrideWithValue(repo),
         serverTodayRepositoryProvider.overrideWithValue(todayRepo),
@@ -650,6 +652,7 @@ void main() {
       required Set<ProviderListenable<Object?>> watch,
     }) {
       final c = ProviderContainer(
+        retry: lumenRetry,
         overrides: <Override>[
           symptomsRepositoryProvider.overrideWithValue(repo),
           serverTodayRepositoryProvider.overrideWithValue(todayRepo),
@@ -826,6 +829,7 @@ void main() {
     ).thenAnswer((_) => release.future);
 
     final localContainer = ProviderContainer(
+      retry: lumenRetry,
       overrides: <Override>[
         symptomsRepositoryProvider.overrideWithValue(localRepo),
         serverTodayRepositoryProvider.overrideWithValue(localToday),

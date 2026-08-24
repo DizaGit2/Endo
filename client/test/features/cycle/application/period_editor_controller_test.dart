@@ -28,6 +28,7 @@ import 'package:lumen/api/model/cycle_event_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/features/cycle/application/cycle_calendar_controller.dart';
 import 'package:lumen/features/cycle/application/day_detail_controller.dart';
 import 'package:lumen/features/cycle/application/period_editor_controller.dart';
@@ -200,6 +201,7 @@ void main() {
   }) {
     dayDetailBuilds = _Counter();
     final container = ProviderContainer(
+      retry: lumenRetry,
       overrides: <Override>[
         cycleRepositoryProvider.overrideWithValue(repo),
         if (seedDayDetail)

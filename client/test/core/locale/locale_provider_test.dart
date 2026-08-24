@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/formatters/lumen_formats.dart';
 import 'package:lumen/core/locale/locale_provider.dart';
 
@@ -33,6 +34,7 @@ ProviderContainer _container({
   String? profile,
 }) {
   final container = ProviderContainer(
+    retry: lumenRetry,
     overrides: <Override>[
       deviceLocaleProvider.overrideWithValue(device),
       // Pinned because `profileLocaleProvider` watches it (it must forget the
@@ -286,6 +288,7 @@ void main() {
   group('sign-out clears the profile locale', () {
     test('the adopted locale does not survive into the next session', () {
       final container = ProviderContainer(
+        retry: lumenRetry,
         overrides: <Override>[
           deviceLocaleProvider.overrideWithValue('en-US'),
           authStatusProvider

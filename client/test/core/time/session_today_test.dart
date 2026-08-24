@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/time/server_today.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -60,6 +61,7 @@ void main() {
   setUp(() {
     repo = _MockServerTodayRepository();
     container = ProviderContainer(
+      retry: lumenRetry,
       overrides: <Override>[
         serverTodayRepositoryProvider.overrideWithValue(repo),
       ],

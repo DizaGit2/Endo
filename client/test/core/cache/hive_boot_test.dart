@@ -14,6 +14,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:mocktail/mocktail.dart';
 
 // ---------------------------------------------------------------------------
@@ -436,7 +437,7 @@ void main() {
 
   group('cacheStoreProvider — DI seam', () {
     test('reading without a root override throws UnimplementedError', () {
-      final container = ProviderContainer();
+      final container = ProviderContainer(retry: lumenRetry);
       addTearDown(container.dispose);
 
       // Riverpod re-throws a provider's create-time error wrapped in an
@@ -476,6 +477,7 @@ void main() {
       );
 
       final container = ProviderContainer(
+        retry: lumenRetry,
         overrides: [cacheStoreProvider.overrideWithValue(env.store)],
       );
       addTearDown(container.dispose);

@@ -37,6 +37,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/hormone_prefs_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/features/onboarding/application/hormones_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_step.dart';
@@ -75,6 +76,7 @@ class _World {
     bool keepFlowAlive = true,
   }) : repo = _MockOnboardingRepository() {
     container = ProviderContainer(
+      retry: lumenRetry,
       overrides: <Override>[
         onboardingFlowControllerProvider.overrideWith(
           () => _SettledFlow(

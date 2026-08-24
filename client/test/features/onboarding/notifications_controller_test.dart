@@ -42,6 +42,7 @@ import 'package:lumen/api/model/notification_category_selection.dart';
 import 'package:lumen/api/model/notification_prefs_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/push/push_token_source.dart';
 import 'package:lumen/features/onboarding/application/notifications_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
@@ -100,6 +101,7 @@ class _Harness {
   _Harness({Map<String, bool>? notifications, PushTokenSource? source})
     : source = source ?? _Source() {
     container = ProviderContainer(
+      retry: lumenRetry,
       overrides: <Override>[
         authStatusProvider.overrideWith(
           () => FakeAuthController(AuthStatus.unauthenticated),

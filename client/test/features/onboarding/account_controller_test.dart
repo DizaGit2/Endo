@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/features/onboarding/application/account_controller.dart';
 import 'package:lumen/features/onboarding/data/onboarding_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -56,6 +57,7 @@ class _FakeAuthController extends AuthController {
   final fakeAuth = _FakeAuthController()..loginShouldThrow = loginShouldThrow;
 
   final container = ProviderContainer(
+    retry: lumenRetry,
     overrides: [
       onboardingRepositoryProvider.overrideWithValue(repo),
       authStatusProvider.overrideWith(() => fakeAuth),

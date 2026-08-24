@@ -312,6 +312,37 @@ void main() {
       expect(c.retry, same(lumenRetry));
     });
 
+    testWidgets(
+      'pumpApp REJECTS a caller-supplied container carrying some OTHER '
+      'policy — the branch the first cut of this fix left open',
+      (tester) async {
+        // `container:` used to bypass the harness's `retry:` entirely: the
+        // policy was applied only on the `container == null` branch, so any
+        // widget test that brought its own container silently ran the very
+        // default this task removed. Three files pass a container today; none
+        // of them had a throwing build, so nothing was visibly wrong — which
+        // is exactly the shape of hole that gets found later rather than now.
+        //
+        // The source audit now covers ProviderContainer, but it can only see
+        // that a `retry:` is PRESENT. Identity is checked here, where the
+        // container is actually mounted, and the rogue below is the old policy
+        // named out loud rather than an omission.
+        final rogue = ProviderContainer(retry: ProviderContainer.defaultRetry);
+        addTearDown(rogue.dispose);
+
+        await expectLater(
+          pumpApp(tester, home: const SizedBox.shrink(), container: rogue),
+          throwsA(
+            isA<ArgumentError>().having(
+              (ArgumentError e) => '${e.message}',
+              'message',
+              contains('retry: lumenRetry'),
+            ),
+          ),
+        );
+      },
+    );
+
     testWidgets('pumpLumenApp', (tester) async {
       final ProviderContainer c = await pumpLumenApp(
         tester,
@@ -388,37 +419,55 @@ void main() {
 // The source audit — "app-wide" as a property the source carries
 // ---------------------------------------------------------------------------
 //
-// Behaviour tests above prove the three containers that exist TODAY carry the
-// policy. This proves the same of the one somebody adds tomorrow, which is the
-// distinction T22b settled and T23 reused: a behaviour test pins what today's
-// code does, a source audit pins what tomorrow's edit cannot quietly do.
+// The behaviour tests above prove that the containers which exist TODAY carry
+// the policy. This proves the same of the one somebody adds tomorrow, which is
+// the distinction T22b settled and T23 reused: a behaviour test pins what
+// today's code does, a source audit pins what tomorrow's edit cannot quietly
+// do.
+//
+// **It walks BOTH constructors, and that is a correction (fix round 1).** The
+// first cut walked `ProviderScope` only, and booked the exclusion of bare
+// `ProviderContainer` as a bounded judgement: ~40 test sites, and a file-level
+// allowlist over 40 sites is a rule nobody reads. The judgement was wrong twice
+// over. `pump_app.dart` accepts a caller's OWN container, so the uncovered
+// constructor was reachable straight through the covered harness — a policy
+// applied on one of two branches is the same species of hole as a guard that
+// cannot fail. And "every provider whose build can throw either names
+// `lumenRetry` itself or is exercised by a container that names it" was a fact
+// about the tests that happened to be checked in, not a property anything
+// enforced.
+//
+// Requiring the argument at all ~40 sites is not an allowlist — it is one
+// uniform rule with no membership list to maintain. It is also what makes a
+// controller test observe the policy the USER gets, and it removes the
+// asymmetry ("some containers name it, so the rest must not need it") that let
+// this defect survive four separate private per-provider fixes.
 //
 // **Limits, stated rather than left to be inferred.** It is syntactic
-// (`parseString`, no resolution), it matches on the constructor name
-// `ProviderScope`, and it reads `retry:` as PRESENT — not as `lumenRetry`, so
-// a scope naming some other policy passes here and is caught by the behaviour
-// tests instead. And it deliberately does NOT audit bare `ProviderContainer`
-// construction: ~40 controller tests build one, and every provider whose build
-// can throw either names `lumenRetry` at its own declaration
-// (`sessionTodayProvider`, `cycleCalendarControllerProvider`,
-// `dayDetailControllerProvider`, `dashboardControllerProvider`) or is exercised
-// by a container that names it (`cycle_settings_controller_test.dart`). A
-// file-level allowlist over 40 sites would be a rule nobody reads; this is the
-// bounded half that is worth enforcing.
+// (`parseString`, no resolution) and matches on the constructor NAME, so a
+// container handed back by a helper in another library is invisible to it. And
+// it reads `retry:` as PRESENT, not as `lumenRetry` — a site naming some OTHER
+// policy passes here, and is caught by the behaviour tests and by
+// `pump_app.dart`'s identity check instead.
 
-/// One `ProviderScope(...)` found in the source, and whether it named `retry:`.
-typedef _ScopeSite = ({String path, int line, bool namesRetry});
+/// One `ProviderScope(...)` / `ProviderContainer(...)` found in the source, and
+/// whether it named `retry:`.
+typedef _RetrySite = ({String path, int line, String ctor, bool namesRetry});
 
-class _ScopeVisitor extends RecursiveAstVisitor<void> {
-  _ScopeVisitor(this.path, this.lineOf, this.sites);
+/// The two constructors that decide a provider's retry policy.
+const Set<String> _kRetryCtors = <String>{'ProviderScope', 'ProviderContainer'};
+
+class _RetryVisitor extends RecursiveAstVisitor<void> {
+  _RetryVisitor(this.path, this.lineOf, this.sites);
   final String path;
   final int Function(int offset) lineOf;
-  final List<_ScopeSite> sites;
+  final List<_RetrySite> sites;
 
-  void _record(int offset, ArgumentList arguments) {
+  void _record(String ctor, int offset, ArgumentList arguments) {
     sites.add((
       path: path,
       line: lineOf(offset),
+      ctor: ctor,
       namesRetry: arguments.arguments.whereType<NamedExpression>().any(
         (NamedExpression a) => a.name.label.name == 'retry',
       ),
@@ -426,33 +475,74 @@ class _ScopeVisitor extends RecursiveAstVisitor<void> {
   }
 
   // BOTH spellings, and they are different node types — the same trap
-  // `duration_days_guard.dart` documents on `_dayValuedField`, and it cost
-  // this audit a red positive control before it was noticed here too. Without
+  // `duration_days_guard.dart` documents on `_dayValuedField`, and it cost this
+  // audit a red positive control before it was noticed here too. Without
   // resolution `ProviderScope(...)` is indistinguishable from a call to a
   // function of that name, so the parser hands it back as a MethodInvocation;
-  // only the `const`/`new` form arrives as an InstanceCreationExpression. All
-  // three sites in this repo are the former.
+  // only the `const`/`new` form arrives as an InstanceCreationExpression.
+  //
+  // `.test` is matched as well: `ProviderContainer.test(...)` is riverpod's own
+  // recommended test constructor (`provider_container.dart` says so in
+  // [ProviderContainer]'s dartdoc) and it takes the same `retry` argument, so a
+  // finder that only knew the unnamed constructor would wave through the very
+  // spelling the next person is most likely to reach for.
+  //
+  // Nothing filters on `node.target`, and that is deliberate. A prefixed
+  // spelling from an aliased import (`riverpod.ProviderScope(...)`) arrives as
+  // a MethodInvocation WITH a target, so dropping those would be a hole rather
+  // than a refinement. `ProviderContainer.defaultRetry(0, e)` — which this file
+  // calls four times — stays out for a different reason entirely: its
+  // `methodName` is `defaultRetry`. A `node.target == null` clause written here
+  // "to keep the static call out" was measured to change nothing, which is how
+  // it was caught; the control source is what actually pins that exclusion.
   @override
   void visitInstanceCreationExpression(InstanceCreationExpression node) {
-    if (node.constructorName.type.name.lexeme == 'ProviderScope') {
-      _record(node.offset, node.argumentList);
+    final String name = node.constructorName.type.name.lexeme;
+    final String? ctor = node.constructorName.name?.name;
+    if (_kRetryCtors.contains(name) && (ctor == null || ctor == 'test')) {
+      _record(name, node.offset, node.argumentList);
     }
     super.visitInstanceCreationExpression(node);
   }
 
   @override
   void visitMethodInvocation(MethodInvocation node) {
-    if (node.methodName.name == 'ProviderScope') {
-      _record(node.offset, node.argumentList);
+    final String name = node.methodName.name;
+    final AstNode? target = node.target;
+    if (_kRetryCtors.contains(name)) {
+      _record(name, node.offset, node.argumentList);
+    } else if (name == 'test' &&
+        target is SimpleIdentifier &&
+        _kRetryCtors.contains(target.name)) {
+      _record(target.name, node.offset, node.argumentList);
     }
     super.visitMethodInvocation(node);
   }
 }
 
-List<_ScopeSite> _providerScopeSites() {
+List<_RetrySite> _sitesInSource(String source, String path) {
+  final sites = <_RetrySite>[];
+  final ParseStringResult result = parseString(
+    content: stripBom(source),
+    path: path,
+    featureSet: FeatureSet.latestLanguageVersion(),
+    throwIfDiagnostics: false,
+  );
+  if (result.errors.isNotEmpty) return sites;
+  result.unit.visitChildren(
+    _RetryVisitor(
+      path,
+      (int offset) => result.lineInfo.getLocation(offset).lineNumber,
+      sites,
+    ),
+  );
+  return sites;
+}
+
+List<_RetrySite> _retrySites() {
   final Directory root = resolvePackageRoot();
   final String rootPath = root.path.replaceAll(r'\', '/');
-  final sites = <_ScopeSite>[];
+  final sites = <_RetrySite>[];
 
   for (final String dir in <String>['lib', 'test']) {
     final Directory d = Directory('$rootPath/$dir');
@@ -464,32 +554,71 @@ List<_ScopeSite> _providerScopeSites() {
       final String relative = path.substring(rootPath.length + 1);
       if (relative.startsWith('lib/api/')) continue;
 
-      final ParseStringResult result = parseString(
-        content: stripBom(File(path).readAsStringSync()),
-        path: relative,
-        featureSet: FeatureSet.latestLanguageVersion(),
-        throwIfDiagnostics: false,
-      );
-      if (result.errors.isNotEmpty) continue;
-      result.unit.visitChildren(
-        _ScopeVisitor(
-          relative,
-          (int offset) => result.lineInfo.getLocation(offset).lineNumber,
-          sites,
-        ),
-      );
+      sites.addAll(_sitesInSource(File(path).readAsStringSync(), relative));
     }
   }
   return sites;
 }
 
+/// A hand-written source the walker must classify EXACTLY right.
+///
+/// The disk sweep can only assert what happens to be checked in, so a finder
+/// that silently stopped matching would keep reporting an empty offender list
+/// and look greener the more broken it got. This control carries known
+/// offenders, in both spellings, plus the one shape it must NOT report.
+const String _controlSource = '''
+void main() {
+  ProviderScope(child: x);
+  const ProviderScope(retry: lumenRetry, child: x);
+  ProviderContainer(overrides: <Override>[]);
+  ProviderContainer(retry: lumenRetry);
+  ProviderContainer.test(overrides: <Override>[]);
+  ProviderContainer.test(retry: lumenRetry);
+  ProviderContainer.defaultRetry(0, e);
+}
+''';
+
 void _auditTests() {
-  group('every ProviderScope in the repo names a retry policy', () {
-    test('the walker actually finds the scopes — a blind finder passes '
-        'vacuously, so this is the positive control', () {
+  group('every ProviderScope and ProviderContainer names a retry policy', () {
+    test(
+      'positive control: the walker classifies a known source exactly, '
+      'including the static call it must NOT report',
+      () {
+        final List<String> found =
+            <String>[
+              for (final _RetrySite s in _sitesInSource(
+                _controlSource,
+                'control.dart',
+              ))
+                '${s.ctor}:${s.line}:${s.namesRetry}',
+            ]..sort();
+
+        expect(found, <String>[
+          // line 4 — unnamed constructor, no `retry:`
+          'ProviderContainer:4:false',
+          // line 5 — unnamed constructor, names it
+          'ProviderContainer:5:true',
+          // line 6 — riverpod's own `.test` constructor, no `retry:`
+          'ProviderContainer:6:false',
+          // line 7 — `.test`, names it
+          'ProviderContainer:7:true',
+          // line 2 — MethodInvocation spelling, no `retry:`
+          'ProviderScope:2:false',
+          // line 3 — `const`, so InstanceCreationExpression, names it
+          'ProviderScope:3:true',
+          // line 8 — `ProviderContainer.defaultRetry(0, e)` is ABSENT: a static
+          // call, not a construction. If it ever appears here the offender list
+          // gains a permanent false positive.
+        ]);
+      },
+    );
+
+    test('positive control: the walker finds the real scopes on disk', () {
       final List<String> paths =
-          _providerScopeSites().map((_ScopeSite s) => s.path).toSet().toList()
-            ..sort();
+          <String>{
+            for (final _RetrySite s in _retrySites())
+              if (s.ctor == 'ProviderScope') s.path,
+          }.toList()..sort();
 
       expect(paths, <String>[
         'lib/app.dart',
@@ -498,22 +627,56 @@ void _auditTests() {
       ]);
     });
 
+    test(
+      'positive control: the walker finds the containers on disk too — the '
+      'branch this audit did NOT cover before fix round 1',
+      () {
+        final List<_RetrySite> containers = <_RetrySite>[
+          for (final _RetrySite s in _retrySites())
+            if (s.ctor == 'ProviderContainer') s,
+        ];
+
+        // A floor, not an exact count: this list grows with every new
+        // controller test, and a number that must be edited on unrelated
+        // commits is a number people edit without reading. The offender check
+        // below is the one that has to be exact.
+        expect(
+          containers.length,
+          greaterThanOrEqualTo(30),
+          reason:
+              'There are ~40 bare ProviderContainer sites in this repo. If '
+              'this collapses, the walker has stopped matching and the '
+              'offender list below is empty for the wrong reason.',
+        );
+        expect(
+          containers.map((_RetrySite s) => s.path).toSet(),
+          contains('test/support/pump_app.dart'),
+          reason:
+              'The harness every widget test mounts through builds one. It is '
+              'the site that joins the two constructors, so a walker that '
+              'misses it misses the point of covering containers at all.',
+        );
+      },
+    );
+
     test('none of them omits `retry:`', () {
-      final List<String> offenders = <String>[
-        for (final _ScopeSite s in _providerScopeSites())
-          if (!s.namesRetry) '${s.path}:${s.line}',
-      ]..sort();
+      final List<String> offenders =
+          <String>[
+            for (final _RetrySite s in _retrySites())
+              if (!s.namesRetry) '${s.ctor} ${s.path}:${s.line}',
+          ]..sort();
 
       expect(
         offenders,
         isEmpty,
         reason:
-            'A ProviderScope without `retry:` runs on riverpod 3.3.2\'s '
-            'defaultRetry, which rebuilds a build that threw a Failure ten '
-            'times over ~38 s while publishing AsyncLoading(retrying: true) — '
-            'so every screen under it shows a spinner where its designed '
-            'error body belongs. Pass `retry: lumenRetry` '
-            '(core/error/retry_policy.dart).',
+            'A ProviderScope or ProviderContainer without `retry:` runs on '
+            'riverpod 3.3.2\'s defaultRetry, which rebuilds a build that threw '
+            'a Failure ten times over ~38 s while publishing '
+            'AsyncLoading(retrying: true) — so a screen under it shows a '
+            'spinner where its designed error body belongs, and a test under '
+            'it observes a policy the shipped app does not have. Pass '
+            '`retry: lumenRetry` (core/error/retry_policy.dart).',
       );
     });
   });

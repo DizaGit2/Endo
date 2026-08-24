@@ -22,6 +22,7 @@ import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/presentation/privacy_screen.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
@@ -180,6 +181,7 @@ void main() {
       final cache = emptyCacheStore();
 
       final container = ProviderContainer(
+        retry: lumenRetry,
         overrides: [
           ...lumenOverrides(cacheStore: cache, tokenStore: store),
           profileControllerProvider.overrideWith(_FreshProfileController.new),

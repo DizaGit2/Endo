@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/locale/locale_provider.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
@@ -73,6 +74,7 @@ void main() {
 
   ProviderContainer makeContainer() {
     return ProviderContainer(
+      retry: lumenRetry,
       overrides: [
         meRepositoryProvider.overrideWithValue(mockRepo),
       ],
@@ -295,6 +297,7 @@ void main() {
   group('ProfileController publishes the profile locale', () {
     ProviderContainer localeContainer() {
       final container = ProviderContainer(
+        retry: lumenRetry,
         overrides: [
           meRepositoryProvider.overrideWithValue(mockRepo),
           // Pinned so the assertions do not depend on the host machine.
@@ -418,6 +421,7 @@ void main() {
 
       final spy = _FailureSpy();
       final container = ProviderContainer(
+        retry: lumenRetry,
         observers: [spy],
         overrides: [
           meRepositoryProvider.overrideWithValue(mockRepo),

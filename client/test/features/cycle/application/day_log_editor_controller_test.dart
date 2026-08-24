@@ -34,6 +34,7 @@ import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/symptom_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/features/cycle/application/cycle_calendar_controller.dart';
 import 'package:lumen/features/cycle/application/day_detail_controller.dart';
 import 'package:lumen/features/cycle/application/day_log_editor_controller.dart';
@@ -189,6 +190,7 @@ void main() {
     List<Override> extra = const <Override>[],
   }) {
     final container = ProviderContainer(
+      retry: lumenRetry,
       overrides: <Override>[
         cycleRepositoryProvider.overrideWithValue(repo),
         if (seedDayDetail)
@@ -627,6 +629,7 @@ void main() {
       bool seedDayDetail = true,
     }) {
       final c = ProviderContainer(
+        retry: lumenRetry,
         overrides: <Override>[
           cycleRepositoryProvider.overrideWithValue(repo),
           dashboardControllerProvider.overrideWith(
@@ -773,6 +776,7 @@ void main() {
       final gate = Completer<DayDetailView>();
       final builds = _Counter();
       final c = ProviderContainer(
+        retry: lumenRetry,
         overrides: <Override>[
           cycleRepositoryProvider.overrideWithValue(repo),
           dayDetailControllerProvider(
@@ -840,6 +844,7 @@ void main() {
       stubLogDay();
       final gate = Completer<CycleCalendarView>();
       final c = ProviderContainer(
+        retry: lumenRetry,
         overrides: <Override>[
           cycleRepositoryProvider.overrideWithValue(repo),
           dashboardControllerProvider.overrideWith(

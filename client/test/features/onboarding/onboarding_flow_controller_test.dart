@@ -27,6 +27,7 @@ import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/features/onboarding/application/onboarding_flow_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/onboarding/application/onboarding_step.dart';
@@ -48,6 +49,7 @@ ProviderContainer _container(
   List<Override> extra = const <Override>[],
 }) {
   final container = ProviderContainer(
+    retry: lumenRetry,
     overrides: [
       // The gate controller reads `/me` when auth is authenticated; pinning it
       // unauthenticated keeps this file about the FLOW controller while leaving

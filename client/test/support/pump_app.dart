@@ -175,6 +175,27 @@ Future<ProviderContainer> _pumpScoped(
   // wants the error body would have to throw an `Error` instead of the
   // `Failure` production throws — which is exactly what two files in this repo
   // had to do before this existed.
+  //
+  // **Both branches, not one.** The first cut of this applied the policy only
+  // where the harness built the container, which left `container:` as an
+  // unguarded way back to `defaultRetry` — a policy applied on one of two
+  // branches is the same species of hole as a guard that cannot fail, and it
+  // is the exact door this defect would have walked back through. A caller's
+  // own container is checked rather than silently corrected, because
+  // `ProviderContainer.retry` is final: there is no way to fix it here, and
+  // quietly accepting it would put the difference somewhere nobody looks.
+  if (container != null && !identical(container.retry, lumenRetry)) {
+    throw ArgumentError(
+      'The container passed here does not carry `retry: lumenRetry` '
+      '(lib/core/error/retry_policy.dart) — the policy LumenRootScope gives '
+      'the production container. Under riverpod 3.3.2\'s defaultRetry a build '
+      'that threw a Failure is rebuilt ten times over ~38 s while publishing '
+      'AsyncLoading(retrying: true), so this tree would show a spinner where '
+      'the real app shows its error body. Build the container as '
+      '`ProviderContainer(retry: lumenRetry, overrides: [...])`.',
+    );
+  }
+
   final scope =
       container ?? ProviderContainer(retry: lumenRetry, overrides: overrides);
   if (container == null) {

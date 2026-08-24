@@ -15,6 +15,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/auth/oidc_client.dart';
 import 'package:lumen/core/auth/token_store.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/network/dio_provider.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -100,7 +101,7 @@ ErrorInterceptorHandler _observedErrorHandler() {
 
 void main() {
   test('shared Dio sets explicit connect and receive timeouts', () {
-    final container = ProviderContainer();
+    final container = ProviderContainer(retry: lumenRetry);
     addTearDown(container.dispose);
 
     final dio = container.read(dioProvider);
@@ -125,7 +126,7 @@ void main() {
       'LUMEN_API_BASE',
       defaultValue: 'http://10.0.2.2:8085',
     );
-    final container = ProviderContainer();
+    final container = ProviderContainer(retry: lumenRetry);
     addTearDown(container.dispose);
 
     expect(container.read(dioProvider).options.baseUrl, expected);
@@ -515,6 +516,7 @@ void main() {
             .thenThrow(Exception('token server unreachable'));
 
         final container = ProviderContainer(
+          retry: lumenRetry,
           overrides: [
             tokenStoreProvider.overrideWithValue(store),
             oidcClientProvider.overrideWithValue(oidc),

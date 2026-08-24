@@ -21,6 +21,7 @@ import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/time/server_today.dart';
 import 'package:lumen/features/cycle/data/cycle_repository.dart';
 import 'package:lumen/features/home/application/dashboard_controller.dart';
@@ -59,6 +60,7 @@ void main() {
   ProviderContainer buildContainer({Date? today}) {
     when(todayRepo.today).thenAnswer((_) async => today ?? Date(2026, 4, 20));
     final c = ProviderContainer(
+      retry: lumenRetry,
       overrides: <Override>[
         serverTodayRepositoryProvider.overrideWithValue(todayRepo),
         cycleRepositoryProvider.overrideWithValue(cycleRepo),

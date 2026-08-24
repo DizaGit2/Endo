@@ -19,6 +19,7 @@ import 'package:lumen/api/model/date.dart';
 import 'package:lumen/api/model/quick_checkin_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/time/server_today.dart';
 import 'package:lumen/features/checkin/application/quick_checkin_controller.dart';
 import 'package:lumen/features/checkin/data/checkin_repository.dart';
@@ -66,6 +67,7 @@ void main() {
 
   ProviderContainer buildContainer() {
     final c = ProviderContainer(
+      retry: lumenRetry,
       overrides: <Override>[
         checkinRepositoryProvider.overrideWithValue(checkinRepo),
         serverTodayRepositoryProvider.overrideWithValue(todayRepo),
@@ -643,6 +645,7 @@ void main() {
       // this test disposes it itself; `buildContainer()` also registers an
       // `addTearDown(c.dispose)`, and a second dispose would throw.
       final localContainer = ProviderContainer(
+        retry: lumenRetry,
         overrides: <Override>[
           checkinRepositoryProvider.overrideWithValue(localCheckin),
           serverTodayRepositoryProvider.overrideWithValue(localToday),
