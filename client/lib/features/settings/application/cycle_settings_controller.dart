@@ -48,6 +48,13 @@
 //
 //       * **`trackingPaused` is the state; `pauseReason` never is**
 //         ([CycleSettingsForm.trackingPaused]);
+//       * **the reason a control can send is a [CyclePauseReason] and never
+//         a bare string** — a remembered code this build cannot draw is
+//         dropped at the seed rather than pre-selected, because a live CTA
+//         must never send a reason the chip row is not showing the user
+//         (fix round 1 / I-1; [CyclePauseReason.fromWireName] has the whole
+//         argument, and the server makes the same one at
+//         `Validate`'s `pauseReason: required`);
 //       * a pause 200 is adopted for its pause fields ONLY
 //         ([CycleSettingsForm.afterPauseSaved]), so it cannot discard an
 //         unsaved settings edit;
@@ -119,6 +126,85 @@ const String kCycleSettingsNothingChangedMessage = 'Change a setting to save.';
 const String kCycleSettingsChooseReasonMessage = 'Choose a reason to pause.';
 
 // ---------------------------------------------------------------------------
+// CyclePauseReason
+// ---------------------------------------------------------------------------
+
+/// The five ratified C-12 pause reasons and the labels screen 32 draws.
+///
+/// Wire codes from `UserCycleSettings.PauseReasons` — the **five**-member set,
+/// PO-extended 2026-07-14 and recorded in `ARCHITECTURE.md` §A:59; the
+/// three-member r15 list is superseded. The server compares the code against
+/// that list and answers a 400 keyed `pauseReason` for anything else, which is
+/// why [fromWireName] matches exactly and normalises nothing.
+///
+/// **It lives HERE, in the application layer, which is `CycleRegularity`'s
+/// shape exactly** — and T22b's own claim that it was following that enum "by
+/// living beside the screen rather than in the controller" was simply false
+/// about it: `CycleRegularity` is declared in `cycle_setup_controller.dart`,
+/// its form field is typed `CycleRegularity?`, and its controller resolves the
+/// server's string at the seed (`CycleRegularity.fromWireName(...)`), so an
+/// unknown code becomes null there and can never reach a control. Following it
+/// properly is fix round 1's whole fix; see [fromWireName]. The screen keeps
+/// what was always the screen's — which member is drawn where — and
+/// [label] travels with the member because a chip row of five codes and a
+/// second list of five labels is a pair that can drift.
+///
+/// **[CycleSettingsForm.selectedPauseReason] is typed as this enum**, so the
+/// value [CycleSettingsController.pause] sends can only ever be a member the
+/// chip row is drawing. That is the state-level half of the fix; the
+/// screen-level half is that the chips iterate these same [values].
+enum CyclePauseReason {
+  pregnancy('pregnancy', 'Pregnancy'),
+  hormonalSuppression('hormonal_suppression', 'Hormonal suppression'),
+  surgical('surgical', 'Surgical'),
+  menopause('menopause', 'Menopause'),
+  other('other', 'Other');
+
+  const CyclePauseReason(this.wireName, this.label);
+
+  /// The code on the wire.
+  final String wireName;
+
+  /// The chip label — the code humanised, and **nothing more** (R4).
+  final String label;
+
+  /// The member [code] names, or null — including for a code this build has
+  /// never seen.
+  ///
+  /// **The null is load-bearing, and the vocabulary is append-only on the
+  /// server**, so a sixth member will one day reach a build that predates it.
+  /// Both states that code can arrive in are handled, and neither of them
+  /// draws a raw wire code or acts on one:
+  ///
+  ///  * **PAUSED** — the user is still shown as paused and can still resume;
+  ///    the reason row is omitted entirely, its label included, rather than
+  ///    claiming a value this build cannot name (`_PauseCard`).
+  ///  * **NOT paused** — the code is dropped at the seed
+  ///    ([CycleSettingsForm.seededFrom]), so nothing is remembered, no chip
+  ///    claims to be selected, and [CycleSettingsForm.pauseBlockReason] holds
+  ///    the CTA with the message it already has.
+  ///
+  /// **The second arm is fix round 1 (I-1), and it was consent-shaped.**
+  /// Before it, an unpaused user whose remembered code this build did not know
+  /// got a LIVE pause CTA with no chip selected and no block reason: one tap
+  /// paused them for a reason the screen never displayed. That is the client
+  /// twin of the 400 the server raises to stop exactly that — `Validate`'s
+  /// `pauseReason: required`, *"an unpaused user is never paused for a reason
+  /// they did not name in this request; the remembered reason is a screen-32
+  /// pre-selection, not consent"*. A pre-selection the user can SEE is that
+  /// consent; one they cannot is not.
+  ///
+  /// Same choice `cycle_settings_screen.dart`'s `cycleSettingsWarningMessage`
+  /// makes for an unknown warning code, for the same reason.
+  static CyclePauseReason? fromWireName(String? code) {
+    for (final value in values) {
+      if (value.wireName == code) return value;
+    }
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // CycleSettingsForm
 // ---------------------------------------------------------------------------
 
@@ -188,8 +274,14 @@ class CycleSettingsForm {
       trackingPaused: settings.trackingPaused ?? false,
       pauseReason: settings.pauseReason,
       // …and the remembered reason is used for exactly what the server says it
-      // is for: pre-selecting the chip this user last chose.
-      selectedPauseReason: settings.pauseReason,
+      // is for: pre-selecting the chip this user last chose — **resolved
+      // through the vocabulary, so a code this build cannot draw is dropped
+      // here and remembered nowhere** (fix round 1 / I-1;
+      // [CyclePauseReason.fromWireName] carries the whole reasoning). The line
+      // above keeps the server's string as the server sent it: that one is the
+      // record of what is STORED, and it is rendered only while paused and
+      // only when it resolves.
+      selectedPauseReason: CyclePauseReason.fromWireName(settings.pauseReason),
       warnings: settings.warnings?.toList() ?? const <String>[],
     );
   }
@@ -226,7 +318,12 @@ class CycleSettingsForm {
     return copyWith(
       trackingPaused: saved.trackingPaused ?? false,
       pauseReason: saved.pauseReason,
-      selectedPauseReason: saved.pauseReason,
+      // Resolved, for [CycleSettingsForm.seededFrom]'s reason: this is the
+      // other door a stored code comes through, and a resume walks the user
+      // straight back to the chip row. A code that does not resolve leaves the
+      // selection where it was — `??`, as above — and where it was is itself
+      // always a member or null, so the chips and the CTA still agree.
+      selectedPauseReason: CyclePauseReason.fromWireName(saved.pauseReason),
       pausing: false,
       clearPauseFailure: true,
     );
@@ -307,12 +404,27 @@ class CycleSettingsForm {
 
   /// The reason chip currently picked in the pause card, or `null` when none
   /// is. Seeded from [pauseReason] — that is what the server keeps it for —
-  /// and it is what [CycleSettingsController.pause] sends.
+  /// and its [CyclePauseReason.wireName] is what
+  /// [CycleSettingsController.pause] sends.
+  ///
+  /// **It is a [CyclePauseReason] and not a `String`, and that is the fix for
+  /// I-1.** The value a control acts on must be one the screen is drawing, and
+  /// the type is the only guarantee of that which survives a caller nobody has
+  /// written yet: an unrenderable selection is now unrepresentable rather than
+  /// merely unreachable. [pauseBlockReason]'s existing `== null` clause then
+  /// covers the unknown remembered code for free, with no new copy (R4).
+  ///
+  /// **[regularity] is deliberately NOT typed the same way**, and the
+  /// difference is exactly what makes this one dangerous: an untouched
+  /// regularity is never sent (`touchedRegularity`), so an unresolvable code
+  /// there merely draws no selected chip. Nothing acts on it. The pause CTA
+  /// sends this one WITHOUT a touch, from the seed, which is why the same
+  /// shape is a defect here and not there.
   ///
   /// It is **not** a `touched*` flag's twin: nothing decides from it whether a
   /// field is omitted from a merge body. It is the argument of a request that
   /// either happens or does not.
-  final String? selectedPauseReason;
+  final CyclePauseReason? selectedPauseReason;
 
   /// Whether the SETTINGS `PATCH /settings/cycle` is in flight. Every control
   /// refuses input while this is true.
@@ -396,7 +508,11 @@ class CycleSettingsForm {
   ///    *"no gate, no confirmation, not even for pregnancy"*). There is
   ///    deliberately no branch here that can look at [pauseReason].
   ///  * Not paused → blocked until a reason is named, because the server
-  ///    requires one on the transition in.
+  ///    requires one on the transition in. **Named, not merely remembered**:
+  ///    [selectedPauseReason] is a [CyclePauseReason], so this clause blocks a
+  ///    remembered code this build cannot draw as well as no code at all —
+  ///    one message for one condition, "the screen is not showing the reason
+  ///    this button would send" (fix round 1 / I-1).
   String? get pauseBlockReason {
     if (trackingPaused) return null;
     if (selectedPauseReason == null) return kCycleSettingsChooseReasonMessage;
@@ -422,7 +538,7 @@ class CycleSettingsForm {
     bool? touchedShowFertilityWindowEnabled,
     bool? trackingPaused,
     String? pauseReason,
-    String? selectedPauseReason,
+    CyclePauseReason? selectedPauseReason,
     bool? submitting,
     bool? pausing,
     Failure? failure,
@@ -721,18 +837,23 @@ class CycleSettingsController extends AsyncNotifier<CycleSettingsForm> {
 
   // ── The C-12 pause sub-flow ───────────────────────────────────────────────
 
-  /// Records a reason chip tap. [code] MUST be one of the five ratified WIRE
-  /// codes; the screen owns the label→code mapping, exactly as it does for
-  /// regularity.
+  /// Records a reason chip tap.
+  ///
+  /// **It takes the member, not the code** — `chooseRegularity`'s signature,
+  /// for the reason fix round 1 established: a `String` parameter here would
+  /// be a second door into [CycleSettingsForm.selectedPauseReason] through
+  /// which a value the chip row cannot draw could arrive. The screen still
+  /// owns which chip carries which member; the vocabulary is
+  /// [CyclePauseReason]'s.
   ///
   /// A no-op while paused: the card draws no chips in that state, because
   /// changing the reason of a pause in progress is a second gesture with its
   /// own failure mode that C-12 does not ask for. Resume, then pause again.
-  void selectPauseReason(String code) {
+  void selectPauseReason(CyclePauseReason reason) {
     final form = state.value;
     if (form == null || form.trackingPaused) return;
     _write(
-      (f) => f.copyWith(selectedPauseReason: code, clearPauseFailure: true),
+      (f) => f.copyWith(selectedPauseReason: reason, clearPauseFailure: true),
     );
   }
 
@@ -753,7 +874,7 @@ class CycleSettingsController extends AsyncNotifier<CycleSettingsForm> {
     return _pauseWrite(
       () => ref
           .read(cycleSettingsRepositoryProvider)
-          .pauseTracking(reason: reason),
+          .pauseTracking(reason: reason.wireName),
     );
   }
 

@@ -1069,7 +1069,7 @@ void main() {
         );
         // …and it is used for what the server says it is for: a
         // pre-selection, so the card opens on the reason this user last chose.
-        expect(form.selectedPauseReason, 'pregnancy');
+        expect(form.selectedPauseReason, CyclePauseReason.pregnancy);
         expect(form.pauseBlockReason, isNull);
       },
     );
@@ -1105,7 +1105,12 @@ void main() {
         final container = buildContainer();
         await settled(container);
 
-        notifier(container).selectPauseReason(reason);
+        // `fromWireName(...)!` on purpose: `wireReasons` is a hard-coded
+        // literal (it must not be read off the app's own enum, or a pair of
+        // values that moved together would still pass), and the bang makes
+        // the two disagreeing a failure rather than a silent skip.
+        final member = CyclePauseReason.fromWireName(reason)!;
+        notifier(container).selectPauseReason(member);
         expect(current(container).pauseBlockReason, isNull);
         final ok = await notifier(container).pause();
 
@@ -1157,7 +1162,7 @@ void main() {
       final form = current(container);
       expect(form.trackingPaused, isFalse);
       expect(form.pauseReason, 'pregnancy');
-      expect(form.selectedPauseReason, 'pregnancy');
+      expect(form.selectedPauseReason, CyclePauseReason.pregnancy);
       expect(form.pauseBlockReason, isNull);
     });
 
@@ -1180,6 +1185,57 @@ void main() {
 
         expect(ok, isFalse);
         expect(pauseCalls, isEmpty);
+      },
+    );
+
+    test(
+      'an unpaused user whose remembered reason is a code this build has '
+      'never seen is BLOCKED too — the sixth member the vocabulary promises '
+      'must not pause anyone for a reason the screen cannot show them',
+      () async {
+        stubRead(
+          Fresh(stored(trackingPaused: false, pauseReason: 'lactational')),
+        );
+        final container = buildContainer();
+        final form = await settled(container);
+
+        // The stored code is still carried — it is the record of what the
+        // server holds — but NOTHING is pre-selected out of it, so the block
+        // is the same one, with the same message, that an untouched form has.
+        expect(form.pauseReason, 'lactational');
+        expect(form.selectedPauseReason, isNull);
+        expect(form.pauseBlockReason, kCycleSettingsChooseReasonMessage);
+        expect(form.canTogglePause, isFalse);
+
+        final ok = await notifier(container).pause();
+
+        expect(ok, isFalse);
+        expect(pauseCalls, isEmpty);
+        expect(current(container).trackingPaused, isFalse);
+      },
+    );
+
+    test(
+      'resuming out of a pause whose stored reason this build has never seen '
+      'leaves nothing pre-selected either — the 200 carries the same code '
+      'back, through the other door that seeds the selection',
+      () async {
+        stubRead(
+          Fresh(stored(trackingPaused: true, pauseReason: 'lactational')),
+        );
+        stubResume(
+          body: stored(trackingPaused: false, pauseReason: 'lactational'),
+        );
+        final container = buildContainer();
+        await settled(container);
+
+        expect(await notifier(container).resume(), isTrue);
+
+        final form = current(container);
+        expect(form.trackingPaused, isFalse);
+        expect(form.pauseReason, 'lactational');
+        expect(form.selectedPauseReason, isNull);
+        expect(form.pauseBlockReason, kCycleSettingsChooseReasonMessage);
       },
     );
 
@@ -1206,9 +1262,9 @@ void main() {
       final container = buildContainer();
       await settled(container);
 
-      notifier(container).selectPauseReason('other');
+      notifier(container).selectPauseReason(CyclePauseReason.other);
 
-      expect(current(container).selectedPauseReason, 'surgical');
+      expect(current(container).selectedPauseReason, CyclePauseReason.surgical);
     });
 
     // -- what a pause 200 is allowed to change ------------------------------
@@ -1231,7 +1287,7 @@ void main() {
       await settled(container);
 
       notifier(container).setAvgCycleLengthDays(45);
-      notifier(container).selectPauseReason('other');
+      notifier(container).selectPauseReason(CyclePauseReason.other);
       await notifier(container).pause();
 
       final form = current(container);
@@ -1260,12 +1316,15 @@ void main() {
       stubResume(body: stored(trackingPaused: false, pauseReason: 'menopause'));
       final container = buildContainer();
       final opened = await settled(container);
-      expect(opened.selectedPauseReason, 'surgical');
+      expect(opened.selectedPauseReason, CyclePauseReason.surgical);
 
       await notifier(container).resume();
 
       expect(current(container).pauseReason, 'menopause');
-      expect(current(container).selectedPauseReason, 'menopause');
+      expect(
+        current(container).selectedPauseReason,
+        CyclePauseReason.menopause,
+      );
     });
 
     test(
@@ -1286,7 +1345,7 @@ void main() {
 
         notifier(container).setAvgCycleLengthDays(29);
         expect(current(container).warnings, isEmpty);
-        notifier(container).selectPauseReason('other');
+        notifier(container).selectPauseReason(CyclePauseReason.other);
         await notifier(container).pause();
 
         expect(current(container).warnings, isEmpty);
@@ -1302,11 +1361,14 @@ void main() {
         final container = buildContainer();
         await settled(container);
 
-        notifier(container).selectPauseReason('menopause');
+        notifier(container).selectPauseReason(CyclePauseReason.menopause);
         notifier(container).setRegularity('regular');
         await notifier(container).submit();
 
-        expect(current(container).selectedPauseReason, 'menopause');
+        expect(
+          current(container).selectedPauseReason,
+          CyclePauseReason.menopause,
+        );
       },
     );
 
@@ -1319,7 +1381,7 @@ void main() {
       final container = buildContainer();
       await settled(container);
 
-      notifier(container).selectPauseReason('surgical');
+      notifier(container).selectPauseReason(CyclePauseReason.surgical);
       final ok = await notifier(container).pause();
 
       expect(ok, isFalse);
@@ -1328,7 +1390,7 @@ void main() {
       expect(failed.failure, isNull);
       expect(failed.pausing, isFalse);
       expect(failed.trackingPaused, isFalse);
-      expect(failed.selectedPauseReason, 'surgical');
+      expect(failed.selectedPauseReason, CyclePauseReason.surgical);
 
       stubPause();
       await notifier(container).pause();
@@ -1373,7 +1435,7 @@ void main() {
         stubSave(throws: const NetworkFailure('offline'));
         final container = buildContainer();
         final opened = await settled(container);
-        expect(opened.selectedPauseReason, 'menopause');
+        expect(opened.selectedPauseReason, CyclePauseReason.menopause);
 
         notifier(container).setRegularity('regular');
         await notifier(container).submit();
@@ -1513,7 +1575,7 @@ void main() {
         notifier(container).setPhasePredictionEnabled(false);
         expect(current(container).blockReason, isNull);
 
-        notifier(container).selectPauseReason('other');
+        notifier(container).selectPauseReason(CyclePauseReason.other);
         final inFlight = notifier(container).pause();
         await settle();
 
@@ -1521,9 +1583,9 @@ void main() {
         expect(await notifier(container).pause(), isFalse);
         expect(await notifier(container).submit(), isFalse);
         notifier(container).setRegularity('regular');
-        notifier(container).selectPauseReason('surgical');
+        notifier(container).selectPauseReason(CyclePauseReason.surgical);
         expect(current(container).regularity, 'somewhat');
-        expect(current(container).selectedPauseReason, 'other');
+        expect(current(container).selectedPauseReason, CyclePauseReason.other);
         expect(pauseCalls, <String>['other']);
         expect(calls, isEmpty);
 
@@ -1629,7 +1691,7 @@ void main() {
       expect(calendarBuilds.value, 1);
 
       await settled(container);
-      notifier(container).selectPauseReason('other');
+      notifier(container).selectPauseReason(CyclePauseReason.other);
       await notifier(container).pause();
       await notifier(container).resume();
       await settle();

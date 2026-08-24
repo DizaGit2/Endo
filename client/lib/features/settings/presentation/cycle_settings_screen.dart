@@ -189,50 +189,6 @@ const String kCycleSettingsPauseLabel = 'Pause tracking';
 /// and no variant of this string that asks one.
 const String kCycleSettingsResumeLabel = 'Resume tracking';
 
-/// The five ratified C-12 pause reasons and the labels screen 32 draws.
-///
-/// Wire codes from `UserCycleSettings.PauseReasons` — the **five**-member set,
-/// PO-extended 2026-07-14 and recorded in `ARCHITECTURE.md` §A:59; the
-/// three-member r15 list is superseded. The server compares the code against
-/// that list and answers a 400 keyed `pauseReason` for anything else, which is
-/// why [fromWireName] matches exactly and normalises nothing.
-///
-/// `CycleRegularity` is the shape this follows, including the reason it lives
-/// beside the screen rather than in the controller: the label→code mapping is
-/// the screen's, and `CycleSettingsController.selectPauseReason` takes the
-/// wire code already resolved.
-enum CyclePauseReason {
-  pregnancy('pregnancy', 'Pregnancy'),
-  hormonalSuppression('hormonal_suppression', 'Hormonal suppression'),
-  surgical('surgical', 'Surgical'),
-  menopause('menopause', 'Menopause'),
-  other('other', 'Other');
-
-  const CyclePauseReason(this.wireName, this.label);
-
-  /// The code on the wire.
-  final String wireName;
-
-  /// The chip label — the code humanised, and **nothing more** (R4).
-  final String label;
-
-  /// The member [code] names, or null — including for a code this build has
-  /// never seen.
-  ///
-  /// **The null is load-bearing, and the vocabulary is append-only on the
-  /// server**, so a sixth member will one day reach a build that predates it.
-  /// A paused user whose stored reason resolves to nothing is still shown as
-  /// paused and can still resume; the reason row is simply omitted, rather
-  /// than drawing a raw wire code at them. Same choice as
-  /// [cycleSettingsWarningMessage]'s unknown code, for the same reason.
-  static CyclePauseReason? fromWireName(String? code) {
-    for (final value in values) {
-      if (value.wireName == code) return value;
-    }
-    return null;
-  }
-}
-
 /// The hint for `avg_cycle_length_out_of_sanity_band`.
 ///
 /// **AUTHORED, and it is screen 3's sentence minus its first word.** Screen 3
@@ -1021,7 +977,7 @@ class _PauseCard extends StatelessWidget {
 
   final CycleSettingsForm form;
   final bool enabled;
-  final ValueChanged<String> onSelect;
+  final ValueChanged<CyclePauseReason> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -1039,7 +995,9 @@ class _PauseCard extends StatelessWidget {
         if (form.trackingPaused) ...<Widget>[
           // An unresolvable code draws NO row rather than the raw wire string
           // — the vocabulary is append-only, so a future member will reach
-          // this build. The status above still says Paused, and the CTA below
+          // this build. **The `Reason` label is inside the `if` with it**: a
+          // label with nothing beside it claims a value the row is not
+          // showing. The status above still says Paused, and the CTA below
           // still resumes.
           if (reason != null) ...<Widget>[
             const SizedBox(height: 5),
@@ -1124,10 +1082,15 @@ class _PauseReasonChips extends StatelessWidget {
     required this.onSelect,
   });
 
-  /// The picked WIRE code, or null when none is.
-  final String? selected;
+  /// The picked reason, or null when none is.
+  ///
+  /// A [CyclePauseReason] rather than the wire string it used to be, so
+  /// "selected" here and "sendable" in [CycleSettingsForm.selectedPauseReason]
+  /// are the same set by construction: there is no value this row can be
+  /// handed that it cannot draw as a selected chip (fix round 1 / I-1).
+  final CyclePauseReason? selected;
   final bool enabled;
-  final ValueChanged<String> onSelect;
+  final ValueChanged<CyclePauseReason> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -1138,11 +1101,9 @@ class _PauseReasonChips extends StatelessWidget {
         for (final reason in CyclePauseReason.values)
           LumenSelectableChip(
             label: reason.label,
-            selected: selected == reason.wireName,
+            selected: selected == reason,
             enabled: enabled,
-            onTap: selected == reason.wireName
-                ? null
-                : () => onSelect(reason.wireName),
+            onTap: selected == reason ? null : () => onSelect(reason),
           ),
       ],
     );

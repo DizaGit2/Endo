@@ -1195,6 +1195,13 @@ void main() {
         expect(find.text(kCycleSettingsTrackingPausedValue), findsOneWidget);
         expect(renderedText(tester).join('\n'), isNot(contains('lactational')));
         expect(
+          find.text(kCycleSettingsPauseReasonLabel),
+          findsNothing,
+          reason:
+              'the whole row goes, label included — a `Reason` label with '
+              'nothing beside it claims a value the screen is not showing',
+        );
+        expect(
           find.widgetWithText(OutlinedButton, kCycleSettingsResumeLabel),
           findsOneWidget,
           reason: 'and they can still resume out of it',
@@ -1297,6 +1304,65 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(pauseCalls, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'an UNPAUSED user whose remembered reason this build has never seen is '
+      'BLOCKED, not armed — no chip is selected, so the CTA that would send '
+      'that reason must not be live (fix round 1 / I-1)',
+      (tester) async {
+        await pumpScreen(
+          tester,
+          read: Fresh(
+            stored(trackingPaused: false, pauseReason: 'lactational'),
+          ),
+        );
+
+        // The card is in its unpaused shape: all five chips drawn…
+        expect(find.text(kCycleSettingsTrackingActiveValue), findsOneWidget);
+        expect(
+          reasonChipLabels(tester),
+          hasLength(CyclePauseReason.values.length),
+        );
+        // …and NOT ONE of them selected, because none of them is the code
+        // this user's row remembers.
+        for (final reason in CyclePauseReason.values) {
+          final chip = tester.widget<LumenSelectableChip>(
+            find.widgetWithText(LumenSelectableChip, reason.label),
+          );
+          expect(
+            chip.selected,
+            isFalse,
+            reason: '${reason.wireName} is not what this user chose',
+          );
+        }
+
+        // So the CTA agrees with the chips: held, with the reason stated.
+        expect(find.text(kCycleSettingsChooseReasonMessage), findsOneWidget);
+        final cta = tester.widget<OutlinedButton>(
+          find.widgetWithText(OutlinedButton, kCycleSettingsPauseLabel),
+        );
+        expect(cta.onPressed, isNull);
+        expect(renderedText(tester).join('\n'), isNot(contains('lactational')));
+
+        // …and the tap is inert at the second code path too. Before the fix
+        // this CTA was live and one press sent `lactational` — a reason the
+        // screen never displayed to the person it was pausing.
+        await tester.tap(
+          find.widgetWithText(OutlinedButton, kCycleSettingsPauseLabel),
+        );
+        await tester.pumpAndSettle();
+        expect(pauseCalls, isEmpty);
+        expect(find.text(kCycleSettingsTrackingPausedValue), findsNothing);
+
+        // The way out is everyone else's way in: pick a reason the screen IS
+        // showing, and the same CTA arms.
+        await tapReasonChip(tester, CyclePauseReason.menopause.label);
+        expect(find.text(kCycleSettingsChooseReasonMessage), findsNothing);
+        await tester.tap(find.text(kCycleSettingsPauseLabel));
+        await tester.pumpAndSettle();
+        expect(pauseCalls, <String>['menopause']);
       },
     );
 
