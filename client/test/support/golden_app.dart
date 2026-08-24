@@ -154,18 +154,46 @@
 //            With a real hint the two are equal and the term is 0; with `null`
 //            there is no hint operand at all. **That float is the only
 //            non-integer term in any blocked rect's position in this app**,
-//            and it is the one quantity the two host font backends disagree
-//            about (Windows placed `baseline_screen`'s editables at y =
+//            and it is the one POSITION the two host font backends were
+//            measured to disagree about — (b) is a second disagreement, about
+//            a block's height, and its mechanism is open
+//            (Windows placed `baseline_screen`'s editables at y =
 //            146.53142, Linux at 146.7608; `day_log_editor`'s at 645.03142 vs
 //            645.7608).
-//        (b) An empty hint is NOT invisible to a blocked-text golden. The
-//            table above shows `''` laying out the same 264 x 21 box as
-//            `'Maya'` — `InputDecorator` stretches the hint to the field —
-//            and Alchemist paints that box as a solid full-width block whose
-//            hard edges land on exact half-pixels (`onboarding_shell`'s two
-//            sat at y = 215.5 and 299.5). A non-antialiased edge exactly on a
-//            half-pixel is a rounding tie, and the two rasterizers broke it
-//            differently: Linux painted 22 rows, Windows 21.
+//        (b) An empty hint is NOT invisible to a blocked-text golden —
+//            MEASURED. The table above shows `''` laying out the same
+//            264 x 21 box as `'Maya'` — `InputDecorator` stretches the hint
+//            to the field — and Alchemist paints that box as a solid
+//            full-width block with hard edges on exact half-pixels
+//            (`onboarding_shell`'s two sat at y = 215.5 and 299.5, painted 21
+//            rows on Windows and 22 on Linux). Deleting the hint deleted the
+//            blocks: 8850 px of `--mut` at 0.6 became plain `--in`, and
+//            nothing else in either image changed.
+//
+//            **WHY the two hosts painted a different number of rows there is
+//            OPEN — and this line is a retraction.** Fix-round-1 wrote that a
+//            non-antialiased edge on an exact half-pixel is a rounding tie the
+//            two rasterizers broke differently, and called that "measured".
+//            It was not measured, and three things it cannot survive:
+//              * `''` and `'Maya'` lay out the SAME box at the SAME dy (the
+//                table above), so "hard-edged block on a half-pixel" is
+//                equally true of every real hint in this app. It cannot be
+//                what separated `onboarding_shell` from the other 70.
+//              * `account_screen_light.png` carries three hint blocks at rows
+//                229..249, 314..334 and 399..419 — 21 rows each, the same
+//                `[x.5, x.5]` hard-edged class — and that golden PASSED on
+//                Linux.
+//              * It contradicts `flutter_test_config.dart`, which says
+//                placement is host-independent while it comes out of integer
+//                or exact-half arithmetic. Both cannot be true.
+//            What IS known: the two blocks existed, the two hosts drew them
+//            with different heights, and they are gone. What is NOT known is
+//            the mechanism, and it cannot be measured from a Windows host —
+//            one Linux render of the pre-fix widget would settle it. Candidate
+//            explanations are recorded in
+//            `.superpowers/sdd/lumen-build/task-25a-review.md` (fix-round-1
+//            re-review, C2); none is measured, and nothing here rests on one.
+//            The fix does not rest on one either: it removes the blocks.
 //
 //      **The fix (fix-round-1): `hint` is `String?` and every no-placeholder
 //      call site passes `null`.** The constructor asserts against `''` so the
@@ -183,17 +211,24 @@
 //      on Linux — carries a blocked-text rect at exactly [185.5, 206.5],
 //      height exactly 21.0, with both edge rows the same exact 50/50 blend
 //      (125, 123, 119). That is the new `baseline_screen` geometry byte for
-//      byte, already proven to cross Windows -> Linux unchanged. What does
-//      NOT survive the crossing is a fractional position (146.53142) or a
-//      hard edge on a half-pixel; the fix produces neither.
+//      byte, already proven to cross Windows -> Linux unchanged. What is
+//      KNOWN not to survive the crossing is a fractional position
+//      (146.53142); the fix produces none. Whether a hard edge on a half-pixel
+//      crosses is OPEN, per (b): `account_screen`'s three such blocks crossed,
+//      `onboarding_shell`'s two did not, and no measurement from this host
+//      separates them. The fix leaves this app with no blocked-text rect that
+//      is not on an exact integer or an exact half-pixel, and the half-pixel
+//      cases that remain are `RenderEditable` rects of the SAME class as
+//      `lumen_input_field`'s, which crossed.
 //
 //      MEASURED AND STILL TRUE, about the images generally:
 //      * Alchemist blocks text through two paints and only one is
 //        antialiased. A `RenderParagraph` child goes through
 //        `BlockedTextPaintingContext.paintChild`, which sets
-//        `isAntiAlias = false` and the text's own colour — hard rows, and a
-//        rounding tie if an edge lands on exactly `.5`. Text painted by a
-//        render object that is NOT a `RenderParagraph` — here that is
+//        `isAntiAlias = false` and the text's own colour — hard rows, with no
+//        coverage blend to record where inside the pixel the edge fell. Text
+//        painted by a render object that is NOT a `RenderParagraph` — here
+//        that is
 //        exclusively `RenderEditable`, i.e. a `TextField` WITH TEXT IN IT —
 //        goes through `BlockedTextCanvasAdapter.drawParagraph`, which draws
 //        with a bare `Paint()`: **opaque black, antialiasing ON**. Its edge
@@ -225,13 +260,20 @@
 //      declared the half-pixel-tie explanation of `onboarding_shell`
 //      *"REFUTED, not merely unverified"*, comparing `onboarding_shell`'s
 //      hints with `account_screen`'s and calling them identical: one set was
-//      `''` and the other real text, which is the entire variable. The tie is
-//      now the measured explanation of (b), not a refuted one. **This is the
-//      FIFTH false self-description this file has carried (rule 6 twice, 7,
-//      8), and the first one that also foreclosed the fix.** The lesson is
-//      narrower than "do not guess": T25a DID separate measured from open and
-//      still shipped this, because the false sentence sat in the MEASURED
-//      half. Cite the file and line for a claim about code, or do not make it.
+//      `''` and the other real text, which is the entire variable. So the tie
+//      is not refuted — but fix-round-1 then flipped it to "the measured
+//      explanation" of (b), which was false in the other direction and is
+//      retracted in (b) above. The honest state is OPEN, and it was OPEN
+//      before either round said otherwise. **That is the SIXTH false
+//      self-description this file has carried (rule 6 twice, 7, 8, T25a's
+//      control case, and fix-round-1's own replacement for it) — the fifth
+//      foreclosed the fix, and the sixth was written by the very round whose
+//      subject was unearned certainty.** The lesson is narrower than "do not
+//      guess": T25a DID separate measured from open and still shipped this,
+//      because the false sentence sat in the MEASURED half; fix-round-1 then
+//      moved a guess INTO that half while correcting the last one. Cite the
+//      file and line for a claim about code, or do not make it — and when the
+//      claim is about a host you cannot run, write OPEN and stop.
 
 import 'package:alchemist/alchemist.dart';
 import 'package:flutter/material.dart';

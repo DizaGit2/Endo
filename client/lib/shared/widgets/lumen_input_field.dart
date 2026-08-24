@@ -77,14 +77,24 @@ import 'package:lumen/core/theme/lumen_tokens.dart';
 ///
 /// So an empty hint, and only an empty hint, injects
 /// `hintBaseline - inputBaseline = 1.031421661376953` into where the text is
-/// PAINTED — and that float is the one quantity in this app that two host font
-/// backends disagree about. It is what reddened four goldens on this branch's
-/// first push. The empty hint is also not invisible to a golden: the table
-/// shows `''` laying out the same 264 x 21 box as `'Maya'`, which Alchemist
-/// paints as a full-width block either way. `null` removes both effects, and
-/// removes nothing a user could see. The constructor asserts against `''` so
-/// the trap cannot be re-entered; `test/support/golden_app.dart` rule 9 has the
-/// whole measurement.
+/// PAINTED — and that float is the only non-integer term in any blocked rect's
+/// position in this app, the one position the two host font backends were
+/// measured to disagree about (146.53142 here, 146.7608 on the CI runner). It
+/// is what reddened four goldens on this branch's first push. The empty hint
+/// is also not invisible to a golden: the table shows `''` laying out the same
+/// 264 x 21 box as `'Maya'`, which Alchemist paints as a full-width block
+/// either way. `null` removes both effects.
+///
+/// It does not remove NOTHING. In the six production fields that carried an
+/// empty hint (five screens; `baseline` has two) the painted input text moves
+/// UP by that same 1.031421661376953 px, and `baseline`'s golden shows the
+/// `suffixText` block moving one row with it. That is a one-pixel shift nobody
+/// will see, in the direction of correctness — it puts the text exactly where
+/// a field with a real placeholder, or with no hint child at all, already puts
+/// it. Say that, rather than "invisible": the golden diff is the record and it
+/// is not empty. The constructor asserts against `''` so the trap cannot be
+/// re-entered; `test/support/golden_app.dart` rule 9 has the whole
+/// measurement.
 ///
 /// Props:
 /// - [controller] — the caller owns it, and must dispose it.

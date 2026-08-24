@@ -1159,9 +1159,11 @@ void main() {
       // is what that resolves to under the test locale.
       expectLabeledButton(tester, find.byType(IconButton), 'Back');
 
-      // The notes box passes `hint: ''` and its caption is `announce: false`,
-      // so `LumenInputField.label` is the ONLY thing that names it — nothing
-      // else in the tree would announce for it if that were dropped.
+      // The notes box passes `hint: null` (P4b-T25a/fix-round-1; `hint: ''`
+      // before it, and neither is announced) and its caption is
+      // `announce: false`, so `LumenInputField.label` is the ONLY thing that
+      // names it — nothing else in the tree would announce for it if that
+      // were dropped.
       expectLabeledField(tester, find.byType(TextField), 'Notes');
     },
   );

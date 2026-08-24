@@ -17,11 +17,14 @@ import 'package:alchemist/alchemist.dart';
 /// insensitive to which GLYPHS are drawn; it does not make it insensitive to
 /// WHERE the blocks land, and believing otherwise is what let four screens
 /// diverge silently until this branch was first pushed. Placement is
-/// host-independent only while it comes out of integer or exact-half
-/// arithmetic — which, since T25a's fix-round-1, it does everywhere in this
-/// app. See `support/golden_app.dart` rule 9 for the measurement, the one
-/// production construct that broke it (`hint: ''`), and the assert that now
-/// prevents it.
+/// host-independent when it comes out of integer arithmetic; since T25a's
+/// fix-round-1 every blocked rect in this app sits on an integer or an exact
+/// half-pixel, and every exact-half rect that has crossed to the Linux runner
+/// so far crossed unchanged — with one exception, `onboarding_shell`'s
+/// empty-hint blocks, which the fix removed rather than explained and whose
+/// mechanism is OPEN. See `support/golden_app.dart` rule 9 for the
+/// measurement, the one production construct that broke it (`hint: ''`), the
+/// assert that now prevents it, and what is still unknown.
 ///
 /// `diffThreshold` stays at Alchemist's default 0.0 (P4b-T21b R14): a tolerance
 /// wide enough to absorb the 614 px seen on that push would also absorb a real

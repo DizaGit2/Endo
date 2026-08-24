@@ -303,8 +303,10 @@ void main() {
     //
     // Equalities, since P4b-T5d. These were anchored patterns under a comment
     // saying the fields announce "Height\ncm" because "Flutter appends the
-    // placeholder" — wrong on both counts, and wrong before T5d too: these two
-    // fields pass `hint: ''`, so nothing was ever appended to them, and a
+    // placeholder" — wrong on both counts, and wrong before T5d too: the
+    // `Height` and `Weight` `LumenInputField`s in `baseline_screen.dart` have
+    // no placeholder to append (`hint: null` since P4b-T25a/fix-round-1, and
+    // `hint: ''` before it — an empty hint is not announced either), and a
     // `suffixText` gets a semantics node of its own beside the field rather
     // than joining its name (`input_decorator.dart:1830-1834`). Measured on
     // both sides of the change.
