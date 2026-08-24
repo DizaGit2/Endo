@@ -453,14 +453,39 @@ List<String> _keysForCreatedItems(List<SymptomResponse> items) {
 /// `occurredAt`, reasoning that it made the answer independent of whether
 /// the caller built a local- or UTC-flavoured `DateTime`. That reasoning was
 /// wrong: the client serialises with built_value's `Iso8601DateTimeSerializer`
-/// (`client/lib/api/serializers.dart:116`), whose `serialize` THROWS
-/// `ArgumentError` on a non-UTC `DateTime` — so any `occurredAt` that can
-/// actually reach the wire is already UTC (`.toUtc()` is a no-op on every
-/// value that gets here and later succeeds), and a local one would crash
-/// INSIDE `write()` with an uncaught `ArgumentError` — neither `DioException`
-/// nor `Failure`, so `cachedWrite` never even reaches this list — long before
-/// this function's answer could matter. `.toUtc()` bought nothing, on either
-/// path.
+/// (`client/lib/api/serializers.dart`), whose `serialize` THROWS
+/// `ArgumentError` on a non-UTC `DateTime`, so any `occurredAt` that actually
+/// reaches the wire is already UTC and `.toUtc()` was a no-op on every value
+/// that got here and later succeeded. M-2's conclusion stands; **its
+/// MECHANISM was wrong in both operative clauses, disproved at T17b by the
+/// implementer and the reviewer independently, and is corrected here rather
+/// than left to be re-derived.**
+///
+/// It said a local `occurredAt` would crash "INSIDE `write()` … neither
+/// `DioException` nor `Failure`, so `cachedWrite` never even reaches this
+/// list — long before this function's answer could matter". Both halves are
+/// false. **(1) The order is inverted:** this function is an EAGER ARGUMENT
+/// EXPRESSION at the `createBatch` call site — `invalidateKeysOnAmbiguousFailure`
+/// takes a `List<String>`, not a callback — so it has already run before
+/// `cachedWrite` is entered, and a later throw can only DISCARD its answer,
+/// never prevent it being computed. **(2) The throw is caught:** the generated
+/// `LumenApiApi.symptomsPost` catches that `ArgumentError` and rethrows a
+/// `DioException(type: unknown)`, which `cachedWrite` very much does catch.
+/// The wrong keys are dropped one link further on, and only by accident:
+/// `mapDioException` maps `unknown` to `UnknownFailure`, and
+/// `_invalidateOnAmbiguousFailure` returns early on anything that is not a
+/// `NetworkFailure` or a `ServerFailure`. **That is a four-file coincidence,
+/// one plausible edit away from going live** (`unknown` → `NetworkFailure`
+/// would do it), **and it is absent from the tests** — every test here drives
+/// a `MockLumenApiApi`, so no serializer ever runs and a local `occurredAt`
+/// would produce the narrowed window with no crash at all.
+///
+/// It is not reachable today: all three `SymptomEntryDraft` construction
+/// sites in `client/lib` pass `occurredAt: null`. [_dayWindow]'s own
+/// normalisation, below, is what makes it unreachable by CONSTRUCTION rather
+/// than by that coincidence. **The boundary is still unguarded** —
+/// `SymptomEntryDraft.occurredAt` is an unvalidated public `DateTime?` — and
+/// that residual is booked for the next phase.
 ///
 /// **T17b — a `.toUtc()` IS back, inside [_dayWindow], and it is not the one
 /// M-2 removed.** M-2's call sat here, on the value handed to
