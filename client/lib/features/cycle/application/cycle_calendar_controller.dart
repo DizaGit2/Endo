@@ -15,6 +15,7 @@ import 'package:lumen/api/model/cycle_calendar_response.dart';
 import 'package:lumen/api/model/cycle_phase_availability_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/core/cache/cached_query.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/time/server_today.dart';
 import 'package:lumen/features/cycle/data/cycle_repository.dart';
 
@@ -301,9 +302,10 @@ class CycleCalendarController extends AsyncNotifier<CycleCalendarView> {
 /// outlive the screen showing it — most concretely, a sign-out on a shared
 /// device must not leave one account's calendar dots resident for the next.
 ///
-/// **`retry: (_, __) => null` — measured, not assumed, the same finding T14's
-/// `sessionTodayProvider` already made and documented in full.** Riverpod's
-/// OWN default retry (`ProviderContainer.defaultRetry`, exponential backoff up
+/// **`retry: lumenRetry` — measured, not assumed, the same finding T14's
+/// `sessionTodayProvider` already made and documented in full, and since
+/// P4b-T26 the app-wide default rather than this screen's private fix.**
+/// Riverpod's OWN default retry (`ProviderContainer.defaultRetry`, exponential backoff up
 /// to 10 attempts) intercepts a thrown [build] before it ever becomes
 /// [AsyncError]: the state sits at `AsyncLoading(error: ..., retrying: true)`
 /// through the whole backoff window instead. That directly contradicts brief
@@ -316,4 +318,4 @@ final cycleCalendarControllerProvider =
     AsyncNotifierProvider.autoDispose<
       CycleCalendarController,
       CycleCalendarView
-    >(CycleCalendarController.new, retry: (_, _) => null);
+    >(CycleCalendarController.new, retry: lumenRetry);

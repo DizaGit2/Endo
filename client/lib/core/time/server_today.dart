@@ -4,6 +4,7 @@ import 'package:lumen/api/api/lumen_api_api.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/core/error/error_mapper.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/network/api_client.dart';
 
 // ---------------------------------------------------------------------------
@@ -195,8 +196,10 @@ final serverTodayRepositoryProvider = Provider<ServerTodayRepository>((ref) {
 /// **What ships:** the [Ref.keepAlive] link is taken SYNCHRONOUSLY, as the
 /// first statement in `create()` — before the only `await` in this function,
 /// so the element is provably still alive (its own `mount()` is what is
-/// currently running) and the call cannot fail. `retry: (_, __) => null`
-/// still opts out of (3). On success the link is simply never closed, so the
+/// currently running) and the call cannot fail. `retry: lumenRetry`
+/// still opts out of (3) — the app-wide policy since P4b-T26, named here as
+/// well because a bare `ProviderContainer` in a test inherits no root scope
+/// to take it from. On success the link is simply never closed, so the
 /// value stays pinned for the rest of the app session exactly as a plain
 /// non-`autoDispose` provider would. On failure the `catch` closes the link
 /// explicitly — un-pinning it — before rethrowing, so the element goes back
@@ -231,4 +234,4 @@ final sessionTodayProvider = FutureProvider.autoDispose<Date>((ref) async {
     link.close();
     rethrow;
   }
-}, retry: (retryCount, error) => null);
+}, retry: lumenRetry);

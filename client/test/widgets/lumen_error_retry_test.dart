@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
+import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/settings/application/profile_controller.dart';
 import 'package:lumen/features/settings/presentation/profile_screen.dart';
@@ -46,13 +47,19 @@ Future<void> _pumpBody(
   );
 }
 
-/// A controller whose build() throws a plain [Error] — Riverpod 3's default
-/// retry policy skips `Error`, so the screen settles in AsyncError instead of
-/// racing a backoff loop.
+/// A controller whose build() throws a [Failure] — the shape production
+/// throws.
+///
+/// It used to throw a plain `StateError`, because riverpod's `defaultRetry`
+/// skips `error is Error` but retries a `Failure`, and a retried build sits in
+/// `AsyncLoading(retrying: true)` — which `AsyncValue.when` routes to
+/// `loading`, so the error body would never have rendered. P4b-T26 moved that
+/// decision to `lumenRetry` at the container, which is what lets this throw
+/// what `MeRepository` throws.
 class _ErrorProfileController extends ProfileController {
   @override
   Future<CacheResult<MeResponse>> build() async {
-    throw StateError('Simulated failure for test.');
+    throw const TlsFailure();
   }
 }
 

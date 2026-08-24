@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'app.dart';
 import 'core/cache/hive_boot.dart';
@@ -27,7 +26,10 @@ Future<void> main() async {
   final store = await initHive();
 
   runApp(
-    ProviderScope(
+    // LumenRootScope, not a bare ProviderScope: the root container also
+    // carries the app-wide retry policy, and a named widget is one a widget
+    // test can mount. See LumenRootScope and lumenRetry.
+    LumenRootScope(
       overrides: [cacheStoreProvider.overrideWithValue(store)],
       child: const LumenApp(),
     ),

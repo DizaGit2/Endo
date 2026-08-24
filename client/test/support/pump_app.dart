@@ -27,6 +27,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumen/app.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/theme/lumen_theme.dart';
 
 import 'golden_app.dart';
@@ -166,7 +167,16 @@ Future<ProviderContainer> _pumpScoped(
     );
   }
 
-  final scope = container ?? ProviderContainer(overrides: overrides);
+  // `retry: lumenRetry` — the SAME function `LumenRootScope` gives the
+  // production container (P4b-T26). Without it a widget test runs on
+  // riverpod's `defaultRetry`, which retries a thrown `Failure` ten times
+  // while publishing `AsyncLoading(retrying: true)`; a screen test of a failed
+  // read would then see a spinner the real app does not show, and a test that
+  // wants the error body would have to throw an `Error` instead of the
+  // `Failure` production throws — which is exactly what two files in this repo
+  // had to do before this existed.
+  final scope =
+      container ?? ProviderContainer(retry: lumenRetry, overrides: overrides);
   if (container == null) {
     addTearDown(scope.dispose);
   }

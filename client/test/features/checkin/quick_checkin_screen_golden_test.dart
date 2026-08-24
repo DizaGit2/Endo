@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/checkin/application/quick_checkin_controller.dart';
 import 'package:lumen/features/checkin/presentation/quick_checkin_screen.dart';
@@ -27,6 +28,12 @@ Widget _sheet(Brightness brightness, QuickCheckinForm form) {
   final c = brightness == Brightness.light ? lumenLight : lumenDark;
 
   return ProviderScope(
+    // Every ProviderScope in this repo names the app's retry policy — the
+    // audit in `provider_retry_policy_test.dart` fails on one that does not.
+    // Inert here (the controller is a fixed form that never fails a build);
+    // named anyway so "app-wide" is a property the source carries rather than
+    // a claim two of three containers happen to satisfy.
+    retry: lumenRetry,
     overrides: [
       quickCheckinControllerProvider.overrideWith(
         () => _FixedQuickCheckinController(form),

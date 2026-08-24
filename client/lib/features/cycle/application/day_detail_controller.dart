@@ -21,6 +21,7 @@ import 'package:lumen/api/model/cycle_day_log_response.dart';
 import 'package:lumen/api/model/cycle_event_response.dart';
 import 'package:lumen/api/model/symptom_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/features/cycle/data/cycle_repository.dart';
 import 'package:lumen/features/symptoms/data/symptoms_repository.dart';
 
@@ -283,13 +284,14 @@ class DayDetailController extends AsyncNotifier<DayDetailView> {
 /// a day's pain/mood/symptom PRESENCE still describes health behaviour, and
 /// this state must not outlive the screen showing it.
 ///
-/// `retry: (_, _) => null` — the same measured finding `sessionTodayProvider`
-/// and `CycleCalendarController` both document: Riverpod's own default retry
+/// `retry: lumenRetry` — the app-wide policy since P4b-T26, and before that
+/// the same measured finding `sessionTodayProvider` and
+/// `CycleCalendarController` both document: Riverpod's own default retry
 /// (exponential backoff up to 10 attempts) would intercept a thrown [build]
 /// before it ever reaches [AsyncError], leaving the screen on an
 /// indeterminate spinner instead of promptly showing [LumenErrorRetry].
 final dayDetailControllerProvider = AsyncNotifierProvider.autoDispose
     .family<DayDetailController, DayDetailView, DateTime>(
       DayDetailController.new,
-      retry: (_, _) => null,
+      retry: lumenRetry,
     );

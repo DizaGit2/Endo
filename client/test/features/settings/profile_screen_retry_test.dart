@@ -67,12 +67,20 @@ void main() {
       await _pump(tester, () {
         attempt++;
         if (attempt == 1) {
-          // A plain Error (not a Failure/Exception) so Riverpod's default
-          // retry policy (ProviderContainer.defaultRetry — up to 10
-          // automatic retries with backoff) does NOT kick in: it explicitly
-          // skips retrying `error is Error`. That keeps this test's timing
-          // deterministic instead of racing the retry timer.
-          throw StateError('Simulated failure for test.');
+          // A `Failure` — the shape `MeRepository.getMe` actually throws for
+          // every non-transient error (`cachedRead`'s `_resolveFailure`
+          // rethrows auth/validation/not-found/TLS/unknown, and answers
+          // Stale/NetworkRequired for the other two).
+          //
+          // Until P4b-T26 this line threw a `StateError` instead, for one
+          // reason: riverpod's `defaultRetry` skips `error is Error` but
+          // retries a `Failure` ten times with backoff, publishing
+          // `AsyncLoading(retrying: true)` — which `AsyncValue.when` routes
+          // to `loading`, so the error body this test is named after never
+          // rendered. **The test was green because it threw something the
+          // app does not throw.** `lumenRetry` is what makes the honest
+          // shape work here, and swapping it back reddens this test.
+          throw const TlsFailure();
         }
         return Fresh(meResponseFixture(id: 'user-1'));
       });

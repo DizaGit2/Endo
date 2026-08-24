@@ -37,6 +37,7 @@ import 'package:lumen/api/model/cycle_settings_response.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/features/cycle/application/cycle_calendar_controller.dart';
 import 'package:lumen/features/home/application/dashboard_controller.dart';
 import 'package:lumen/features/settings/application/cycle_settings_controller.dart';
@@ -208,10 +209,15 @@ void main() {
 
   ProviderContainer buildContainer({
     List<Override> extra = const <Override>[],
-    Duration? Function(int retryCount, Object error)? retry,
   }) {
     final container = ProviderContainer(
-      retry: retry,
+      // `lumenRetry` — the SAME policy `LumenRootScope` gives the production
+      // container and `pump_app.dart` gives every widget test (P4b-T26). A
+      // bare `ProviderContainer` inherits no root scope, so without this line
+      // this file would run on riverpod's `defaultRetry` while the app does
+      // not, and its error assertions would be answering a question about a
+      // container nobody ships.
+      retry: lumenRetry,
       overrides: <Override>[
         cycleSettingsRepositoryProvider.overrideWithValue(repo),
         ...extra,
@@ -307,17 +313,17 @@ void main() {
         stubRead(
           const NetworkRequired<CycleSettingsResponse>(NetworkFailure()),
         );
-        // Retry disabled so this pins the TERMINAL state — the one the
-        // screen's error/retry body renders. Left at riverpod 3.3.2's default
-        // (`ProviderContainer.defaultRetry`) the element re-runs `build` up to
-        // ten times with exponential backoff before it settles on
-        // `AsyncError`, and until then the state is
-        // `AsyncLoading(error: …, retrying: true)`, which `AsyncValue.when`
-        // routes to `loading`. That is a pre-existing, app-wide property of
-        // every `AsyncNotifier` screen here (a `Failure` is neither an `Error`
-        // nor a `ProviderException`, so it is retried) and is recorded in the
-        // T22a report rather than changed by this task.
-        final container = buildContainer(retry: (_, _) => null);
+        // This pins the TERMINAL state — the one the screen's error/retry
+        // body renders — and it now does so through the app's OWN policy
+        // rather than a retry override this test wrote for itself. When T22a
+        // shipped, `buildContainer` took a `retry:` argument and only this
+        // one call site passed it, because riverpod's `defaultRetry` re-runs
+        // a build that threw a `Failure` ten times with exponential backoff
+        // while publishing `AsyncLoading(error: …, retrying: true)`, which
+        // `AsyncValue.when` routes to `loading`. P4b-T26 moved that decision
+        // to `lumenRetry` at the container, so this assertion is now about
+        // production instead of about a container only this test built.
+        final container = buildContainer();
         await settle();
 
         final value = container.read(cycleSettingsControllerProvider);

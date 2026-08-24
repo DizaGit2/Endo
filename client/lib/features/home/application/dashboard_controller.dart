@@ -14,6 +14,7 @@ import 'package:lumen/api/model/cycle_calendar_day.dart';
 import 'package:lumen/api/model/date.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/time/server_today.dart';
 import 'package:lumen/features/cycle/data/cycle_repository.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
@@ -287,8 +288,9 @@ class DashboardController extends AsyncNotifier<CacheResult<DashboardView>> {
 /// this state must not outlive the screen showing it, most concretely on
 /// sign-out on a shared device.
 ///
-/// `retry: (_, __) => null` — the same measured finding documented in full on
-/// `sessionTodayProvider` and `CycleCalendarController`: Riverpod's own
+/// `retry: lumenRetry` — the app-wide policy since P4b-T26, and before that
+/// the same measured finding documented in full on `sessionTodayProvider` and
+/// `CycleCalendarController`: Riverpod's own
 /// default retry (exponential backoff, up to 10 attempts) would intercept a
 /// thrown [build] before it ever reaches [AsyncError], leaving the screen on
 /// an indeterminate spinner instead of promptly reaching the retry surface.
@@ -296,4 +298,4 @@ final dashboardControllerProvider =
     AsyncNotifierProvider.autoDispose<
       DashboardController,
       CacheResult<DashboardView>
-    >(DashboardController.new, retry: (_, _) => null);
+    >(DashboardController.new, retry: lumenRetry);

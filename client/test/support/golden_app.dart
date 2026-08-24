@@ -279,6 +279,7 @@ import 'package:alchemist/alchemist.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/theme/lumen_theme.dart';
 
 /// The golden surface, in logical pixels. The PNG on disk is 30 px taller.
@@ -327,6 +328,12 @@ Widget goldenRouterApp({
 
 Widget _goldenFrame({required Widget app, required List<Override> overrides}) {
   return ProviderScope(
+    // The same policy `LumenRootScope` gives production and `pump_app.dart`
+    // gives widget tests (P4b-T26). Inert for the goldens that exist — rule 5
+    // above forbids goldening a loading state — but a golden frame that
+    // disagreed with the other two containers about when a provider rebuilds
+    // is a difference nobody would think to look for.
+    retry: lumenRetry,
     overrides: overrides,
     child: SizedBox(
       width: kGoldenWidth,

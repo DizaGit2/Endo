@@ -51,10 +51,12 @@ class _PendingProfileController extends ProfileController {
 class _ErrorProfileController extends ProfileController {
   @override
   Future<CacheResult<MeResponse>> build() async {
-    // A plain Error (not a Failure/Exception) so Riverpod's default retry
-    // policy doesn't kick in — see profile_screen_retry_test.dart for the
-    // same trick.
-    throw StateError('Simulated failure for test.');
+    // A `Failure` — what `MeRepository.getMe` actually throws. Until P4b-T26
+    // this threw a plain `StateError`, because riverpod's `defaultRetry`
+    // skips `error is Error` but retries a `Failure` behind
+    // `AsyncLoading(retrying: true)`, and the error body never rendered. The
+    // app-wide `lumenRetry` is what lets the honest shape work here.
+    throw const TlsFailure();
   }
 }
 
