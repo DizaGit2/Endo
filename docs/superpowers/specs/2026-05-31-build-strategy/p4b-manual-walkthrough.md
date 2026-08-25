@@ -101,6 +101,51 @@ then probe again. **Do not start the walk on an un-probed Vault.**
 
 ---
 
+### Trap C — **`/health` cannot tell a healthy stack from a healthy STALE one.**
+
+**Found the hard way on 2026-08-25**, during the first real run of this walk. Every pre-flight probe in §2
+passed — `docker compose ps` healthy, `pg_isready` accepting, Keycloak's issuer resolving, and
+`/health` returning `status : healthy`. Registration worked, Keycloak signed the account in, the Custom Tab
+closed, the app resumed… and dead-ended on **"The requested resource was not found."**
+
+The cause: **the running `api` container had been built on 2026-06-14** — P3a-era, predating the entire P4a
+backend — and had been up for 13 hours reporting healthy the whole time. `GET /onboarding/state` returned
+**404**, and the API log said why:
+
+```
+Request reached the end of the middleware pipeline without being handled by application code.
+Request path: GET http://10.0.2.2:8085/onboarding/state, Response status code: 404
+```
+
+That is a **routing** 404, not a data one. The endpoint is mapped at `OnboardingEndpoints.cs:210`; it simply
+did not exist in that image. **`/health` is served by `Program.cs` and answers identically on every build
+ever made**, so it proves the container is *running* and proves nothing about *what is in it*.
+
+**Probe the ROUTES, not the health check.** Add this to §2 and read every line:
+
+```powershell
+'/onboarding/state','/symptoms','/settings/cycle','/cycle/calendar','/me' | ForEach-Object {
+  $c = try { (Invoke-WebRequest "http://localhost:8085$_" -UseBasicParsing).StatusCode }
+       catch { $_.Exception.Response.StatusCode.value__ }
+  '{0,-22} -> {1}' -f $_, $c
+}
+```
+
+**Every line must print `401`** — mapped, and refusing you because you are not authenticated. **A `404`
+means that endpoint is not in the running build** and the walk will fail somewhere downstream, usually in a
+way that looks like an app bug. Recovery:
+
+```powershell
+docker compose -f deploy/docker-compose.yml up -d --build api
+```
+
+**Why this is worth its own trap.** No test in the repo can catch it. The `test/flows/` suite fakes at
+`LumenApiApi`, so it never learns whether an endpoint is *mapped*; the backend integration tests exercise
+the API **in-process**, not the container. Only a real client against a real container finds it — which is
+the entire argument for this walk existing.
+
+---
+
 ## 2. Bring the stack up and prove it is answering
 
 Run each command and **read its output** — an exit code of 0 is not the assertion here.
@@ -205,7 +250,7 @@ used on this stack.
 - you land in **onboarding**, on **step 3 of 7 · Cycle** — not on the dashboard, and not back on welcome.
 
 **Failure:** the Custom Tab does not open, or closes without returning to the app; the app lands anywhere
-other than onboarding; `GET /me` errors (if you see the splash's retry surface here, **re-read Trap A**).
+other than onboarding; `GET /me` errors. **If you see the splash's retry surface here, it is Trap A or Trap C, and they look identical from the app.** Tell them apart from the API log, not the screen: `docker compose -f deploy/docker-compose.yml logs api --tail 40`. A **200 on `/me` followed by a 404 on `/onboarding/state`** is **Trap C** (stale build) — that exact pair is what the 2026-08-25 run hit. A **failing `/me`** is Trap A (reused account).
 
 **Record:** the account address you created. T25's STATUS entry needs it so a later session does not reuse it.
 
@@ -315,6 +360,34 @@ gated on anything; the card claiming Paused when the request failed.
 **Failure:** any spinner that outlives the failure (this is the shape P4b-T26 removed — a read failure used to
 spin for ~38 seconds behind ten silent retries); a lost answer after a failed write; being signed out by a
 restart.
+
+---
+
+## 3.1 Walk log — 2026-08-25 (partial, steps 1–4)
+
+**Run by:** the P4b build session, on the `lumen` AVD, against `HEAD` at the time (`0313271`, P4b at
+43/43 `NEEDS_REVIEW`). **Recorded here rather than in STATUS because it is INCOMPLETE** — steps 5–9 have
+not been performed, and a partial walk must not be pasted into STATUS as if it satisfied R-06 (ii).
+
+**Environment:** Android emulator `emulator-5554` (AVD `lumen`), `com.lumen.lumen`, built from branch source
+with the default `--dart-define`s (`10.0.2.2:8085` / `10.0.2.2:8080` — correct for an emulator, override
+only for a physical device). Compose stack up; **`api` image rebuilt mid-walk** — see Trap C.
+**Account created: `p4bwalk08251612@example.com`** (password `WalkP4b-2026!`, display name `Carolina`).
+**Do not reuse it** — create a fresh one for the next run (Trap A).
+
+| Step | Result | Evidence |
+|---|---|---|
+| **1 — Cold start, signed out** | **PASS** | After `adb shell pm clear com.lumen.lumen`, a true first-ever launch resolves splash → **welcome**. No hanging spinner, no dashboard flash, no crash. |
+| **2 — Theme on a real panel** | **PASS** | `cmd uimode night yes/no`. Dark renders the documented "witchy" palette — deep plum-black ground, cream ink `#F2E4D4`, moonlit-gold accent `#E8A87C`, sage eyebrow. **No Material blue anywhere, no black-on-black, no white flash.** Light renders the warm-sand palette. |
+| **3 — Register a NEW account** | **PASS, after Trap C** | Custom Tab opened on **Keycloak's own page** at `10.0.2.2:8080` (`CustomTabActivity` confirmed top-resumed); after sign-in the tab **closed and the app resumed by itself** (`com.lumen.lumen/.MainActivity` top-resumed); landed on **step 3 of 7 · Cycle**. **First attempt dead-ended on the retry surface — that was Trap C, not the app.** After rebuilding `api`, **"Try again" recovered cleanly**, which also exercises the designed error/retry state on a real device. |
+| **4 — Onboarding persistence (the T8b shape)** | **PASS** | On step 3, deliberately changed **both** defaults (cycle length 28 → **27**, regularity Somewhat → **Irregular**) and picked **15 Aug**, so any revert would be visible. Advanced to step 4, **killed the app**, relaunched (resume read), and returned via the **on-screen chevron**: all three came back as chosen. **No pre-save values.** Note screen 3 has **no** chevron (correct — there is no going back to account creation) while screen 4 does. Future dates (27–31 Aug) are correctly greyed out, and **Continue is disabled until a date is picked**. |
+| **5–9** | **NOT RUN** | Out the other side; quick check-in; log a symptom; pause/resume twice; offline + backgrounding + cold restart. |
+
+**One observation carried forward, not yet judged:** the **hardware/system back** button on step 4 **exited
+the app to the launcher** rather than moving back a step. The on-screen chevron behaves correctly. Whether
+system-back should be trapped inside onboarding is a **product question**, not obviously a defect — screen
+12 deliberately has a `PopScope` and onboarding may reasonably not. **Decide it deliberately; do not let it
+be settled by whoever notices it next.**
 
 ---
 
