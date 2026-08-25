@@ -1319,6 +1319,8 @@ The T3 caveat is still the right ruling but its *reason* has moved, and a review
 
 #### Bookings carried out of P4b — one deduplicated list (R5)
 
+> **Numbering note (added at audit):** the table has **45 rows** with IDs running to **B-48** — **B-11, B-14 and B-24 do not exist.** They were drafted, then dropped during collation when re-verification at HEAD showed the underlying item was **already closed** (T25a's Linux-parity expectation, closed by CI evidence; T5b's *"step N of 7"* visual-only note, fixed at `lumen_step_chrome.dart:84-85`; and `mood_labels.dart`'s false `_kMoodLabels` citation, corrected in the file itself). **The IDs are deliberately not renumbered**, so any reference already made to a row still resolves. *Nothing is hidden in the gaps — relaying a closed item as open would be the same failure as losing an open one, inverted.*
+
 `progress.md` mentions `T25` **51 times** (57 raw, minus 6 that are the unrelated task `T25a`). Swept and deduplicated; **where a booking named a file I re-verified it at HEAD rather than relaying it.** Full context per row is in the T25 report. **H** = needs a decision or an owner before launch · **M** = will cost a later phase real time · **L** = tidy-up.
 
 | # | What | Where | Sev | Owner |
