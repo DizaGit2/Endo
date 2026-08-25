@@ -77,14 +77,14 @@ jobs:
       # -----------------------------------------------------------------------
       # Timezone-sensitive tests, re-run on a positive-offset DST zone (P4b-T17b)
       #
-      # ⚠ STATUS: UNCONFIRMED — this step is NOT yet a control.
-      # It has never been observed to go red. The plan requires a deliberate
-      # red (put `.subtract(const Duration(days: 1))` back in `_dayWindow`,
-      # push, watch this fail) before it may be cited as evidence of anything.
-      # That could not be done on the branch that added it: the branch had no
-      # upstream and CI had never run. Until someone does it and records the
-      # result, treat a green here as "the step executed", not "the DST
-      # behaviour is pinned".
+      # ✅ STATUS: CONFIRMED 2026-08-24 — this step IS a control, because it
+      # has been watched to fail. (This header previously read UNCONFIRMED and
+      # was left stale when the evidence block below was added; the audit at
+      # P4b close caught the file contradicting itself, which is the same
+      # defect class this step exists to prevent.) The full evidence is in the
+      # CONFIRMED block further down; in short: the deliberate red was run on a
+      # throwaway branch, the whole 2113-test suite passed WITH the defect in
+      # place on both hosts, and only this step went red.
       #
       # WHAT IT IS FOR. Three P4b tests are unprovable on the primary dev
       # machine (Windows, UTC−6, no DST since 2022):
