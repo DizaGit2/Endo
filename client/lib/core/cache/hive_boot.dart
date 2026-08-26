@@ -64,6 +64,7 @@ Future<CacheStore> initHive({
         ),
       );
 
+  // lumen:allow-device-clock cache TTL, not a cycle date (D-12); overridable seam
   final effectiveClock = clock ?? DateTime.now;
 
   // ── AES key bootstrap ──────────────────────────────────────────────────
@@ -188,10 +189,12 @@ class CacheStore {
 ///
 /// This provider has no real default: the [CacheStore] can only be produced
 /// asynchronously (via [initHive]), so app startup MUST override it at the
-/// root [ProviderScope] once [initHive] resolves — see `main.dart`:
+/// root [ProviderScope] once [initHive] resolves — see `main.dart`, which
+/// builds that scope through `LumenRootScope` (`app.dart`) so the root
+/// container also carries the app-wide retry policy:
 /// ```dart
 /// final store = await initHive();
-/// runApp(ProviderScope(
+/// runApp(LumenRootScope(
 ///   overrides: [cacheStoreProvider.overrideWithValue(store)],
 ///   child: const LumenApp(),
 /// ));

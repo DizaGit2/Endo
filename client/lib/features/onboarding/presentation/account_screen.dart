@@ -3,11 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
 import 'package:lumen/features/onboarding/application/account_controller.dart';
-import 'package:lumen/shared/widgets/lumen_section_label.dart';
+import 'package:lumen/features/onboarding/application/account_validation.dart';
+import 'package:lumen/shared/widgets/lumen_error_banner.dart';
+import 'package:lumen/shared/widgets/lumen_input_field.dart';
+import 'package:lumen/shared/widgets/lumen_step_chrome.dart';
+import 'package:lumen/shared/widgets/lumen_step_dots.dart';
 
-// D-01: social login deferred to phase 2.
-// The mockup shows "Apple · Google" buttons — omitted in v1 (Keycloak email/
-// password only per architecture §A).
+// D-01 was REOPENED on 2026-07-08: social login is IN for v1, and lands in its
+// own phase, P4c. The mockup's "Apple · Google" buttons are therefore not
+// dropped — they are simply not this phase's work, and P4b must not add them.
+// Until P4c, registration is Keycloak email/password only (architecture §A).
 
 /// Screen 2 — Create your account / sign in (onboarding step 2 of 7).
 ///
@@ -18,7 +23,13 @@ import 'package:lumen/shared/widgets/lumen_section_label.dart';
 /// States:
 /// - Idle  — form is editable, submit button shows label.
 /// - Loading — submit button shows [CircularProgressIndicator].
-/// - Error — inline red banner above the submit button, form still editable.
+/// - Error — inline banner above the submit button, plus a message under each
+///   rejected field, form still editable and still holding what was typed.
+///
+/// **Rejections have one rendering path** (P4b-T7). [AccountController]
+/// answers a locally-invalid form with the same [ValidationFailure] shape a
+/// server 400 produces — `fields` keyed by the camelCase wire name — so
+/// `messageFor` below does not know or care which end rejected the form.
 class AccountScreen extends ConsumerStatefulWidget {
   const AccountScreen({super.key});
 
@@ -69,7 +80,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
 
     // Extract failure message when in error state.
     final failure = state is AsyncError ? state.error : null;
-    final errorMessage = _failureMessage(failure);
+    final errorMessage = _bannerMessage(failure);
+    // Non-null only for a rejection that named fields; every other failure
+    // leaves all three fields clean and speaks through the banner alone.
+    final rejected = failure is ValidationFailure ? failure : null;
 
     return Scaffold(
       backgroundColor: c.surface,
@@ -85,13 +99,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Section tag
+                        // Section tag — [LumenStepChrome], so the position is
+                        // announced as "Step 2 of 7" rather than as the
+                        // uppercased eyebrow a screen reader would otherwise
+                        // spell out. Same pixels as the bare label it replaces.
                         const Center(
-                          child: LumenSectionLabel(
-                            'Step 2 of 7',
-                            fontSize: 11,
-                            letterSpacing: 1.5,
-                          ),
+                          child: LumenStepChrome(step: 2, totalSteps: 7),
                         ),
 
                         const SizedBox(height: 14),
@@ -125,11 +138,14 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         // Name field
                         _FieldLabel('Name', color: c.muted),
                         const SizedBox(height: 6),
-                        _InputField(
+                        LumenInputField(
                           controller: _nameCtrl,
+                          label: 'Name',
                           hint: 'Maya',
-                          colors: c,
                           enabled: !isLoading,
+                          errorText: rejected?.messageFor(
+                            AccountFields.displayName,
+                          ),
                         ),
 
                         const SizedBox(height: 14),
@@ -137,12 +153,13 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         // Email field
                         _FieldLabel('Email', color: c.muted),
                         const SizedBox(height: 6),
-                        _InputField(
+                        LumenInputField(
                           controller: _emailCtrl,
+                          label: 'Email',
                           hint: 'you@example.com',
-                          colors: c,
                           keyboardType: TextInputType.emailAddress,
                           enabled: !isLoading,
+                          errorText: rejected?.messageFor(AccountFields.email),
                         ),
 
                         const SizedBox(height: 14),
@@ -150,12 +167,15 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         // Password field
                         _FieldLabel('Password', color: c.muted),
                         const SizedBox(height: 6),
-                        _InputField(
+                        LumenInputField(
                           controller: _passwordCtrl,
+                          label: 'Password',
                           hint: '••••••••',
-                          colors: c,
                           obscure: true,
                           enabled: !isLoading,
+                          errorText: rejected?.messageFor(
+                            AccountFields.password,
+                          ),
                         ),
 
                         const Spacer(),
@@ -163,7 +183,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         // Inline error message
                         if (errorMessage != null) ...[
                           const SizedBox(height: 16),
-                          _ErrorBanner(message: errorMessage, colors: c),
+                          LumenErrorBanner(message: errorMessage),
                         ],
 
                         const SizedBox(height: 16),
@@ -219,19 +239,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         const SizedBox(height: 18),
 
                         // Step-indicator dots (7 total, second is active)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            for (var i = 0; i < 7; i++) ...[
-                              if (i > 0) const SizedBox(width: 6),
-                              _StepDot(
-                                active: i == 1,
-                                color: c.accent,
-                                border: c.border,
-                              ),
-                            ],
-                          ],
-                        ),
+                        const LumenStepDots(count: 7, activeIndex: 1),
                       ],
                     ),
                   ),
@@ -249,8 +257,23 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
 // Helpers — failure message
 // ---------------------------------------------------------------------------
 
-String? _failureMessage(Object? failure) {
+/// What the banner above the CTA says, or `null` when there is nothing wrong.
+///
+/// The banner is never suppressed in favour of the field errors, even though
+/// they say more: it is the screen's only live region, so dropping it would
+/// mean a screen-reader user got no announcement at all that the submit had
+/// failed — the field messages are ordinary nodes and stay silent until
+/// swiped onto.
+///
+/// For a [ValidationFailure] it prefers the server's reserved
+/// [ValidationFailure.requestKey] messages, which are the cross-field errors
+/// that name no input and would otherwise render nowhere.
+String? _bannerMessage(Object? failure) {
   if (failure == null) return null;
+  if (failure is ValidationFailure) {
+    final crossField = failure.requestMessages;
+    return crossField.isEmpty ? failure.message : crossField.first;
+  }
   if (failure is Failure) return failure.message;
   return 'An unexpected error occurred.';
 }
@@ -269,127 +292,6 @@ class _FieldLabel extends StatelessWidget {
     return Text(
       text,
       style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: color),
-    );
-  }
-}
-
-class _InputField extends StatelessWidget {
-  const _InputField({
-    required this.controller,
-    required this.hint,
-    required this.colors,
-    this.obscure = false,
-    this.keyboardType,
-    this.enabled = true,
-  });
-
-  final TextEditingController controller;
-  final String hint;
-  final LumenColors colors;
-  final bool obscure;
-  final TextInputType? keyboardType;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      keyboardType: keyboardType,
-      enabled: enabled,
-      style: TextStyle(fontSize: 14, color: colors.ink),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(
-          color: colors.muted.withValues(alpha: 0.6),
-          fontSize: 14,
-          fontWeight: FontWeight.w400,
-        ),
-        filled: true,
-        fillColor: colors.input,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 13,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colors.border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colors.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colors.accent),
-        ),
-        disabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colors.border),
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message, required this.colors});
-  final String message;
-  final LumenColors colors;
-
-  @override
-  Widget build(BuildContext context) {
-    // liveRegion: true — a screen reader announces this banner as soon as it
-    // appears, rather than staying silent about a failed registration/sign-in
-    // attempt until the user happens to swipe onto it.
-    return Semantics(
-      liveRegion: true,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: colors.accentSoft,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: colors.accent.withValues(alpha: 0.3)),
-        ),
-        child: Text(
-          message,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w400,
-            color: colors.accent,
-            height: 1.4,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A single step-indicator dot.
-///
-/// Active: accent colour, wider (18×6) pill. Inactive: border colour, circle.
-class _StepDot extends StatelessWidget {
-  const _StepDot({
-    required this.active,
-    required this.color,
-    required this.border,
-  });
-
-  final bool active;
-  final Color color;
-  final Color border;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      width: active ? 18 : 6,
-      height: 6,
-      decoration: BoxDecoration(
-        color: active ? color : border,
-        borderRadius: BorderRadius.circular(active ? 3 : 50),
-      ),
     );
   }
 }

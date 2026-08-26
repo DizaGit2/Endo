@@ -23,9 +23,20 @@ namespace Lumen.Api.Cycle;
 /// describes the row's desired FINAL state: a <see langword="null"/> <see cref="Notes"/> or
 /// <see cref="FlowIntensity"/> <b>clears</b> the stored value rather than leaving it alone. That is
 /// safe here and only here, because <c>cycle_events</c> is a <b>single-writer, small row</b> — one
-/// screen (screen 10/11's period controls) owns all four fields and always submits them together, so
-/// the body genuinely does describe the row's whole state, and clearing is the only way the user can
-/// take a flow level back off an event.</para>
+/// screen owns all four fields and always submits them together, so the body genuinely does describe
+/// the row's whole state, and clearing is the only way the user can take a flow level back off an
+/// event.</para>
+///
+/// <para><b>That writer is screen 11's period editor</b> (Flutter
+/// <c>PeriodEditorScreen</c> / <c>PeriodEditorController</c>, P4b-T16c), a bottom sheet over the day
+/// detail. It seeds every control from the day's existing event and its save sends all four fields
+/// unconditionally — there are deliberately no "touched" flags on that surface, because on this
+/// endpoint an omitted field is a delete. Screen 10 (the cycle calendar) writes nothing: ruling R-10
+/// keeps this endpoint to a single writer.
+/// <b>Corrected at P4b-T16c.</b> Until that task shipped, this paragraph named
+/// <i>"screen 10/11's period controls"</i> — and a re-survey of all 38 mockups found that Lumen had
+/// no period-logging surface of any kind. The safety argument for FULL UPSERT rested on controls that
+/// did not exist; building them is what made it true.</para>
 ///
 /// <para><b>The other rule is on <see cref="LogCycleDayRequest"/> (<c>POST /cycle/day/{date}</c>),
 /// which MERGES</b> — an omitted field there is left alone. The two are deliberately different and

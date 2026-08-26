@@ -49,6 +49,7 @@ This statement is **materially inaccurate** — data is server-stored (encrypted
 
 ### L-05 🔴 Privacy policy + subprocessor disclosure
 Full privacy policy (ES + EN) covering: special-category data (Arts. 9 & 13), the subprocessor table (FCM/APNs, Anthropic + US SCC transfer + zero-retention, off-site EU backup provider), the **crypto-shred** erasure model, data-subject rights (access/erasure/portability), DPO contact. ______
+**Added 2026-08-22 (P4b-T22c) — a specific shipped claim now needs clearing, not just the policy.** Screen 36, live at `/more/privacy` since T22c, renders an **"Encryption status — AES-256 ✓"** row. P4a's STATUS already records that the *"erased data remains encrypted and unreadable"* framing is **false for plaintext health data** (§D mandates plaintext columns, so destroying the DEK does nothing for those rows), and the **backup horizon is UNBOUNDED** (§G defines a nightly `pg_dump` with no expiry, so crypto-shred does not reach backups). That row now sits three rows above a live account-erasure button, where a user reads it as a guarantee about the deletion they are about to request. **The product owner was shown this on 2026-08-22, chose to keep the row pending this review, and accepted the interim risk.** Needed: cleared wording for the row, or a decision to cut it.
 **Owner / date:** ____________
 
 ### L-06 🔴 Terms of Service
@@ -59,11 +60,13 @@ Full ToS (ES + EN), including the non-medical-service positioning. ______
 - Retention per category (active data, logs, backups, export zips): ______
 - Inactive-account purge policy: ______
 - Deletion UX: re-auth required? typed confirmation? grace period before crypto-shred? ______
+  **The UX now EXISTS as of P4b-T22c (2026-08-22) — you are confirming a shipped flow, not designing one.** As built: the "Delete all data" row on screen 36 opens a plain confirmation dialog (Cancel / Delete, destructive not the default); **no re-authentication**, **no typed confirmation**, **no grace period** — `DELETE /me` is called on confirm and the crypto-shred job is enqueued immediately. On the `202` the app reports **receipt only** ("Deletion request received. It is being processed.") and signs the user out, because the call disables the Keycloak identity. A typed-confirmation gate was deliberately **not** invented — it is a product decision nobody had made. **If any of re-auth, typed confirmation or a grace period is legally required, say so here and it becomes a code change.**
 - Confirm crypto-shred propagation to backups satisfies erasure obligations. ______
 **Owner / date:** ____________
 
-### L-08 🟠 Warrant-canary statement (screen 36 "never received a data request")
+### L-08 🔴 Warrant-canary statement (screen 36 "never received a data request") — **NOW LIVE (P4b-T22c, 2026-08-22)**
 Confirm wording, who owns its accuracy, and the update/removal process if a request is ever received. ______
+**Escalated 🟠 → 🔴 and no longer hypothetical.** Until T22c, screen 36 was registered in **no route table** — the canary existed in the source and reached no user. T22c routes the screen at `/more/privacy` to wire account erasure, so **the statement now ships.** A canary's entire value is that someone *removes* it when it stops being true; a static one with no owner, no date and no review process can only ever mislead, and it misleads in the direction users act on. **The product owner was shown this on 2026-08-22, chose to keep it on screen pending this review, and accepted the interim risk.** Needed: the owner, the review cadence, and the removal trigger — or a decision to cut it.
 **Owner / date:** ____________
 
 ### L-09 🔴 Social-login subprocessors & consent text — **LIVE (D-01 reopened 2026-07-08: Apple/Google login IS in v1, phase P4c)**

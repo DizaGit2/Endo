@@ -47,6 +47,7 @@ class AuthInterceptor extends Interceptor {
   })  : _store = tokenStore,
         _refresh = refresh, // ignore: prefer_initializing_formals
         _onAuthLost = onAuthLost, // ignore: prefer_initializing_formals
+        // lumen:allow-device-clock token expiry, not a cycle date (D-12); overridable seam
         _clock = clock ?? DateTime.now;
 
   final TokenStore _store;

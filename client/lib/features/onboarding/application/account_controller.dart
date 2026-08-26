@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/features/onboarding/application/account_validation.dart';
 import 'package:lumen/features/onboarding/data/onboarding_repository.dart';
 
 // ---------------------------------------------------------------------------
@@ -29,6 +30,12 @@ class AccountController extends AsyncNotifier<void> {
 
   /// Creates a new account, then triggers the OIDC login flow.
   ///
+  /// 0. Runs [AccountValidation.validate] FIRST. A form the server would
+  ///    certainly reject never leaves the device: state becomes [AsyncError]
+  ///    holding a [ValidationFailure] keyed exactly the way a server 400 is,
+  ///    and no request is issued (P4b-T7). The rules are a strict *subset* of
+  ///    the server's — see `account_validation.dart` for what is deliberately
+  ///    left to the server.
   /// 1. Calls [OnboardingRepository.startOnboarding] with the supplied fields.
   /// 2. On success, calls [AuthController.login] so a Keycloak session is
   ///    established and the router guard redirects to /profile.
@@ -43,6 +50,19 @@ class AccountController extends AsyncNotifier<void> {
     required String password,
     required String displayName,
   }) async {
+    final invalid = AccountValidation.validate(
+      email: email,
+      password: password,
+      displayName: displayName,
+    );
+    if (invalid != null) {
+      // Not routed through AsyncValue.guard: there is nothing to guard, and
+      // passing through AsyncLoading first would flash the spinner and disable
+      // the three fields for a frame on a submit that never left the device.
+      state = AsyncError<void>(invalid, StackTrace.current);
+      return;
+    }
+
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       try {

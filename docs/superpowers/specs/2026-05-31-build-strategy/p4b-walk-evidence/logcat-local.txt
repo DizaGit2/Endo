@@ -1,0 +1,143 @@
+08-25 16:29:34.398 W/ActivityTaskManager(  605): Force removing ActivityRecord{73c9889 u0 com.lumen.lumen/.MainActivity t50 f}}: app died, no saved state
+08-25 16:29:34.448 W/ActivityTaskManager(  605): Unable to send transaction to client proc com.lumen.lumen: no app thread
+08-25 16:29:34.705 W/ActivityTaskManager(  605): Unable to send transaction to client proc com.lumen.lumen: no app thread
+08-25 16:29:34.891 I/ActivityTaskManager(  605): START u0 {flg=0x10000000 cmp=com.lumen.lumen/.MainActivity} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+08-25 16:29:35.603 D/FlutterJNI(29289): flutter (null) was loaded normally!
+08-25 16:29:36.482 I/flutter (29289): [IMPORTANT:flutter/shell/platform/android/android_context_gl_impeller.cc(104)] Using the Impeller rendering backend (OpenGLES).
+08-25 16:29:36.572 I/flutter (29289): The Dart VM service is listening on http://127.0.0.1:38927/qfWbZStp_gQ=/
+08-25 16:29:39.388 I/ActivityTaskManager(  605): Displayed com.lumen.lumen/.MainActivity for user 0: +4s590ms
+08-25 16:29:39.388 I/ActivityTaskManager(  605): Fully drawn com.lumen.lumen/.MainActivity: +4s590ms
+08-25 16:31:14.638 I/flutter (29289): [Dio ▶] POST /onboarding/start
+08-25 16:31:15.399 I/flutter (29289): [Dio ◀] 200 POST /onboarding/start
+08-25 16:31:16.408 I/ActivityTaskManager(  605): START u0 {cmp=com.lumen.lumen/net.openid.appauth.AuthorizationManagementActivity (has extras)} with LAUNCH_SINGLE_TASK from uid 10209 (BAL_ALLOW_VISIBLE_WINDOW) result code=0
+08-25 16:31:16.695 I/ActivityTaskManager(  605): START u0 {act=android.intent.action.VIEW dat=http://10.0.2.2:8080/... flg=0x800000 pkg=com.android.chrome cmp=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity (has extras)} with LAUNCH_MULTIPLE from uid 10145 (BAL_ALLOW_VISIBLE_WINDOW) result code=0
+08-25 16:31:16.836 D/CoreBackPreview(  605): Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@d9b6a6e, mPriority=-1, mIsAnimationCallback=false}
+08-25 16:31:16.836 D/CoreBackPreview(  605): Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@4ae050f, mPriority=0, mIsAnimationCallback=true}
+08-25 16:31:17.562 I/ActivityTaskManager(  605): Displayed com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity for user 0: +870ms
+08-25 16:31:17.567 V/WindowManagerShell(  855): onTransitionReady (#48) android.os.BinderProxy@472621a: {id=48 t=OPEN f=0x0 trk=0 opt={t=FROM_STYLE} r=[0@Point(0, 0)] c=[{null m=OPEN f=FILLS_TASK leash=Surface(name=ActivityRecord{7954d6c u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0x2a09c41 sb=Rect(0, 0 - 0, 0) eb=Rect(0, 0 - 1080, 2400) d=-1->0 r=-1->0:-1 bc=ffffffff component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},{null m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity)/@0x94485e6 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=ffffffff component=com.lumen.lumen/.MainActivity}]}
+08-25 16:31:17.581 V/WindowManagerShell(  855): Transition doesn't have explicit remote, search filters for match for {id=48 t=OPEN f=0x0 trk=0 opt={t=FROM_STYLE} r=[0@Point(0, 0)] c=[{null m=OPEN f=FILLS_TASK leash=Surface(name=ActivityRecord{7954d6c u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0x2a09c41 sb=Rect(0, 0 - 0, 0) eb=Rect(0, 0 - 1080, 2400) d=-1->0 r=-1->0:-1 bc=ffffffff component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},{null m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity)/@0x94485e6 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=ffffffff component=com.lumen.lumen/.MainActivity}]}
+08-25 16:31:17.583 V/WindowManager(  605):         {null m=OPEN f=FILLS_TASK leash=Surface(name=ActivityRecord{7954d6c u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0x8fe2121 sb=Rect(0, 0 - 0, 0) eb=Rect(0, 0 - 1080, 2400) d=-1->0 r=-1->0:-1 bc=ffffffff component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},
+08-25 16:31:17.588 V/WindowManagerShell(  855): start default transition animation, info = {id=48 t=OPEN f=0x0 trk=0 opt={t=FROM_STYLE} r=[0@Point(0, 0)] c=[{null m=OPEN f=FILLS_TASK leash=Surface(name=ActivityRecord{7954d6c u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0x2a09c41 sb=Rect(0, 0 - 0, 0) eb=Rect(0, 0 - 1080, 2400) d=-1->0 r=-1->0:-1 bc=ffffffff component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},{null m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity)/@0x94485e6 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=ffffffff component=com.lumen.lumen/.MainActivity}]}
+08-25 16:32:36.464 D/CoreBackPreview(  605): Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@14bcd4e, mPriority=0, mIsAnimationCallback=true}
+08-25 16:32:36.464 D/ImeInsetsSourceProvider(  605): showImePostLayout cancelled, isScheduledAndReadyToShowIme: false, mImeRequester: Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}, serverVisible: false, frozen: false, mWindowContainer is: non-null, windowState: Window{5a174dc u0 InputMethod}, isDrawn: false, mGivenInsetsPending: false, dcTarget: Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}, controlTarget: Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}
+08-25 16:32:37.327 D/ImeInsetsSourceProvider(  605): showImePostLayout cancelled, isScheduledAndReadyToShowIme: true, mImeRequester: Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}, serverVisible: true, frozen: false, mWindowContainer is: non-null, windowState: Window{5a174dc u0 InputMethod}, isDrawn: true, mGivenInsetsPending: false, dcTarget: Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}, controlTarget: Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}
+08-25 16:32:38.418 D/ImeInsetsSourceProvider(  605): showImePostLayout cancelled, isScheduledAndReadyToShowIme: true, mImeRequester: Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}, serverVisible: true, frozen: false, mWindowContainer is: non-null, windowState: Window{5a174dc u0 InputMethod}, isDrawn: true, mGivenInsetsPending: false, dcTarget: Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}, controlTarget: Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}
+08-25 16:32:40.613 I/ActivityTaskManager(  605): START u0 {act=android.intent.action.VIEW cat=[android.intent.category.BROWSABLE] dat=com.lumen.app:/... flg=0x14000000 pkg=com.lumen.lumen cmp=com.lumen.lumen/net.openid.appauth.RedirectUriReceiverActivity (has extras)} with LAUNCH_MULTIPLE from uid 10145 (BAL_ALLOW_VISIBLE_WINDOW) result code=0
+08-25 16:32:40.676 D/CoreBackPreview(  605): Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@5a58310, mPriority=0, mIsAnimationCallback=true}
+08-25 16:32:40.698 I/ActivityTaskManager(  605): START u0 {dat=com.lumen.app:/... flg=0x24000000 cmp=com.lumen.lumen/net.openid.appauth.AuthorizationManagementActivity} with LAUNCH_SINGLE_TASK from uid 10209 (BAL_ALLOW_VISIBLE_WINDOW) result code=3
+08-25 16:32:40.701 W/ActivityTaskManager(  605): Duplicate finish request for r=ActivityRecord{fa700a4 u0 com.lumen.lumen/net.openid.appauth.RedirectUriReceiverActivity t51 f}}
+08-25 16:32:40.971 V/WindowManagerShell(  855): onTransitionReady (#49) android.os.BinderProxy@dca5f5f: {id=49 t=OPEN f=0x0 trk=0 opt={t=FROM_STYLE} r=[0@Point(0, 0)] c=[{null m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{7954d6c u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0x6865a0a sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},{null m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity)/@0x45f927b sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.lumen.lumen/.MainActivity}]}
+08-25 16:32:40.973 V/WindowManagerShell(  855): Transition doesn't have explicit remote, search filters for match for {id=49 t=OPEN f=0x0 trk=0 opt={t=FROM_STYLE} r=[0@Point(0, 0)] c=[{null m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{7954d6c u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0x6865a0a sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},{null m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity)/@0x45f927b sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.lumen.lumen/.MainActivity}]}
+08-25 16:32:40.974 V/WindowManager(  605):         {null m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{7954d6c u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0x8fe2121 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},
+08-25 16:32:40.976 V/WindowManagerShell(  855): start default transition animation, info = {id=49 t=OPEN f=0x0 trk=0 opt={t=FROM_STYLE} r=[0@Point(0, 0)] c=[{null m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{7954d6c u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0x6865a0a sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},{null m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity)/@0x45f927b sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.lumen.lumen/.MainActivity}]}
+08-25 16:32:41.543 D/VRI[CustomTabActivity]( 4406): visibilityChanged oldVisibility=true newVisibility=false
+08-25 16:32:41.599 D/CoreBackPreview(  605): Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@4abefb3, mPriority=-1, mIsAnimationCallback=false}
+08-25 16:32:41.701 D/CoreBackPreview(  605): Window{f0efed u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}: Setting back callback null
+08-25 16:32:41.702 D/MainContentCaptureSession( 4406): Destroying session (ctx=org.chromium.chrome.browser.customtabs.CustomTabActivity@2c2d9cd, id=-1030453865) with 0 event(s) for act:com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity [state=2 (ACTIVE), disabled=false]
+08-25 16:32:41.704 W/InputManager-JNI(  605): Input channel object 'f0efed com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity (client)' was disposed without first being removed with the input manager!
+08-25 16:32:41.799 I/flutter (29289): [Dio ▶] GET /me
+08-25 16:32:42.662 I/flutter (29289): [Dio ◀] 200 GET /me
+08-25 16:32:42.766 I/flutter (29289): [Dio ▶] GET /onboarding/state
+08-25 16:32:42.798 I/flutter (29289): [Dio ◀] 200 GET /onboarding/state
+08-25 16:32:42.966 I/flutter (29289): [Dio ▶] GET /settings/cycle
+08-25 16:32:42.966 I/flutter (29289): [Dio ▶] GET /cycle/calendar
+08-25 16:32:43.001 I/flutter (29289): [Dio ◀] 200 GET /settings/cycle
+08-25 16:32:43.487 I/flutter (29289): [Dio ◀] 200 GET /cycle/calendar
+08-25 16:33:40.408 I/flutter (29289): [Dio ▶] POST /onboarding/cycle
+08-25 16:33:41.366 I/flutter (29289): [Dio ◀] 200 POST /onboarding/cycle
+08-25 16:36:37.981 I/flutter (29289): [Dio ▶] POST /onboarding/baseline
+08-25 16:36:39.016 I/flutter (29289): [Dio ◀] 200 POST /onboarding/baseline
+08-25 16:37:20.304 I/flutter (29289): [Dio ▶] POST /onboarding/goals
+08-25 16:37:21.212 I/flutter (29289): [Dio ◀] 200 POST /onboarding/goals
+08-25 16:37:46.600 I/flutter (29289): [Dio ▶] GET /me
+08-25 16:37:47.231 I/flutter (29289): [Dio ◀] 200 GET /me
+08-25 16:37:51.580 I/flutter (29289): [Dio ▶] POST /onboarding/goals
+08-25 16:37:52.275 I/flutter (29289): [Dio ◀] 200 POST /onboarding/goals
+08-25 16:38:20.429 I/flutter (29289): [Dio ▶] POST /onboarding/hormones
+08-25 16:38:21.305 I/flutter (29289): [Dio ◀] 200 POST /onboarding/hormones
+08-25 16:39:14.910 I/flutter (29289): [Dio ▶] POST /onboarding/notifications
+08-25 16:39:15.780 I/flutter (29289): [Dio ◀] 200 POST /onboarding/notifications
+08-25 16:39:15.807 I/flutter (29289): [Dio ▶] POST /onboarding/complete
+08-25 16:39:15.968 I/flutter (29289): [Dio ◀] 200 POST /onboarding/complete
+08-25 16:39:16.199 I/flutter (29289): [Dio ▶] GET /me
+08-25 16:39:16.200 I/flutter (29289): [Dio ▶] GET /cycle/calendar
+08-25 16:39:16.201 I/flutter (29289): [Dio ▶] GET /cycle/calendar
+08-25 16:39:16.277 I/flutter (29289): [Dio ◀] 200 GET /me
+08-25 16:39:17.238 I/flutter (29289): [Dio ◀] 200 GET /cycle/calendar
+08-25 16:39:17.242 I/flutter (29289): [Dio ◀] 200 GET /cycle/calendar
+08-25 16:40:40.091 I/flutter (29289): [Dio ▶] POST /checkin/quick
+08-25 16:40:40.628 I/flutter (29289): [Dio ◀] 200 POST /checkin/quick
+08-25 16:40:40.677 I/flutter (29289): [Dio ▶] GET /cycle/calendar
+08-25 16:40:40.724 I/flutter (29289): [Dio ◀] 200 GET /cycle/calendar
+08-25 16:42:41.443 I/flutter (29289): [Dio ▶] POST /symptoms
+08-25 16:42:42.093 I/flutter (29289): [Dio ◀] 201 POST /symptoms
+08-25 16:42:42.210 I/flutter (29289): [Dio ▶] GET /cycle/calendar
+08-25 16:42:42.249 I/flutter (29289): [Dio ◀] 200 GET /cycle/calendar
+08-25 16:43:08.698 I/flutter (29289): [Dio ▶] GET /cycle/calendar
+08-25 16:43:09.646 I/flutter (29289): [Dio ◀] 200 GET /cycle/calendar
+08-25 16:43:29.965 I/flutter (29289): [Dio ▶] GET /cycle/day/<redacted>
+08-25 16:43:29.966 I/flutter (29289): [Dio ▶] GET /symptoms
+08-25 16:43:30.515 I/flutter (29289): [Dio ◀] 200 GET /symptoms
+08-25 16:43:30.530 I/flutter (29289): [Dio ◀] 200 GET /cycle/day/<redacted>
+08-25 16:44:25.051 I/flutter (29289): [Dio ▶] GET /settings/cycle
+08-25 16:44:25.929 I/flutter (29289): [Dio ◀] 200 GET /settings/cycle
+08-25 16:45:06.116 I/flutter (29289): [Dio ▶] PATCH /settings/cycle
+08-25 16:45:07.044 I/flutter (29289): [Dio ◀] 200 PATCH /settings/cycle
+08-25 16:45:35.633 I/flutter (29289): [Dio ▶] PATCH /settings/cycle
+08-25 16:45:36.500 I/flutter (29289): [Dio ◀] 200 PATCH /settings/cycle
+08-25 16:46:15.481 I/flutter (29289): [Dio ▶] PATCH /settings/cycle
+08-25 16:46:16.112 I/flutter (29289): [Dio ◀] 200 PATCH /settings/cycle
+08-25 16:46:37.917 I/flutter (29289): [Dio ▶] PATCH /settings/cycle
+08-25 16:46:38.938 I/flutter (29289): [Dio ◀] 200 PATCH /settings/cycle
+08-25 16:48:24.548 E/AppAuth (29289): Network error when retrieving discovery document
+08-25 16:48:24.548 E/AppAuth (29289): java.net.ConnectException: Failed to connect to /10.0.2.2:8080
+08-25 16:50:43.010 I/ActivityTaskManager(  605): START u0 {cmp=com.lumen.lumen/net.openid.appauth.AuthorizationManagementActivity (has extras)} with LAUNCH_SINGLE_TASK from uid 10209 (BAL_ALLOW_VISIBLE_WINDOW) result code=0
+08-25 16:50:43.292 I/ActivityTaskManager(  605): START u0 {act=android.intent.action.VIEW dat=http://10.0.2.2:8080/... flg=0x800000 pkg=com.android.chrome cmp=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity (has extras)} with LAUNCH_MULTIPLE from uid 10145 (BAL_ALLOW_VISIBLE_WINDOW) result code=0
+08-25 16:50:43.534 D/CoreBackPreview(  605): Window{8e0c466 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@2be0054, mPriority=-1, mIsAnimationCallback=false}
+08-25 16:50:43.534 D/CoreBackPreview(  605): Window{8e0c466 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@3f7ebfd, mPriority=0, mIsAnimationCallback=true}
+08-25 16:50:43.637 V/WindowManagerShell(  855): onTransitionReady (#50) android.os.BinderProxy@bf7b424: {id=50 t=OPEN f=0x0 trk=0 opt={t=FROM_STYLE} r=[0@Point(0, 0)] c=[{null m=OPEN f=FILLS_TASK leash=Surface(name=ActivityRecord{29edeb7 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0xb04f553 sb=Rect(0, 0 - 0, 0) eb=Rect(0, 0 - 1080, 2400) d=-1->0 r=-1->0:-1 bc=ffffffff component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},{null m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity)/@0x50dee90 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=ffffffff component=com.lumen.lumen/.MainActivity}]}
+08-25 16:50:43.653 I/ActivityTaskManager(  605): Displayed com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity for user 0: +331ms
+08-25 16:50:43.674 V/WindowManagerShell(  855): Transition doesn't have explicit remote, search filters for match for {id=50 t=OPEN f=0x0 trk=0 opt={t=FROM_STYLE} r=[0@Point(0, 0)] c=[{null m=OPEN f=FILLS_TASK leash=Surface(name=ActivityRecord{29edeb7 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0xb04f553 sb=Rect(0, 0 - 0, 0) eb=Rect(0, 0 - 1080, 2400) d=-1->0 r=-1->0:-1 bc=ffffffff component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},{null m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity)/@0x50dee90 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=ffffffff component=com.lumen.lumen/.MainActivity}]}
+08-25 16:50:43.675 V/WindowManager(  605):         {null m=OPEN f=FILLS_TASK leash=Surface(name=ActivityRecord{29edeb7 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0x30d9db5 sb=Rect(0, 0 - 0, 0) eb=Rect(0, 0 - 1080, 2400) d=-1->0 r=-1->0:-1 bc=ffffffff component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},
+08-25 16:50:43.698 V/WindowManagerShell(  855): start default transition animation, info = {id=50 t=OPEN f=0x0 trk=0 opt={t=FROM_STYLE} r=[0@Point(0, 0)] c=[{null m=OPEN f=FILLS_TASK leash=Surface(name=ActivityRecord{29edeb7 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0xb04f553 sb=Rect(0, 0 - 0, 0) eb=Rect(0, 0 - 1080, 2400) d=-1->0 r=-1->0:-1 bc=ffffffff component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},{null m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity)/@0x50dee90 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=ffffffff component=com.lumen.lumen/.MainActivity}]}
+08-25 16:51:22.882 D/CoreBackPreview(  605): Window{8e0c466 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@ff6846b, mPriority=0, mIsAnimationCallback=true}
+08-25 16:51:22.884 D/ImeInsetsSourceProvider(  605): showImePostLayout cancelled, isScheduledAndReadyToShowIme: false, mImeRequester: Window{8e0c466 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}, serverVisible: false, frozen: false, mWindowContainer is: non-null, windowState: Window{5a174dc u0 InputMethod}, isDrawn: false, mGivenInsetsPending: false, dcTarget: Window{8e0c466 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}, controlTarget: Window{8e0c466 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}
+08-25 16:51:24.672 I/ActivityTaskManager(  605): START u0 {act=android.intent.action.VIEW cat=[android.intent.category.BROWSABLE] dat=com.lumen.app:/... flg=0x14000000 pkg=com.lumen.lumen cmp=com.lumen.lumen/net.openid.appauth.RedirectUriReceiverActivity (has extras)} with LAUNCH_MULTIPLE from uid 10145 (BAL_ALLOW_VISIBLE_WINDOW) result code=0
+08-25 16:51:24.769 I/ActivityTaskManager(  605): START u0 {dat=com.lumen.app:/... flg=0x24000000 cmp=com.lumen.lumen/net.openid.appauth.AuthorizationManagementActivity} with LAUNCH_SINGLE_TASK from uid 10209 (BAL_ALLOW_VISIBLE_WINDOW) result code=3
+08-25 16:51:24.778 D/CoreBackPreview(  605): Window{8e0c466 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@9e5e42f, mPriority=0, mIsAnimationCallback=true}
+08-25 16:51:24.779 W/ActivityTaskManager(  605): Duplicate finish request for r=ActivityRecord{e4b16f8 u0 com.lumen.lumen/net.openid.appauth.RedirectUriReceiverActivity t51 f}}
+08-25 16:51:25.007 V/WindowManager(  605):         {null m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{29edeb7 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0x30d9db5 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},
+08-25 16:51:25.009 V/WindowManagerShell(  855): onTransitionReady (#51) android.os.BinderProxy@56b5829: {id=51 t=OPEN f=0x0 trk=0 opt={t=FROM_STYLE} r=[0@Point(0, 0)] c=[{null m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{29edeb7 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0xcac98dc sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},{null m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity)/@0x2384de5 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.lumen.lumen/.MainActivity}]}
+08-25 16:51:25.012 V/WindowManagerShell(  855): Transition doesn't have explicit remote, search filters for match for {id=51 t=OPEN f=0x0 trk=0 opt={t=FROM_STYLE} r=[0@Point(0, 0)] c=[{null m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{29edeb7 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0xcac98dc sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},{null m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity)/@0x2384de5 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.lumen.lumen/.MainActivity}]}
+08-25 16:51:25.013 V/WindowManagerShell(  855): start default transition animation, info = {id=51 t=OPEN f=0x0 trk=0 opt={t=FROM_STYLE} r=[0@Point(0, 0)] c=[{null m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{29edeb7 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity)/@0xcac98dc sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity},{null m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity)/@0x2384de5 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 bc=fffafafa component=com.lumen.lumen/.MainActivity}]}
+08-25 16:51:25.628 D/VRI[CustomTabActivity]( 4406): visibilityChanged oldVisibility=true newVisibility=false
+08-25 16:51:25.690 D/CoreBackPreview(  605): Window{8e0c466 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@6f9263b, mPriority=-1, mIsAnimationCallback=false}
+08-25 16:51:25.771 D/CoreBackPreview(  605): Window{8e0c466 u0 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity}: Setting back callback null
+08-25 16:51:25.771 D/MainContentCaptureSession( 4406): Destroying session (ctx=org.chromium.chrome.browser.customtabs.CustomTabActivity@20972f1, id=-1628517293) with 0 event(s) for act:com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity [state=2 (ACTIVE), disabled=false]
+08-25 16:51:25.776 W/InputManager-JNI(  605): Input channel object '8e0c466 com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabActivity (client)' was disposed without first being removed with the input manager!
+08-25 16:51:25.850 I/flutter (29289): [Dio ▶] GET /me
+08-25 16:51:26.698 I/flutter (29289): [Dio ◀] 200 GET /me
+08-25 16:51:26.818 I/flutter (29289): [Dio ▶] GET /cycle/calendar
+08-25 16:51:26.820 I/flutter (29289): [Dio ▶] GET /cycle/calendar
+08-25 16:51:26.849 I/flutter (29289): [Dio ◀] 200 GET /cycle/calendar
+08-25 16:51:27.348 I/flutter (29289): [Dio ◀] 200 GET /cycle/calendar
+08-25 16:51:55.986 I/flutter (29289): [Dio ▶] GET /cycle/calendar
+08-25 16:51:56.009 I/flutter (29289): [Dio ✗] null GET /cycle/calendar DioExceptionType.connectionError
+08-25 16:52:50.097 I/flutter (29289): [Dio ▶] POST /checkin/quick
+08-25 16:52:50.110 I/flutter (29289): [Dio ✗] null POST /checkin/quick DioExceptionType.connectionError
+08-25 16:53:47.805 I/flutter (29289): [Dio ▶] POST /checkin/quick
+08-25 16:53:48.167 I/flutter (29289): [Dio ◀] 200 POST /checkin/quick
+08-25 16:53:48.217 I/flutter (29289): [Dio ▶] GET /cycle/calendar
+08-25 16:53:48.237 I/flutter (29289): [Dio ◀] 200 GET /cycle/calendar
+08-25 16:54:06.183 I/ActivityTaskManager(  605): START u0 {flg=0x10000000 cmp=com.lumen.lumen/.MainActivity} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=2
+08-25 16:54:25.824 W/ActivityTaskManager(  605): Force removing ActivityRecord{738e2bc u0 com.lumen.lumen/.MainActivity t51 f}}: app died, no saved state
+08-25 16:54:25.845 W/ActivityTaskManager(  605): Unable to send transaction to client proc com.lumen.lumen: no app thread
+08-25 16:54:26.005 W/ActivityTaskManager(  605): Unable to send transaction to client proc com.lumen.lumen: no app thread
+08-25 16:54:28.056 I/ActivityTaskManager(  605): START u0 {flg=0x10000000 cmp=com.lumen.lumen/.MainActivity} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+08-25 16:54:28.517 D/FlutterJNI(31833): flutter (null) was loaded normally!
+08-25 16:54:28.747 I/flutter (31833): [IMPORTANT:flutter/shell/platform/android/android_context_gl_impeller.cc(104)] Using the Impeller rendering backend (OpenGLES).
+08-25 16:54:28.828 I/flutter (31833): The Dart VM service is listening on http://127.0.0.1:36991/4KwwdQdqeAo=/
+08-25 16:54:31.452 I/ActivityTaskManager(  605): Displayed com.lumen.lumen/.MainActivity for user 0: +3s407ms
+08-25 16:54:31.452 I/ActivityTaskManager(  605): Fully drawn com.lumen.lumen/.MainActivity: +3s407ms
+08-25 16:54:32.177 I/flutter (31833): [Dio ▶] GET /cycle/calendar
+08-25 16:54:33.001 I/flutter (31833): [Dio ◀] 200 GET /cycle/calendar

@@ -1,0 +1,1539 @@
+// OnboardingRepository — the resume read and the completion write (P4b-T8).
+//
+// Two endpoints, and the interesting behaviour is almost entirely at their
+// edges:
+//
+//   * `GET /onboarding/state` is a stale-while-revalidate read filed under the
+//     ONE key policy (`CacheKeys.onboardingState`), so a write elsewhere can
+//     name it. It must survive a round trip through the cache without dropping
+//     `lastPeriodStart` — screen 3's prefill is the only place that date comes
+//     from on a resume.
+//   * `POST /onboarding/complete` flips `MeResponse.onboardingCompleted`, so it
+//     invalidates the PROFILE key as well as its own; and its 409 carries the
+//     `code` / `missingSteps` extensions that tell the shell which step still
+//     owes an answer. Those must arrive as a typed `ConflictFailure` — no
+//     caller may read `DioException.response.data`.
+
+import 'dart:convert';
+
+import 'package:built_collection/built_collection.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:lumen/api/model/baseline_response.dart';
+import 'package:lumen/api/model/date.dart';
+import 'package:lumen/api/model/goals_response.dart';
+import 'package:lumen/api/model/hormone_prefs_response.dart';
+import 'package:lumen/api/model/notification_prefs_response.dart';
+import 'package:lumen/api/model/onboarding_complete_response.dart';
+import 'package:lumen/api/model/onboarding_cycle_response.dart';
+import 'package:lumen/api/model/onboarding_state_response.dart';
+import 'package:lumen/api/model/save_baseline_request.dart';
+import 'package:lumen/api/model/save_goals_request.dart';
+import 'package:lumen/api/model/save_hormone_prefs_request.dart';
+import 'package:lumen/api/model/save_notification_prefs_request.dart';
+import 'package:lumen/api/model/save_onboarding_cycle_request.dart';
+import 'package:lumen/api/serializers.dart';
+import 'package:lumen/core/cache/cache_keys.dart';
+import 'package:lumen/core/cache/cached_query.dart';
+import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/features/onboarding/data/onboarding_repository.dart';
+import 'package:mocktail/mocktail.dart';
+
+import '../../support/harness.dart';
+
+// ---------------------------------------------------------------------------
+// Harness
+// ---------------------------------------------------------------------------
+
+/// The exact strings this repository must file its reads and invalidations
+/// under, written out rather than read back from [CacheKeys].
+///
+/// Comparing the repository's key to `CacheKeys.onboardingState` would pass for
+/// any pair of values as long as both sides moved together — including the
+/// wrong one. The literal is the only spelling a `POST /checkin/quick` in T18
+/// can be checked against.
+const _stateKey = 'GET:/onboarding/state';
+const _profileKey = 'GET:/me';
+const _cycleSettingsKey = 'GET:/settings/cycle';
+
+/// A 409 shaped exactly like the `POST /onboarding/cycle` conflict on the wire
+/// (`OnboardingStepResult.cs`): a DIFFERENT code from the completion's, and it
+/// means the opposite thing.
+DioException _alreadyCompleted409() {
+  final options = RequestOptions(path: '/onboarding/cycle');
+  return DioException(
+    requestOptions: options,
+    type: DioExceptionType.badResponse,
+    response: Response<Map<String, dynamic>>(
+      requestOptions: options,
+      statusCode: 409,
+      data: <String, dynamic>{
+        'title': 'The request conflicts with the current onboarding state.',
+        'status': 409,
+        'detail':
+            'Onboarding is already complete; the cycle anchor can no longer '
+            'be moved here.',
+        'code': 'onboarding_already_completed',
+      },
+    ),
+  );
+}
+
+/// The request the repository actually put on the wire.
+SaveOnboardingCycleRequest _capturedCycleRequest(MockLumenApiApi api) {
+  return verify(
+        () => api.onboardingCyclePost(
+          saveOnboardingCycleRequest: captureAny(
+            named: 'saveOnboardingCycleRequest',
+          ),
+        ),
+      ).captured.last
+      as SaveOnboardingCycleRequest;
+}
+
+/// The goals request the repository actually put on the wire.
+SaveGoalsRequest _capturedGoalsRequest(MockLumenApiApi api) {
+  return verify(
+        () => api.onboardingGoalsPost(
+          saveGoalsRequest: captureAny(named: 'saveGoalsRequest'),
+        ),
+      ).captured.last
+      as SaveGoalsRequest;
+}
+
+/// The baseline request the repository actually put on the wire.
+SaveBaselineRequest _capturedBaselineRequest(MockLumenApiApi api) {
+  return verify(
+        () => api.onboardingBaselinePost(
+          saveBaselineRequest: captureAny(named: 'saveBaselineRequest'),
+        ),
+      ).captured.last
+      as SaveBaselineRequest;
+}
+
+/// The hormone request the repository actually put on the wire.
+SaveHormonePrefsRequest _capturedHormonesRequest(MockLumenApiApi api) {
+  return verify(
+        () => api.onboardingHormonesPost(
+          saveHormonePrefsRequest: captureAny(named: 'saveHormonePrefsRequest'),
+        ),
+      ).captured.last
+      as SaveHormonePrefsRequest;
+}
+
+/// The notification request the repository actually put on the wire.
+SaveNotificationPrefsRequest _capturedNotificationsRequest(
+  MockLumenApiApi api,
+) {
+  return verify(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: captureAny(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      ).captured.last
+      as SaveNotificationPrefsRequest;
+}
+
+/// [request] as JSON, through the same [standardSerializers] the generated
+/// client is constructed with.
+///
+/// The distinction it exists for is the same one `POST /onboarding/hormones`
+/// has, plus one this endpoint alone has: `built_value` omits a NULL member, so
+/// an absent `pushToken`/`platform` pair and a supplied one are invisible from
+/// the Dart object and visible only here. Half a pair is a 400
+/// (`pushToken and platform must be provided together`).
+Map<String, Object?> _notificationsWireBody(SaveNotificationPrefsRequest r) {
+  return json.decode(
+        json.encode(
+          standardSerializers.serializeWith(
+            SaveNotificationPrefsRequest.serializer,
+            r,
+          ),
+        ),
+      )
+      as Map<String, Object?>;
+}
+
+/// [request] as JSON, through the same [standardSerializers] the generated
+/// client is constructed with (`api_client.dart`) - so this is the body, not a
+/// re-description of the Dart object.
+///
+/// It exists because the interesting distinction on this endpoint is invisible
+/// from the object: `built_value` omits a NULL member from the wire, and an
+/// omitted `chartedHormones` is the one thing `POST /onboarding/hormones`
+/// rejects.
+Map<String, Object?> _wireBody(SaveHormonePrefsRequest request) {
+  return json.decode(
+        json.encode(
+          standardSerializers.serializeWith(
+            SaveHormonePrefsRequest.serializer,
+            request,
+          ),
+        ),
+      )
+      as Map<String, Object?>;
+}
+
+/// A 409 shaped exactly like `OnboardingConflict.Incomplete` on the wire.
+DioException _incomplete409({
+  String code = 'onboarding_incomplete',
+  List<String> missingSteps = const ['cycle'],
+}) {
+  final options = RequestOptions(path: '/onboarding/complete');
+  return DioException(
+    requestOptions: options,
+    type: DioExceptionType.badResponse,
+    response: Response<Map<String, dynamic>>(
+      requestOptions: options,
+      statusCode: 409,
+      data: <String, dynamic>{
+        'title': 'The request conflicts with the current onboarding state.',
+        'status': 409,
+        'detail':
+            'Onboarding cannot be completed until every mandatory step is '
+            'answered.',
+        'code': code,
+        'missingSteps': missingSteps,
+      },
+    ),
+  );
+}
+
+void main() {
+  late MockLumenApiApi api;
+  late MockCacheStore store;
+  late OnboardingRepository repo;
+
+  setUp(() {
+    api = MockLumenApiApi();
+    store = emptyCacheStore();
+    repo = OnboardingRepository(api: api, store: store);
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /onboarding/state
+  // -------------------------------------------------------------------------
+
+  group('getState', () {
+    test(
+      'fetches the state and files it under the shared key and TTL',
+      () async {
+        when(
+          api.onboardingStateGet,
+        ).thenAnswer(apiSuccess(onboardingStateFixture(cycleProvided: true)));
+
+        final result = await repo.getState();
+
+        expect(result, isA<Fresh<OnboardingStateResponse>>());
+        expect(
+          (result as Fresh<OnboardingStateResponse>).value.cycleProvided,
+          isTrue,
+        );
+        verify(
+          () => store.putJson(_stateKey, any(), ttl: CacheKeys.ttl),
+        ).called(1);
+      },
+    );
+
+    test('serves a fresh cache entry without touching the network', () async {
+      // The positive control is the second half: the SAME api mock, in the SAME
+      // test, must be shown to answer when it is asked. Without it,
+      // `verifyNever` here is satisfied by a mock nobody ever wired up.
+      when(() => store.isFresh(_stateKey)).thenReturn(true);
+      when(() => store.getJson(_stateKey)).thenReturn(<String, dynamic>{
+        'cycleProvided': true,
+        'completed': false,
+      });
+      when(
+        api.onboardingStateGet,
+      ).thenAnswer(apiSuccess(onboardingStateFixture()));
+
+      final cached = await repo.getState();
+
+      expect(cached, isA<Fresh<OnboardingStateResponse>>());
+      expect(
+        (cached as Fresh<OnboardingStateResponse>).value.cycleProvided,
+        isTrue,
+      );
+      verifyNever(api.onboardingStateGet);
+
+      // Positive control: the same mock DOES answer once the entry goes stale,
+      // so the `verifyNever` above is a fact about the short-circuit rather
+      // than about an unwired mock.
+      when(() => store.isFresh(_stateKey)).thenReturn(false);
+      await repo.getState();
+      verify(api.onboardingStateGet).called(1);
+    });
+
+    test(
+      'a cached state keeps lastPeriodStart across the round trip',
+      () async {
+        // `Date` is the one non-primitive on this response, and screen 3's
+        // resume prefill is the only consumer of it. A cache round trip that
+        // dropped or mangled it would show an empty calendar to a user who has
+        // already answered — and `Date` serialises through a custom serializer,
+        // so this is not free.
+        Map<String, dynamic>? written;
+        when(
+          () => store.putJson(any(), any(), ttl: any(named: 'ttl')),
+        ).thenAnswer((invocation) async {
+          written = invocation.positionalArguments[1] as Map<String, dynamic>;
+        });
+        when(api.onboardingStateGet).thenAnswer(
+          apiSuccess(
+            onboardingStateFixture(
+              cycleProvided: true,
+              lastPeriodStart: Date(2026, 4, 6),
+            ),
+          ),
+        );
+
+        await repo.getState();
+        expect(written, isNotNull, reason: 'premise: the read wrote through');
+        expect(written!['lastPeriodStart'], '2026-04-06');
+
+        // Now read it back from the cache alone — no network — and require the
+        // date to survive as a `Date`, not as a string the caller has to parse.
+        when(() => store.isFresh(_stateKey)).thenReturn(true);
+        when(() => store.getJson(_stateKey)).thenReturn(written);
+
+        final cached = await repo.getState() as Fresh<OnboardingStateResponse>;
+
+        expect(cached.value.lastPeriodStart, Date(2026, 4, 6));
+      },
+    );
+
+    test(
+      'falls back to a cached state when the network is unreachable',
+      () async {
+        when(() => store.getJson(_stateKey)).thenReturn(<String, dynamic>{
+          'cycleProvided': true,
+          'completed': false,
+        });
+        when(
+          api.onboardingStateGet,
+        ).thenAnswer(apiNetworkFailure<OnboardingStateResponse>());
+
+        final result = await repo.getState();
+
+        expect(result, isA<Stale<OnboardingStateResponse>>());
+        expect(
+          (result as Stale<OnboardingStateResponse>).value.cycleProvided,
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'reports NetworkRequired when there is no network and no cache',
+      () async {
+        when(
+          api.onboardingStateGet,
+        ).thenAnswer(apiNetworkFailure<OnboardingStateResponse>());
+
+        final result = await repo.getState();
+
+        expect(result, isA<NetworkRequired<OnboardingStateResponse>>());
+        expect(
+          (result as NetworkRequired<OnboardingStateResponse>).failure,
+          isA<NetworkFailure>(),
+        );
+      },
+    );
+
+    test('a 200 with no body is a server failure, not a null state', () async {
+      // `cachedRead` classifies a `ServerFailure` as transient, so with no
+      // cached entry the caller sees `NetworkRequired` WRAPPING the typed
+      // failure — never a null state and never a raw TypeError from a
+      // force-unwrap. Both halves are asserted: the arm AND what it carries.
+      when(api.onboardingStateGet).thenAnswer(
+        (_) async => Response<OnboardingStateResponse>(
+          requestOptions: RequestOptions(path: '/onboarding/state'),
+          statusCode: 200,
+        ),
+      );
+
+      final result = await repo.getState();
+
+      expect(result, isA<NetworkRequired<OnboardingStateResponse>>());
+      expect(
+        (result as NetworkRequired<OnboardingStateResponse>).failure,
+        isA<ServerFailure>(),
+      );
+      // The positive control for the line above: a genuinely offline read is
+      // also `NetworkRequired`, and it carries a DIFFERENT failure. Asserting
+      // the arm alone could not tell the two apart.
+      when(
+        api.onboardingStateGet,
+      ).thenAnswer(apiNetworkFailure<OnboardingStateResponse>());
+      final offline = await repo.getState();
+      expect(
+        (offline as NetworkRequired<OnboardingStateResponse>).failure,
+        isA<NetworkFailure>(),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /onboarding/complete
+  // -------------------------------------------------------------------------
+
+  group('complete', () {
+    test('posts the completion and returns what the server stamped', () async {
+      when(api.onboardingCompletePost).thenAnswer(
+        apiSuccess(
+          onboardingCompleteFixture(completedAt: DateTime.utc(2026, 4, 6, 9)),
+        ),
+      );
+
+      final response = await repo.complete();
+
+      expect(response.completedAt, DateTime.utc(2026, 4, 6, 9));
+      expect(response.alreadyCompleted, isFalse);
+      verify(api.onboardingCompletePost).called(1);
+    });
+
+    test('invalidates BOTH the onboarding state and the profile, because '
+        'completion flips MeResponse.onboardingCompleted', () async {
+      when(
+        api.onboardingCompletePost,
+      ).thenAnswer(apiSuccess(onboardingCompleteFixture()));
+
+      await repo.complete();
+
+      verify(() => store.invalidate(_stateKey)).called(1);
+      verify(() => store.invalidate(_profileKey)).called(1);
+    });
+
+    test('a rejected completion invalidates nothing', () async {
+      // The positive control is the first half. "No invalidation happened" is
+      // also true of a store nobody ever calls, so the same store is first
+      // shown recording two invalidations on a SUCCESSFUL completion; only then
+      // is the failing one asserted to add none.
+      when(
+        api.onboardingCompletePost,
+      ).thenAnswer(apiSuccess(onboardingCompleteFixture()));
+      await repo.complete();
+      verify(() => store.invalidate(any())).called(2);
+
+      when(
+        api.onboardingCompletePost,
+      ).thenAnswer((_) async => throw _incomplete409());
+
+      await expectLater(repo.complete(), throwsA(isA<ConflictFailure>()));
+
+      verifyNever(() => store.invalidate(any()));
+    });
+
+    test('the 409 arrives as a typed ConflictFailure carrying its code and '
+        'missing steps', () async {
+      when(
+        api.onboardingCompletePost,
+      ).thenAnswer((_) async => throw _incomplete409());
+
+      final failure = await repo.complete().then<Object?>(
+        (value) => value,
+        onError: (Object error) => error,
+      );
+
+      expect(failure, isA<ConflictFailure>());
+      final conflict = failure! as ConflictFailure;
+      expect(conflict.code, 'onboarding_incomplete');
+      expect(conflict.missingSteps, ['cycle']);
+      expect(
+        conflict.message,
+        'Onboarding cannot be completed until every mandatory step is answered.',
+      );
+    });
+
+    test('a repeat completion is a success, not a conflict', () async {
+      // The server answers a second `POST /onboarding/complete` with 200 and
+      // the ORIGINAL timestamp. A client that treated `alreadyCompleted` as an
+      // error would strand a user whose first response was lost in transit.
+      when(api.onboardingCompletePost).thenAnswer(
+        apiSuccess(
+          onboardingCompleteFixture(
+            alreadyCompleted: true,
+            completedAt: DateTime.utc(2026, 4, 1, 8),
+          ),
+        ),
+      );
+
+      final response = await repo.complete();
+
+      expect(response.alreadyCompleted, isTrue);
+      expect(response.completedAt, DateTime.utc(2026, 4, 1, 8));
+    });
+
+    test('a 200 with no body is a server failure', () async {
+      when(api.onboardingCompletePost).thenAnswer(
+        (_) async => Response<OnboardingCompleteResponse>(
+          requestOptions: RequestOptions(path: '/onboarding/complete'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(repo.complete(), throwsA(isA<ServerFailure>()));
+      verifyNever(() => store.invalidate(any()));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /onboarding/cycle
+  // -------------------------------------------------------------------------
+  //
+  // The endpoint is a MERGE on the three self-reports and `lastPeriodStart` is
+  // required on every post (ARCHITECTURE.md §C.0.1). Screen 3 is where a user
+  // comes back to fix a mistyped date, sending the anchor and NOTHING else —
+  // assigning all three columns unconditionally is what silently reset the
+  // user's own answers, and it is why the endpoint stopped doing that.
+
+  group('saveCycle', () {
+    // mocktail needs a real instance before `any(named:)` can match a
+    // non-nullable argument of this type.
+    setUpAll(
+      () => registerFallbackValue(
+        SaveOnboardingCycleRequest(
+          (b) => b..lastPeriodStart = Date(2026, 1, 1),
+        ),
+      ),
+    );
+
+    void answerSave([OnboardingCycleResponse? body]) {
+      when(
+        () => api.onboardingCyclePost(
+          saveOnboardingCycleRequest: any(named: 'saveOnboardingCycleRequest'),
+        ),
+      ).thenAnswer(apiSuccess(body ?? onboardingCycleFixture()));
+    }
+
+    test(
+      'it sends the anchor every time and only the answers it was given',
+      () async {
+        answerSave();
+
+        await repo.saveCycle(lastPeriodStart: Date(2026, 4, 6));
+
+        final anchorOnly = _capturedCycleRequest(api);
+        expect(anchorOnly.lastPeriodStart, Date(2026, 4, 6));
+        expect(anchorOnly.avgCycleLengthDays, isNull);
+        expect(anchorOnly.regularity, isNull);
+        // Never collected on screen 3, and there is no way to clear it back to
+        // null on any P4a surface — so it is not a parameter and never a key.
+        expect(anchorOnly.avgPeriodLengthDays, isNull);
+
+        // The positive control, and the whole point of this test: those three
+        // nulls are also what a builder that sets NOTHING produces. The same
+        // repository, called with the two answers, must carry them.
+        await repo.saveCycle(
+          lastPeriodStart: Date(2026, 4, 6),
+          avgCycleLengthDays: 29,
+          regularity: 'irregular',
+        );
+
+        final full = _capturedCycleRequest(api);
+        expect(full.avgCycleLengthDays, 29);
+        expect(full.regularity, 'irregular');
+        expect(full.avgPeriodLengthDays, isNull);
+      },
+    );
+
+    test('it invalidates the onboarding state, the cycle settings and the '
+        "anchor's own day", () async {
+      answerSave();
+
+      await repo.saveCycle(lastPeriodStart: Date(2026, 4, 6));
+
+      final keys = verify(() => store.invalidate(captureAny())).captured;
+      expect(keys, contains(_stateKey));
+      expect(keys, contains(_cycleSettingsKey));
+      // One POST writes two tables: `user_cycle_settings` AND the
+      // `cycle_events.period_start` anchor. The dated keys come from the one
+      // policy that can name every key a date appears in.
+      expect(keys, contains('GET:/cycle/day/2026-04-06'));
+      expect(keys, contains('GET:/symptoms?day=2026-04-06'));
+      expect(keys, contains('GET:/cycle/calendar?month=2026-04'));
+      // Not the profile: this endpoint does not stamp
+      // `onboarding_completed_at`, and a client that invalidated `/me` here
+      // would re-read it on every correction of a mistyped date.
+      expect(keys, isNot(contains(_profileKey)));
+    });
+
+    test(
+      'correcting the date invalidates the day the anchor LEFT as well',
+      () async {
+        answerSave();
+
+        await repo.saveCycle(
+          lastPeriodStart: Date(2026, 4, 6),
+          previousLastPeriodStart: Date(2026, 3, 9),
+        );
+
+        final moved = verify(() => store.invalidate(captureAny())).captured;
+        // The server MOVES the onboarding seed rather than adding a second one
+        // (`StageOnboardingAnchorAsync`, case 2), so the old day loses a
+        // `period_start` it used to have. Invalidating only the new day leaves a
+        // cached March calendar drawing an anchor that is no longer there.
+        expect(moved, contains('GET:/cycle/calendar?month=2026-03'));
+        expect(moved, contains('GET:/cycle/day/2026-03-09'));
+
+        // Positive control: the March keys are absent when the anchor did NOT
+        // move, so the two assertions above are about the move rather than about
+        // a repository that invalidates every month it can think of.
+        await repo.saveCycle(
+          lastPeriodStart: Date(2026, 4, 6),
+          previousLastPeriodStart: Date(2026, 4, 6),
+        );
+        final unmoved = verify(() => store.invalidate(captureAny())).captured;
+        expect(unmoved, isNot(contains('GET:/cycle/calendar?month=2026-03')));
+        expect(unmoved, contains('GET:/cycle/calendar?month=2026-04'));
+      },
+    );
+
+    test('a rejected save invalidates nothing', () async {
+      answerSave();
+      await repo.saveCycle(lastPeriodStart: Date(2026, 4, 6));
+      final afterSuccess = verify(
+        () => store.invalidate(captureAny()),
+      ).captured;
+      // The control: this store DOES record invalidations, so the emptiness
+      // below is a fact about the rejection rather than about a mock nobody
+      // wired.
+      expect(afterSuccess, isNotEmpty);
+
+      when(
+        () => api.onboardingCyclePost(
+          saveOnboardingCycleRequest: any(named: 'saveOnboardingCycleRequest'),
+        ),
+      ).thenAnswer(apiNetworkFailure<OnboardingCycleResponse>());
+
+      await expectLater(
+        repo.saveCycle(lastPeriodStart: Date(2026, 4, 6)),
+        throwsA(isA<NetworkFailure>()),
+      );
+      verifyNever(() => store.invalidate(any()));
+    });
+
+    test('it returns the resolved values the server echoed', () async {
+      answerSave(
+        onboardingCycleFixture(
+          lastPeriodStart: Date(2026, 4, 6),
+          avgCycleLengthDays: 28,
+          regularity: 'somewhat',
+        ),
+      );
+
+      // Sent nothing but the anchor; the response still names the 28 and the
+      // `somewhat` the server applied, which is what lets screen 3 show a user
+      // a value they never typed.
+      final response = await repo.saveCycle(lastPeriodStart: Date(2026, 4, 6));
+
+      expect(response.avgCycleLengthDays, 28);
+      expect(response.regularity, 'somewhat');
+      expect(response.warnings, isEmpty);
+    });
+
+    test('the sanity warnings arrive alongside a SUCCESSFUL save', () async {
+      answerSave(
+        onboardingCycleFixture(
+          avgCycleLengthDays: 400,
+          warnings: const <String>['avg_cycle_length_out_of_sanity_band'],
+        ),
+      );
+
+      // The value was STORED and the call did not throw: the band is a hint,
+      // never a rejection. Both halves are asserted — a save that threw would
+      // also fail to return a bad value.
+      final response = await repo.saveCycle(
+        lastPeriodStart: Date(2026, 4, 6),
+        avgCycleLengthDays: 400,
+      );
+
+      expect(response.avgCycleLengthDays, 400);
+      expect(response.warnings, <String>[
+        'avg_cycle_length_out_of_sanity_band',
+      ]);
+    });
+
+    test('a 400 arrives as a ValidationFailure that names the field', () async {
+      when(
+        () => api.onboardingCyclePost(
+          saveOnboardingCycleRequest: any(named: 'saveOnboardingCycleRequest'),
+        ),
+      ).thenAnswer(
+        apiValidationProblem<OnboardingCycleResponse>(
+          fields: <String, List<String>>{
+            'lastPeriodStart': <String>[
+              'date is before the earliest allowed date',
+            ],
+          },
+        ),
+      );
+
+      // The backdate floor is `users.created_at - 2 years` and NO endpoint
+      // returns `created_at`, so the client cannot pre-validate it. The whole
+      // mirror is this: carry the server's own message back to its own field.
+      final failure = await repo
+          .saveCycle(lastPeriodStart: Date(2020, 1, 1))
+          .then<Object?>((_) => null, onError: (Object e) => e);
+
+      expect(failure, isA<ValidationFailure>());
+      expect(
+        (failure as ValidationFailure).messageFor('lastPeriodStart'),
+        'date is before the earliest allowed date',
+      );
+      // …and it names only the field the server named.
+      expect(failure.messageFor('avgCycleLengthDays'), isNull);
+    });
+
+    test(
+      'the post-completion 409 arrives as a typed ConflictFailure',
+      () async {
+        when(
+          () => api.onboardingCyclePost(
+            saveOnboardingCycleRequest: any(
+              named: 'saveOnboardingCycleRequest',
+            ),
+          ),
+        ).thenThrow(_alreadyCompleted409());
+
+        final failure = await repo
+            .saveCycle(lastPeriodStart: Date(2026, 4, 6))
+            .then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(failure, isA<ConflictFailure>());
+        // `onboarding_already_completed`, NOT `onboarding_incomplete`: the two
+        // codes live on the same surface and mean opposite things.
+        expect(
+          (failure as ConflictFailure).code,
+          'onboarding_already_completed',
+        );
+        expect(failure.message, contains('can no longer be moved'));
+      },
+    );
+
+    test('a 200 with no body is a server failure', () async {
+      when(
+        () => api.onboardingCyclePost(
+          saveOnboardingCycleRequest: any(named: 'saveOnboardingCycleRequest'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<OnboardingCycleResponse>(
+          requestOptions: RequestOptions(path: '/onboarding/cycle'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(
+        repo.saveCycle(lastPeriodStart: Date(2026, 4, 6)),
+        throwsA(isA<ServerFailure>()),
+      );
+      verifyNever(() => store.invalidate(any()));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /onboarding/baseline (P4b-T10)
+  // -------------------------------------------------------------------------
+
+  group('saveBaseline', () {
+    setUpAll(
+      () => registerFallbackValue(SaveBaselineRequest((b) => b..heightCm = 1)),
+    );
+
+    void answerSave([BaselineResponse? body]) {
+      when(
+        () => api.onboardingBaselinePost(
+          saveBaselineRequest: any(named: 'saveBaselineRequest'),
+        ),
+      ).thenAnswer(apiSuccess(body ?? baselineFixture()));
+    }
+
+    test('it sends only the fields it was given — an omitted one is absent, '
+        'never a default', () async {
+      answerSave();
+
+      await repo.saveBaseline(heightCm: 165);
+
+      final one = _capturedBaselineRequest(api);
+      expect(one.heightCm, 165);
+      expect(one.dob, isNull);
+      expect(one.weightKg, isNull);
+      expect(one.endoStatus, isNull);
+      // Neither has a control on screen 4 (the mockup draws none), so neither
+      // is a parameter — a dead one would invite a caller to believe it was
+      // persisted.
+      expect(one.rasrmStage, isNull);
+      expect(one.diagnosedOn, isNull);
+
+      // The positive control, and the whole point: those nulls are also what a
+      // builder that sets NOTHING produces. The same repository, called with
+      // the other three, must carry them.
+      await repo.saveBaseline(
+        dob: Date(1996, 4, 6),
+        weightKg: 62,
+        endoStatus: 'diagnosed',
+      );
+
+      final rest = _capturedBaselineRequest(api);
+      expect(rest.dob, Date(1996, 4, 6));
+      expect(rest.weightKg, 62);
+      expect(rest.endoStatus, 'diagnosed');
+      expect(rest.heightCm, isNull);
+    });
+
+    test(
+      'the weight is rounded to ONE decimal before it is serialised',
+      () async {
+        answerSave();
+
+        // The case §C.0.2 names: a computed kilogram — an lbs conversion, a
+        // slider step — does not land on a tenth, and the backend REJECTS extra
+        // precision rather than rounding it (OnboardingStepsService.cs:192-197).
+        await repo.saveBaseline(weightKg: 0.1 + 0.2);
+        expect(_capturedBaselineRequest(api).weightKg, 0.3);
+
+        await repo.saveBaseline(weightKg: 60.35);
+        expect(_capturedBaselineRequest(api).weightKg, 60.4);
+
+        // The control: rounding must not move a value that is already storable.
+        // Without it the two rows above pass for a repository that rounded to
+        // the nearest whole kilogram.
+        await repo.saveBaseline(weightKg: 60.4);
+        expect(_capturedBaselineRequest(api).weightKg, 60.4);
+      },
+    );
+
+    test('a body carrying none of the fields never reaches the wire', () async {
+      answerSave();
+
+      // The 400 unique to this endpoint (`provide at least one baseline
+      // field`, OnboardingStepResult.cs:332) exists because D-02's skip means
+      // NOT calling the endpoint. An empty body is therefore a client bug, and
+      // this is the last place it can be stopped.
+      expect(repo.saveBaseline, throwsA(isA<ArgumentError>()));
+      verifyNever(
+        () => api.onboardingBaselinePost(
+          saveBaselineRequest: any(named: 'saveBaselineRequest'),
+        ),
+      );
+
+      // Control: one supplied field is enough, and the same call then posts.
+      await repo.saveBaseline(endoStatus: 'not_applicable');
+      verify(
+        () => api.onboardingBaselinePost(
+          saveBaselineRequest: any(named: 'saveBaselineRequest'),
+        ),
+      ).called(1);
+    });
+
+    test('it invalidates the profile and the onboarding state', () async {
+      answerSave();
+
+      await repo.saveBaseline(heightCm: 165);
+
+      final keys = verify(() => store.invalidate(captureAny())).captured;
+      // `GET /me` splices this very projection into `MeResponse`, so a cached
+      // profile is wrong the moment this returns.
+      expect(keys, contains(_profileKey));
+      // `baselineProvided` moves.
+      expect(keys, contains(_stateKey));
+      // Not the cycle settings: this endpoint writes neither
+      // `user_cycle_settings` nor `cycle_events`.
+      expect(keys, isNot(contains(_cycleSettingsKey)));
+    });
+
+    test(
+      'a 400 arrives as a ValidationFailure keyed by wire field name',
+      () async {
+        when(
+          () => api.onboardingBaselinePost(
+            saveBaselineRequest: any(named: 'saveBaselineRequest'),
+          ),
+        ).thenAnswer(
+          apiValidationProblem<BaselineResponse>(
+            path: '/onboarding/baseline',
+            fields: const <String, List<String>>{
+              'weightKg': <String>['value must have at most 1 decimal place'],
+            },
+          ),
+        );
+
+        await expectLater(
+          repo.saveBaseline(weightKg: 60.4),
+          throwsA(
+            isA<ValidationFailure>().having(
+              (ValidationFailure f) => f.messageFor('weightKg'),
+              'messageFor(weightKg)',
+              'value must have at most 1 decimal place',
+            ),
+          ),
+        );
+        // Nothing was stored, so nothing cached is wrong.
+        verifyNever(() => store.invalidate(any()));
+      },
+    );
+
+    test('an empty 200 body is a typed failure, not a force-unwrap', () async {
+      when(
+        () => api.onboardingBaselinePost(
+          saveBaselineRequest: any(named: 'saveBaselineRequest'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<BaselineResponse>(
+          requestOptions: RequestOptions(path: '/onboarding/baseline'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(
+        repo.saveBaseline(heightCm: 165),
+        throwsA(isA<ServerFailure>()),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /onboarding/goals (P4b-T11)
+  // -------------------------------------------------------------------------
+
+  group('saveGoals', () {
+    setUpAll(
+      () => registerFallbackValue(
+        SaveGoalsRequest((b) => b..goals = ListBuilder<String>(<String>['x'])),
+      ),
+    );
+
+    void answerSave([GoalsResponse? body]) {
+      when(
+        () => api.onboardingGoalsPost(
+          saveGoalsRequest: any(named: 'saveGoalsRequest'),
+        ),
+      ).thenAnswer(apiSuccess(body ?? goalsResponseFixture()));
+    }
+
+    test('it sends the codes it was given, in order, untouched', () async {
+      answerSave();
+
+      // FULL REPLACE: this array IS the desired state of `user_goals`. The
+      // repository adds nothing, drops nothing and re-orders nothing — the
+      // three things that would each turn a selection into a different answer.
+      await repo.saveGoals(
+        codes: const <String>['just_curious', 'manage_symptoms'],
+      );
+
+      expect(_capturedGoalsRequest(api).goals?.toList(), <String>[
+        'just_curious',
+        'manage_symptoms',
+      ]);
+
+      // The control: a DIFFERENT array travels differently. Without it the row
+      // above would pass for a repository that ignored its argument and sent a
+      // hard-coded pair.
+      await repo.saveGoals(codes: const <String>['plan_fertility']);
+      expect(_capturedGoalsRequest(api).goals?.toList(), <String>[
+        'plan_fertility',
+      ]);
+    });
+
+    test(
+      'it neither de-duplicates nor folds case — the server accepts both',
+      () async {
+        answerSave();
+
+        // A client that rejects (or "corrects") what the server stores is a
+        // defect. Duplicates collapse silently server-side
+        // (`OnboardingStepsService.cs:1127-1149`), and matching is Ordinal — so
+        // case is the caller's business and mangling it here would send a code
+        // this client believed was valid.
+        await repo.saveGoals(
+          codes: const <String>['just_curious', 'just_curious'],
+        );
+        expect(_capturedGoalsRequest(api).goals?.toList(), <String>[
+          'just_curious',
+          'just_curious',
+        ]);
+
+        await repo.saveGoals(codes: const <String>['Manage_Symptoms']);
+        expect(_capturedGoalsRequest(api).goals?.toList(), <String>[
+          'Manage_Symptoms',
+        ]);
+      },
+    );
+
+    test('an empty array never reaches the wire', () async {
+      answerSave();
+
+      // D-14 is min 1, no max. An empty array is a 400 whose message is
+      // `select at least one goal` (`OnboardingStepResult.cs:371`) — NOT the
+      // generic `value is required`, because the field WAS supplied.
+      expect(
+        () => repo.saveGoals(codes: const <String>[]),
+        throwsA(isA<ArgumentError>()),
+      );
+      verifyNever(
+        () => api.onboardingGoalsPost(
+          saveGoalsRequest: any(named: 'saveGoalsRequest'),
+        ),
+      );
+
+      // The control, and the accepting boundary: ONE code is enough, and the
+      // same call then posts.
+      await repo.saveGoals(codes: const <String>['just_curious']);
+      verify(
+        () => api.onboardingGoalsPost(
+          saveGoalsRequest: any(named: 'saveGoalsRequest'),
+        ),
+      ).called(1);
+    });
+
+    test('it invalidates the onboarding state and nothing else', () async {
+      answerSave();
+
+      await repo.saveGoals(codes: const <String>['manage_symptoms']);
+
+      final keys = verify(() => store.invalidate(captureAny())).captured;
+      // `goalsProvided` and the goals projection both move.
+      expect(keys, contains(_stateKey));
+      // Not the profile: `MeResponse` carries no goals member, and nothing here
+      // stamps `onboarding_completed_at`.
+      expect(keys, isNot(contains(_profileKey)));
+      expect(keys, isNot(contains(_cycleSettingsKey)));
+    });
+
+    test(
+      'a 400 arrives as a ValidationFailure keyed by wire field name',
+      () async {
+        when(
+          () => api.onboardingGoalsPost(
+            saveGoalsRequest: any(named: 'saveGoalsRequest'),
+          ),
+        ).thenAnswer(
+          apiValidationProblem<GoalsResponse>(
+            path: '/onboarding/goals',
+            fields: const <String, List<String>>{
+              'goals': <String>['select at least one goal'],
+            },
+          ),
+        );
+
+        await expectLater(
+          repo.saveGoals(codes: const <String>['manage_symptoms']),
+          throwsA(
+            isA<ValidationFailure>().having(
+              (ValidationFailure f) => f.messageFor('goals'),
+              'messageFor(goals)',
+              'select at least one goal',
+            ),
+          ),
+        );
+        // Nothing was stored, so nothing cached is wrong.
+        verifyNever(() => store.invalidate(any()));
+      },
+    );
+
+    test('an empty 200 body is a typed failure, not a force-unwrap', () async {
+      when(
+        () => api.onboardingGoalsPost(
+          saveGoalsRequest: any(named: 'saveGoalsRequest'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<GoalsResponse>(
+          requestOptions: RequestOptions(path: '/onboarding/goals'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(
+        repo.saveGoals(codes: const <String>['manage_symptoms']),
+        throwsA(isA<ServerFailure>()),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /onboarding/hormones (P4b-T12)
+  // -------------------------------------------------------------------------
+
+  group('saveHormones', () {
+    setUpAll(
+      () => registerFallbackValue(
+        SaveHormonePrefsRequest(
+          (b) => b..chartedHormones = ListBuilder<String>(<String>['glp1']),
+        ),
+      ),
+    );
+
+    void answerSave([HormonePrefsResponse? body]) {
+      when(
+        () => api.onboardingHormonesPost(
+          saveHormonePrefsRequest: any(named: 'saveHormonePrefsRequest'),
+        ),
+      ).thenAnswer(apiSuccess(body ?? hormonePrefsResponseFixture()));
+    }
+
+    test('it sends the codes it was given, in order, untouched', () async {
+      answerSave();
+
+      // FULL REPLACE: this array IS the desired state of `user_hormone_prefs`.
+      // The repository adds nothing, drops nothing and re-orders nothing.
+      await repo.saveHormones(codes: const <String>['glp1', 'estradiol']);
+
+      expect(_capturedHormonesRequest(api).chartedHormones?.toList(), <String>[
+        'glp1',
+        'estradiol',
+      ]);
+
+      // The control: a DIFFERENT array travels differently. Without it the row
+      // above would pass for a repository that ignored its argument.
+      await repo.saveHormones(codes: const <String>['cortisol']);
+      expect(_capturedHormonesRequest(api).chartedHormones?.toList(), <String>[
+        'cortisol',
+      ]);
+    });
+
+    test('an EMPTY array is a valid answer and travels as an empty array, '
+        'never as an absent field', () async {
+      answerSave();
+
+      // "Chart nothing" is a real answer and this endpoint has NO minimum -
+      // unlike `POST /onboarding/goals`. The server keys `value is required`
+      // on a NULL and on nothing else (`OnboardingStepsService.cs:435-436`),
+      // where `SaveGoalsAsync` adds a second arm for `Count == 0` (`:369-375`).
+      // So an empty array must reach the wire rather than be refused here.
+      await repo.saveHormones(codes: const <String>[]);
+
+      final SaveHormonePrefsRequest sent = _capturedHormonesRequest(api);
+      // An equality rather than `isEmpty`: the failure this has to report
+      // clearly is a member that came back NULL, and `isEmpty` on a null throws
+      // NoSuchMethodError inside the matcher instead of printing Expected/Actual.
+      expect(sent.chartedHormones?.toList(), <String>[]);
+
+      // ...and "empty" has to survive SERIALISATION, which is where it would
+      // still become the 400 it is not: `built_value` omits a null member, and
+      // an omitted `chartedHormones` IS the null the server rejects.
+      expect(_wireBody(sent), <String, Object?>{'chartedHormones': <String>[]});
+
+      // The positive control that gives the line above its meaning: a request
+      // whose builder was never handed a list serialises with no
+      // `chartedHormones` key at all. Absent and empty are two different
+      // answers on this endpoint, and only this pair tells them apart.
+      expect(_wireBody(SaveHormonePrefsRequest((b) => b)), isEmpty);
+    });
+
+    test(
+      'it neither de-duplicates nor folds case - the server accepts both',
+      () async {
+        answerSave();
+
+        // Duplicates collapse silently server-side (`OnboardingStepsService.cs:
+        // 1127-1149`, a `HashSet` keyed `StringComparer.Ordinal`), and matching
+        // is Ordinal - so folding case here would send a code this client
+        // believed was valid and the server answers 400 for.
+        await repo.saveHormones(codes: const <String>['lh', 'lh']);
+        expect(
+          _capturedHormonesRequest(api).chartedHormones?.toList(),
+          <String>['lh', 'lh'],
+        );
+
+        await repo.saveHormones(codes: const <String>['Estradiol']);
+        expect(
+          _capturedHormonesRequest(api).chartedHormones?.toList(),
+          <String>['Estradiol'],
+        );
+      },
+    );
+
+    test('it invalidates the onboarding state and nothing else', () async {
+      answerSave();
+
+      await repo.saveHormones(codes: const <String>['estradiol']);
+
+      final keys = verify(() => store.invalidate(captureAny())).captured;
+      // `hormonesProvided` and the hormone projection both move.
+      expect(keys, contains(_stateKey));
+      // Not the profile: `MeResponse` carries no hormone member, and nothing
+      // here stamps `onboarding_completed_at`.
+      expect(keys, isNot(contains(_profileKey)));
+      expect(keys, isNot(contains(_cycleSettingsKey)));
+    });
+
+    test(
+      'a 400 arrives as a ValidationFailure keyed by wire field name',
+      () async {
+        when(
+          () => api.onboardingHormonesPost(
+            saveHormonePrefsRequest: any(named: 'saveHormonePrefsRequest'),
+          ),
+        ).thenAnswer(
+          apiValidationProblem<HormonePrefsResponse>(
+            path: '/onboarding/hormones',
+            fields: const <String, List<String>>{
+              'chartedHormones[0]': <String>['value is not an allowed value'],
+            },
+          ),
+        );
+
+        await expectLater(
+          repo.saveHormones(codes: const <String>['Estrogen']),
+          throwsA(
+            isA<ValidationFailure>().having(
+              (ValidationFailure f) => f.messageFor('chartedHormones[0]'),
+              'messageFor(chartedHormones[0])',
+              'value is not an allowed value',
+            ),
+          ),
+        );
+        // Nothing was stored, so nothing cached is wrong.
+        verifyNever(() => store.invalidate(any()));
+      },
+    );
+
+    test('an empty 200 body is a typed failure, not a force-unwrap', () async {
+      when(
+        () => api.onboardingHormonesPost(
+          saveHormonePrefsRequest: any(named: 'saveHormonePrefsRequest'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<HormonePrefsResponse>(
+          requestOptions: RequestOptions(path: '/onboarding/hormones'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(
+        repo.saveHormones(codes: const <String>['estradiol']),
+        throwsA(isA<ServerFailure>()),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // saveNotifications (P4b-T13) — screen 7's FULL REPLACE, plus the push pair
+  // -------------------------------------------------------------------------
+
+  group('saveNotifications', () {
+    setUpAll(
+      () => registerFallbackValue(
+        SaveNotificationPrefsRequest(
+          (b) => b
+            ..enabledCategories = ListBuilder<String>(<String>[
+              'daily_checkin',
+            ]),
+        ),
+      ),
+    );
+
+    void answerSave([NotificationPrefsResponse? body]) {
+      when(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: any(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      ).thenAnswer(apiSuccess(body ?? notificationPrefsResponseFixture()));
+    }
+
+    test('it sends the codes it was given, in order, untouched', () async {
+      answerSave();
+
+      // FULL REPLACE: this array IS the desired state of
+      // `user_notification_prefs`. The server writes a row for EVERY code in
+      // `HormoneCatalog.NotificationCategories.All` and sets `Enabled` from
+      // membership of this array (`OnboardingStepsService.cs:556-573`,
+      // `StagePreferenceRows` at `:1172-1192`), so a code left out is stored as
+      // deselected. The repository adds nothing and re-orders nothing.
+      await repo.saveNotifications(
+        codes: const <String>['phase_shift', 'daily_checkin'],
+      );
+
+      expect(
+        _capturedNotificationsRequest(api).enabledCategories?.toList(),
+        <String>['phase_shift', 'daily_checkin'],
+      );
+
+      // The control: a DIFFERENT array travels differently. Without it the row
+      // above would pass for a repository that ignored its argument.
+      await repo.saveNotifications(codes: const <String>['period_prediction']);
+      expect(
+        _capturedNotificationsRequest(api).enabledCategories?.toList(),
+        <String>['period_prediction'],
+      );
+    });
+
+    test('an EMPTY array is a valid answer and travels as an empty array, '
+        'never as an absent field', () async {
+      answerSave();
+
+      // Muting everything is a real answer — the server keys `value is
+      // required` on a NULL `enabledCategories` and on nothing else
+      // (`OnboardingStepsService.cs:515-517`), exactly as
+      // `POST /onboarding/hormones` does.
+      //
+      // It is NOT what "Not now" sends. Skipping means not calling this method
+      // at all (D-02); an empty post writes four rows with every flag false and
+      // then SUPPRESSES the completion backfill, whose guard is
+      // `if (!await db.UserNotificationPrefs.AnyAsync(...))`
+      // (`OnboardingStepsService.cs:1091`). See the controller's tests.
+      await repo.saveNotifications(codes: const <String>[]);
+
+      final SaveNotificationPrefsRequest sent = _capturedNotificationsRequest(
+        api,
+      );
+      expect(sent.enabledCategories?.toList(), <String>[]);
+      expect(_notificationsWireBody(sent), <String, Object?>{
+        'enabledCategories': <String>[],
+      });
+
+      // The positive control that gives the line above its meaning: a request
+      // whose builder was never handed a list serialises with no
+      // `enabledCategories` key at all. Absent and empty are two different
+      // answers on this endpoint, and only this pair tells them apart.
+      expect(
+        _notificationsWireBody(SaveNotificationPrefsRequest((b) => b)),
+        isEmpty,
+      );
+    });
+
+    test('with no push token the pair is ABSENT from the wire, which is a '
+        'normal outcome and not a failure', () async {
+      answerSave();
+
+      // R-09: P4b's only `PushTokenSource` returns null, so this is the path
+      // screen 7 actually takes today. `deviceRegistered: false` is documented
+      // as a normal outcome rather than a rejection
+      // (`OnboardingContracts.cs:290-293`).
+      final NotificationPrefsResponse body = await repo.saveNotifications(
+        codes: const <String>['daily_checkin'],
+      );
+
+      final Map<String, Object?> wire = _notificationsWireBody(
+        _capturedNotificationsRequest(api),
+      );
+      expect(wire.containsKey('pushToken'), isFalse);
+      expect(wire.containsKey('platform'), isFalse);
+      // The control: the member that WAS supplied is on the wire, so the two
+      // absences above are about the pair and not about an empty body.
+      expect(wire['enabledCategories'], <String>['daily_checkin']);
+      expect(body.deviceRegistered, isFalse);
+    });
+
+    test('a complete pair travels whole', () async {
+      answerSave(notificationPrefsResponseFixture(null, true));
+
+      await repo.saveNotifications(
+        codes: const <String>['daily_checkin'],
+        pushToken: 'fcm-token-abc',
+        platform: 'android',
+      );
+
+      expect(
+        _notificationsWireBody(_capturedNotificationsRequest(api)),
+        <String, Object?>{
+          'enabledCategories': <String>['daily_checkin'],
+          'platform': 'android',
+          'pushToken': 'fcm-token-abc',
+        },
+      );
+    });
+
+    test('HALF a pair never reaches the wire', () async {
+      answerSave();
+
+      // A token with no platform is a device P9a could never dispatch to, and a
+      // platform with no token is not a registration at all, so one without the
+      // other is a 400 under the reserved `request` key
+      // (`OnboardingStepsService.cs:524-530`). It is knowable on the device, so
+      // the round trip is not spent to be told — the same backstop shape
+      // `saveGoals` and `saveBaseline` already have.
+      await expectLater(
+        repo.saveNotifications(
+          codes: const <String>['daily_checkin'],
+          pushToken: 'fcm-token-abc',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+      await expectLater(
+        repo.saveNotifications(
+          codes: const <String>['daily_checkin'],
+          platform: 'android',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      verifyNever(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: any(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      );
+
+      // The positive control: with BOTH halves the same call goes through, so
+      // the two throws above are about the half-pair rather than about a method
+      // that rejects everything.
+      await repo.saveNotifications(
+        codes: const <String>['daily_checkin'],
+        pushToken: 'fcm-token-abc',
+        platform: 'android',
+      );
+      verify(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: any(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      ).called(1);
+    });
+
+    test('a BLANK token is absent, not half a pair', () async {
+      answerSave();
+
+      // The server trims first and reads blank as absent on both members
+      // (`OnboardingStepsService.cs:521-522`), so a client sending "" for a
+      // token it does not have must get "no device" rather than a 400. Mirrored
+      // here so the guard above cannot reject what the server accepts.
+      await repo.saveNotifications(
+        codes: const <String>['daily_checkin'],
+        pushToken: '   ',
+        platform: '',
+      );
+
+      final Map<String, Object?> wire = _notificationsWireBody(
+        _capturedNotificationsRequest(api),
+      );
+      expect(wire.containsKey('pushToken'), isFalse);
+      expect(wire.containsKey('platform'), isFalse);
+      expect(wire['enabledCategories'], <String>['daily_checkin']);
+    });
+
+    test('a BLANK token beside a REAL platform is half a pair, and is refused '
+        'here rather than on the wire', () async {
+      answerSave();
+
+      // The missing link in I-1's chain, and the reason `PushToken.sendable`
+      // exists at the seam. Blank counts as ABSENT
+      // (`OnboardingStepsService.cs:521-522`), so a blank token beside a real
+      // platform is not "no device" — it is HALF a pair, which is a 400 under
+      // the reserved `request` key. FCM can answer an empty string during a
+      // `deleteToken()` race, so this is the shape a real P9a source produces.
+      //
+      // Through screen 7 the ArgumentError would be swallowed by
+      // `allowAndFinish`'s `catch (_)` and rendered as an UnknownFailure
+      // banner — four preference rows unsaved and onboarding unfinished, over a
+      // messaging fault. That is why the pair is dropped BEFORE it gets here.
+      await expectLater(
+        repo.saveNotifications(
+          codes: const <String>['daily_checkin'],
+          pushToken: '   ',
+          platform: 'android',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+      // …and the mirrored half.
+      await expectLater(
+        repo.saveNotifications(
+          codes: const <String>['daily_checkin'],
+          pushToken: '',
+          platform: 'ios',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      verifyNever(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: any(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      );
+
+      // The positive control: blanking BOTH halves is "no device" and goes
+      // through, so the two throws above are about the half-blank pair and not
+      // about a method that rejects every blank.
+      await repo.saveNotifications(
+        codes: const <String>['daily_checkin'],
+        pushToken: '   ',
+        platform: '  ',
+      );
+      verify(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: any(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      ).called(1);
+    });
+
+    test('it invalidates the onboarding state and nothing else', () async {
+      answerSave();
+
+      await repo.saveNotifications(codes: const <String>['daily_checkin']);
+
+      final keys = verify(() => store.invalidate(captureAny())).captured;
+      // `notificationsProvided` and the notification projection both move.
+      expect(keys, contains(_stateKey));
+      // Not the profile: `MeResponse` carries no notification member, and
+      // nothing here stamps `onboarding_completed_at` — that is the
+      // completion's job, and the completion invalidates the profile itself.
+      expect(keys, isNot(contains(_profileKey)));
+      expect(keys, isNot(contains(_cycleSettingsKey)));
+    });
+
+    test(
+      'a 400 arrives as a ValidationFailure keyed by wire field name',
+      () async {
+        when(
+          () => api.onboardingNotificationsPost(
+            saveNotificationPrefsRequest: any(
+              named: 'saveNotificationPrefsRequest',
+            ),
+          ),
+        ).thenAnswer(
+          apiValidationProblem<NotificationPrefsResponse>(
+            path: '/onboarding/notifications',
+            fields: const <String, List<String>>{
+              'enabledCategories[0]': <String>[
+                'value is not one of the allowed values',
+              ],
+            },
+          ),
+        );
+
+        await expectLater(
+          repo.saveNotifications(codes: const <String>['Phase shifts']),
+          throwsA(
+            isA<ValidationFailure>().having(
+              (ValidationFailure f) => f.messageFor('enabledCategories[0]'),
+              'messageFor(enabledCategories[0])',
+              'value is not one of the allowed values',
+            ),
+          ),
+        );
+        // Nothing was stored, so nothing cached is wrong.
+        verifyNever(() => store.invalidate(any()));
+      },
+    );
+
+    test('an empty 200 body is a typed failure, not a force-unwrap', () async {
+      when(
+        () => api.onboardingNotificationsPost(
+          saveNotificationPrefsRequest: any(
+            named: 'saveNotificationPrefsRequest',
+          ),
+        ),
+      ).thenAnswer(
+        (_) async => Response<NotificationPrefsResponse>(
+          requestOptions: RequestOptions(path: '/onboarding/notifications'),
+          statusCode: 200,
+        ),
+      );
+
+      await expectLater(
+        repo.saveNotifications(codes: const <String>['daily_checkin']),
+        throwsA(isA<ServerFailure>()),
+      );
+    });
+  });
+}

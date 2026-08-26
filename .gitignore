@@ -13,3 +13,13 @@ node_modules/
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Python tooling (docs generators)
+__pycache__/
+*.pyc
+
+# Office lock files
+~$*
+
+# Per-user Claude Code settings (plugin config in settings.json IS tracked)
+.claude/settings.local.json

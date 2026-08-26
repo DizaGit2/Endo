@@ -10,6 +10,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/auth/oidc_client.dart';
 import 'package:lumen/core/auth/token_store.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:mocktail/mocktail.dart';
 
 // ---------------------------------------------------------------------------
@@ -34,6 +35,7 @@ ProviderContainer makeContainer({
   MockCacheStore? cache,
 }) {
   return ProviderContainer(
+    retry: lumenRetry,
     overrides: [
       oidcClientProvider.overrideWithValue(oidc),
       tokenStoreProvider.overrideWithValue(store),

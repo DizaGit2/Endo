@@ -67,6 +67,18 @@ dev_dependencies:
   alchemist: ^0.14.0
   mocktail: ^1.0.5
   http_mock_adapter: ^0.6.1
+  # Used ONLY by test/support/screen_registry.dart, to decide whether a test
+  # file really declares a test by parsing it rather than by matching its text.
+  # `parseString` is a purely syntactic parse: no resolution, no build_runner,
+  # no CI step. Already in the transitive graph via the Flutter tooling.
+  #
+  # Deliberately a WIDE range, not `^12.1.0`. This package was transitive until
+  # P4b-T3 and is pulled in by the Flutter tooling and build_runner; a caret
+  # pin (>=12.1.0 <13.0.0) would make a future SDK bump that wants analyzer 13+
+  # a resolution conflict that did not exist before we named it. Bounded rather
+  # than `any` so a genuine API break surfaces as a resolution error instead of
+  # a compile error. Only `parseString` + the AST visitor are used.
+  analyzer: '>=12.1.0 <15.0.0'
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

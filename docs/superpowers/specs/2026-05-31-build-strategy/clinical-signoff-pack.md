@@ -1,8 +1,10 @@
-# Lumen — Clinician Sign-off Pack (C-01 … C-15)
+# Lumen — Clinician Sign-off Pack (C-01 … C-16)
 
 **For:** a reproductive endocrinologist / OB-GYN **and** a biostatistician (C-09/C-11).
 **From:** Lumen product owner. **Prepared:** 2026-07-14.
 **Status of every item below:** **PO-interim — approved by the product owner as a working default, pending your clinical sign-off.** None has yet been signed by a clinician.
+
+> **Specialist-facing Spanish version (2026-08-20):** `lumen-revision-clinica-especialista.docx` in this folder — plain-language, no IT jargon, one page-block per item (title · how the app uses it · Carolina's PO-interim decision · direct question · response box). Regenerate with `python build_clinical_signoff_docx.py` (content in `clinical_signoff_content.py`; needs `python-docx`). Values must stay in sync with this pack.
 
 ---
 
@@ -187,6 +189,22 @@ Category enum (PO): **{hormonal, pain, supplement, bleeding, metabolic}**. GLP-1
 Fever fires at the lower **38.0 °C** cutoff (the PID *urgent* marker is 38.3 °C). Footer stays locale-agnostic; keep the "≈2.5 cm" clot size in every locale.
 **Source:** ACOG (HMB, AUB, PID FAQs); NHS/Mayo (ectopic); NIDDK (urinary retention); Mayo (bowel obstruction); NICE NG12 + BJGP (safety-netting).
 **Sign-off (clinician) + legal review: ______________________  Name / date: ______________**
+
+### C-16 — Body-map front/back membership (OPEN — the one item with **no** PO-interim value)
+**Added 2026-08-21.** Every other item in this pack carries a PO-interim default for you to accept or amend. This one does not: the product owner judged it a clinical question and declined to invent an answer.
+
+One screen asks the patient to mark **where** it hurts on a body outline. Each mark stores a **region** (the 8 you reviewed under C-14) *and* a **side** — front or back. The regions are ratified; the front/back assignment is not, and no published source we could find assigns one.
+
+It matters more than it looks: the side value is **never shown back to the patient**, and version 1 has no way to edit or delete a logged symptom — so a wrong value is written once, invisibly, and cannot be corrected. A later version renders these marks as a **heatmap on a body figure**, which is where a wrong assignment would become a visible anatomical claim.
+
+**Until you rule, version 1 ships one outline with no front/back control and records no side at all** — nothing unratified is stored.
+
+**The question:** for each region — `lower_abdomen`, `pelvis`, `lower_back`, `legs`, `bowel_rectal`, `bladder`, `vaginal`, `chest_shoulder` — should the app offer it on the **front**, the **back**, **both**, or **not ask at all**? Please note `chest_shoulder` is in the vocabulary because of **phrenic-nerve referred shoulder pain**, which is neither cleanly anterior nor posterior; if "record where she points, don't ask front or back" is the better clinical answer, that is a valid reply and the control stays out.
+
+**A second question under the same item.** The 8 regions include nothing for the **upper abdomen** (the area below the ribs and above the navel). On the body outline that area currently resolves to **chest/shoulder**, simply because it is the nearest marked zone. Should the list gain an upper-abdomen region, should that area not be tappable at all (the patient picks from the written list instead), or is chest/shoulder an acceptable answer there?
+
+**Source:** none — an open ask, not a cited default.
+**Sign-off / your ruling: ______________________  Name / date: ______________**
 
 ---
 
