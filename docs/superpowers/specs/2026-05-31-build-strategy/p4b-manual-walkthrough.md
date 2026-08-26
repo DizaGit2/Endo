@@ -618,8 +618,12 @@ Reading: reproduced deterministically on the second token. The request that ente
 17:06:47 was issued by the app itself — there is **no timer or polling anywhere in `client/lib`** (grepped),
 so the likely path is a rebuild-driven refetch after the 5-minute cache TTL (expired 16:59:34); the exact
 trigger is **not identified** and does not change the finding. Consequence for severity: **no user action is
-required** — an app left on the dashboard past its token lifetime signs itself out the moment connectivity
-drops.
+needed for it to happen** — but it is not guaranteed without one. *Precision added by the 18:36–18:39 video
+takes:* an app left idle on the dashboard with an expired token and airplane mode on did **not** sign out in
+two 9-second takes (nothing issued a request), and **did** sign out within two seconds on the first
+network-bound action (calendar, previous month — `E/AppAuth … ConnectException` at 18:38:44.98). So the
+rule is: **the first request that must reach the network while the token is past its window signs the user
+out, whether the user made it or a background refetch did.**
 
 ## 3.6 Second theme pass — the live screens in dark
 
