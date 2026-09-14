@@ -72,6 +72,10 @@ MockCacheStore emptyCacheStore() {
   ).thenAnswer((_) async {});
   when(() => store.invalidate(any())).thenAnswer((_) async {});
   when(() => store.purge()).thenAnswer((_) async {});
+  // A constant stamp: this store is never invalidated or purged mid-test, so
+  // `cachedRead` sees every pending read as still current (hive_boot.dart's
+  // `versionOf`).
+  when(() => store.versionOf(any())).thenReturn((purge: 0, key: 0));
   return store;
 }
 

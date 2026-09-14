@@ -243,21 +243,28 @@ class QuickCheckinController extends Notifier<QuickCheckinForm> {
   /// awaits its future, the same fire-and-forget shape
   /// `_NetworkRequiredBody`'s own retry button already uses.
   ///
-  /// **The calendar controller is refreshed only if it ALREADY EXISTS and
-  /// ALREADY HAS A VALUE.** `cycleCalendarControllerProvider` is
-  /// `autoDispose` (`cycle_calendar_controller.dart`); a bare `ref.read`
-  /// from here would CREATE it — firing `sessionTodayProvider` plus three
-  /// calendar-month GETs — for a Cycle tab screen nobody has opened yet.
-  /// [Ref.exists] is what answers "does this provider already have an
-  /// element" WITHOUT creating one (`riverpod-3.3.2/lib/src/core/ref.dart`'s
-  /// own dartdoc: checking existence "is generally unsafe... but it can be
-  /// useful... to avoid re-fetching"). The second condition —
-  /// `.hasValue` — is what `CycleCalendarController.refresh()` itself checks
-  /// before deciding whether to re-read the visible month or fall back to
-  /// `ref.invalidateSelf()`; skipping the call entirely when there is no
-  /// value yet avoids the documented snap-back to today's month that
-  /// `invalidateSelf()` would otherwise cause, and this method never calls
-  /// that branch directly — only `refresh()` itself decides that.
+  /// **The calendar controller is touched only if it ALREADY EXISTS.**
+  /// `cycleCalendarControllerProvider` is `autoDispose`
+  /// (`cycle_calendar_controller.dart`); a bare `ref.read` from here would
+  /// CREATE it — firing `sessionTodayProvider` plus three calendar-month GETs
+  /// — for a Cycle tab screen nobody has opened yet. [Ref.exists] is what
+  /// answers "does this provider already have an element" WITHOUT creating
+  /// one (`riverpod-3.3.2/lib/src/core/ref.dart`'s own dartdoc: checking
+  /// existence "is generally unsafe... but it can be useful... to avoid
+  /// re-fetching").
+  ///
+  /// **How it is touched depends on whether it has settled.** With a value,
+  /// `CycleCalendarController.refresh()` re-reads the month ON SCREEN, so a
+  /// user who paged away from today is not snapped back. Without one — still
+  /// loading, or errored — it is `ref.invalidate`d instead: its in-flight
+  /// read was issued BEFORE this write committed and would otherwise land as
+  /// pre-write data with nothing to correct it, leaving the day just saved
+  /// absent until a later refresh or the TTL (PR #4 review). There is no
+  /// visible month to preserve in that state, so rerunning `build` is the
+  /// honest restart — the same conclusion `refresh()`'s own no-value branch
+  /// reaches through `invalidateSelf()`. Invalidating directly, rather than
+  /// calling `refresh()` and letting it fall through, keeps the settled case
+  /// the only one that goes through `refresh()`.
   void _refreshDependents() {
     ref.invalidate(dashboardControllerProvider);
 
@@ -267,6 +274,8 @@ class QuickCheckinController extends Notifier<QuickCheckinForm> {
         // Fire-and-forget: the calendar screen (if mounted) will show its
         // own loading/refresh treatment; screen 9 does not await this.
         unawaited(ref.read(cycleCalendarControllerProvider.notifier).refresh());
+      } else {
+        ref.invalidate(cycleCalendarControllerProvider);
       }
     }
   }

@@ -253,21 +253,22 @@ class SymptomFormController extends Notifier<SymptomForm> {
   ///    day, and invalidating others would re-fetch days this write cannot
   ///    have changed.
   ///
-  ///    **No `hasValue` half here, unlike the calendar below — also
-  ///    deliberate.** That half exists on screen 9 because
-  ///    `CycleCalendarController.refresh()` falls back to `invalidateSelf()`
-  ///    when it has no value, which snaps the visible month back to today.
-  ///    `DayDetailController` has no `refresh()` and no such branch — it is
-  ///    one `build()` for one fixed date — so the only tool is `invalidate`,
-  ///    and invalidating a STILL-LOADING day view is strictly more correct
-  ///    than skipping it: that in-flight read was issued before this write
-  ///    committed and would otherwise land as pre-write data with nothing to
-  ///    correct it.
-  ///  * **The cycle calendar, only if it already exists AND already has a
-  ///    value** — screen 9's guard verbatim, for screen 9's reason: the same
-  ///    `refresh()`, the same snap-back. A symptom changes that day's
+  ///    **The day view is `invalidate`d whether or not it has settled.**
+  ///    `DayDetailController` has no `refresh()` — it is one `build()` for
+  ///    one fixed date — so the only tool is `invalidate`, and invalidating
+  ///    a STILL-LOADING day view is strictly more correct than skipping it:
+  ///    that in-flight read was issued before this write committed and would
+  ///    otherwise land as pre-write data with nothing to correct it.
+  ///  * **The cycle calendar, only if it already exists** — screen 9's guard
+  ///    verbatim, for screen 9's reason. A symptom changes that day's
   ///    `symptomCount` and therefore whether the cell draws a dot at all, so
-  ///    an open calendar is genuinely out of date after this write.
+  ///    an open calendar is genuinely out of date after this write. Settled,
+  ///    it is `refresh()`ed, which re-reads the month ON SCREEN rather than
+  ///    snapping a paged-away user back to today. Still loading (or errored),
+  ///    it is `invalidate`d, for exactly the day view's reason above — its
+  ///    in-flight read predates this write — and with no value there is no
+  ///    visible month for a rebuild to snap back from (PR #4 review; screen
+  ///    9 makes the same split).
   ///
   /// Fire-and-forget, like screen 9's: the calendar screen (if mounted) shows
   /// its own refresh treatment, and [submit] does not await it.
@@ -284,6 +285,8 @@ class SymptomFormController extends Notifier<SymptomForm> {
       final calendarState = ref.read(cycleCalendarControllerProvider);
       if (calendarState.hasValue) {
         unawaited(ref.read(cycleCalendarControllerProvider.notifier).refresh());
+      } else {
+        ref.invalidate(cycleCalendarControllerProvider);
       }
     }
   }

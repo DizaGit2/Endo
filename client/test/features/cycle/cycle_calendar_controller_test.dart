@@ -66,9 +66,17 @@ MockCacheStore _realishCacheStore() {
     data[i.positionalArguments[0] as String] =
         i.positionalArguments[1] as Map<String, dynamic>;
   });
+  // The version stamp, with the real store's semantics (`hive_boot.dart`):
+  // invalidate moves that key's stamp, nothing else in this file moves any.
+  final versions = <String, int>{};
   when(() => store.invalidate(any())).thenAnswer((i) async {
-    data.remove(i.positionalArguments[0] as String);
+    final key = i.positionalArguments[0] as String;
+    versions[key] = (versions[key] ?? 0) + 1;
+    data.remove(key);
   });
+  when(() => store.versionOf(any())).thenAnswer(
+    (i) => (purge: 0, key: versions[i.positionalArguments[0] as String] ?? 0),
+  );
   return store;
 }
 

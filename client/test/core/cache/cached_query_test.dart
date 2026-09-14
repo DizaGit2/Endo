@@ -215,6 +215,7 @@ void main() {
       final store = MockCacheStore();
       when(() => store.isFresh(any())).thenReturn(false);
       when(() => store.getJson(any())).thenReturn(null);
+      when(() => store.versionOf(any())).thenReturn((purge: 0, key: 0));
       // The encrypted Hive box can throw a raw error (e.g. box closed after a
       // logout-purge, disk full) — NOT a DioException or Failure.
       when(
@@ -430,6 +431,7 @@ void main() {
         for (final store in [storeA, storeB]) {
           when(() => store.isFresh(any())).thenReturn(false);
           when(() => store.getJson(any())).thenReturn(null);
+          when(() => store.versionOf(any())).thenReturn((purge: 0, key: 0));
           when(
             () => store.putJson(any(), any(), ttl: any(named: 'ttl')),
           ).thenAnswer((_) async {});
@@ -498,6 +500,170 @@ void main() {
         await read();
 
         expect(fetchCount, 2);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // cachedRead — session and invalidation isolation (PR #4 review, H + M)
+  // -------------------------------------------------------------------------
+  //
+  // The in-flight guard above is scoped to the CacheStore, and the store lives
+  // for the whole process: `main.dart` injects one, and logout only PURGES the
+  // box. So a read still in flight when the user signs out outlives the
+  // session it belongs to. Two things must therefore be true of every pending
+  // read the moment `purge()` or `invalidate(key)` runs:
+  //   • no LATER caller joins it — the next account's `GET:/me` must issue its
+  //     own fetch rather than receive the previous account's profile;
+  //   • its response never lands in the box — a purged box stays empty, and a
+  //     key a successful write just invalidated is not repopulated with the
+  //     value a read fetched BEFORE that write committed.
+
+  group('cachedRead — session and invalidation isolation', () {
+    test(
+      'after purge(), a new read does not join the previous session\'s '
+      'in-flight read',
+      () async {
+        final store = await _buildStore(tempDir, () => baseTime);
+        var fetchCount = 0;
+        final previousSession = Completer<Map<String, dynamic>>();
+        final nextSession = Completer<Map<String, dynamic>>();
+
+        Future<CacheResult<Map<String, dynamic>>> read(
+          Completer<Map<String, dynamic>> gate,
+        ) => cachedRead<Map<String, dynamic>>(
+          key: CacheKeys.profile,
+          store: store,
+          fetch: () {
+            fetchCount++;
+            return gate.future;
+          },
+          toJson: (v) => v,
+          fromJson: (m) => m,
+        );
+
+        // Account A's read is in flight when A signs out...
+        final a = read(previousSession);
+        await store.purge();
+        // ...and account B signs in and reads the same key.
+        final b = read(nextSession);
+
+        previousSession.complete({'id': 'account-a'});
+        nextSession.complete({'id': 'account-b'});
+        final aResult = await a as Fresh<Map<String, dynamic>>;
+        final bResult = await b as Fresh<Map<String, dynamic>>;
+
+        expect(
+          fetchCount,
+          2,
+          reason: 'B must issue its own fetch, not join A\'s pending one',
+        );
+        expect(aResult.value['id'], 'account-a');
+        expect(
+          bResult.value['id'],
+          'account-b',
+          reason: 'B must never be handed A\'s profile',
+        );
+      },
+    );
+
+    test(
+      'an in-flight read that completes after purge() leaves the purged box '
+      'empty',
+      () async {
+        final store = await _buildStore(tempDir, () => baseTime);
+        final gate = Completer<Map<String, dynamic>>();
+
+        final pending = cachedRead<Map<String, dynamic>>(
+          key: CacheKeys.profile,
+          store: store,
+          fetch: () => gate.future,
+          toJson: (v) => v,
+          fromJson: (m) => m,
+        );
+
+        await store.purge();
+        gate.complete({'id': 'account-a'});
+        await pending;
+
+        expect(
+          store.getJson(CacheKeys.profile),
+          isNull,
+          reason:
+              'the previous session\'s response must not be written into '
+              'the box the sign-out just cleared',
+        );
+      },
+    );
+
+    test(
+      'an in-flight read that completes after invalidate(key) does not '
+      'repopulate the key with its pre-invalidation response',
+      () async {
+        final store = await _buildStore(tempDir, () => baseTime);
+        const key = 'GET:/cycle/day/2026-06-14';
+        final gate = Completer<Map<String, dynamic>>();
+
+        // A read issued BEFORE a write commits...
+        final pending = cachedRead<Map<String, dynamic>>(
+          key: key,
+          store: store,
+          fetch: () => gate.future,
+          toJson: (v) => v,
+          fromJson: (m) => m,
+        );
+
+        // ...the write commits and invalidates the key (cachedWrite's own
+        // success path)...
+        await store.invalidate(key);
+        // ...and only then does the pre-write response arrive.
+        gate.complete({'pain': null});
+        await pending;
+
+        expect(
+          store.getJson(key),
+          isNull,
+          reason:
+              'the pre-write value must not overwrite the invalidation; the '
+              'next read has to fetch the post-write state',
+        );
+      },
+    );
+
+    test(
+      'after invalidate(key), a new read does not join the pre-invalidation '
+      'read',
+      () async {
+        final store = await _buildStore(tempDir, () => baseTime);
+        const key = 'GET:/cycle/day/2026-06-14';
+        var fetchCount = 0;
+        final before = Completer<Map<String, dynamic>>();
+        final after = Completer<Map<String, dynamic>>();
+
+        Future<CacheResult<Map<String, dynamic>>> read(
+          Completer<Map<String, dynamic>> gate,
+        ) => cachedRead<Map<String, dynamic>>(
+          key: key,
+          store: store,
+          fetch: () {
+            fetchCount++;
+            return gate.future;
+          },
+          toJson: (v) => v,
+          fromJson: (m) => m,
+        );
+
+        final stale = read(before);
+        await store.invalidate(key);
+        final fresh = read(after);
+
+        before.complete({'pain': null});
+        after.complete({'pain': 4});
+        await stale;
+        final freshResult = await fresh as Fresh<Map<String, dynamic>>;
+
+        expect(fetchCount, 2, reason: 'the retired read must not be joined');
+        expect(freshResult.value['pain'], 4);
       },
     );
   });

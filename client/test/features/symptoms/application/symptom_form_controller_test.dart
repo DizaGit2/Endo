@@ -73,9 +73,14 @@ class _CountingDashboard extends DashboardController {
 }
 
 class _CountingCalendar extends CycleCalendarController {
-  _CountingCalendar(this.refreshes, this.builds);
+  _CountingCalendar(this.refreshes, this.builds, {this.gate});
 
   final _Counter refreshes;
+
+  /// When set, [build] waits on it — the calendar stays LOADING (no value)
+  /// until the test completes the gate, which is the state the
+  /// invalidate-not-refresh branch of `_refreshDependents` exists for.
+  final Completer<void>? gate;
 
   /// **Counted SEPARATELY from [refreshes], and the mutation round is why.**
   /// `cycleCalendarControllerProvider` is `autoDispose`, so a bare `ref.read`
@@ -90,6 +95,7 @@ class _CountingCalendar extends CycleCalendarController {
   @override
   Future<CycleCalendarView> build() async {
     builds.value++;
+    if (gate != null) await gate!.future;
     return CycleCalendarView(
       visibleMonth: DateTime(2026, 4),
       today: Date(2026, 4, 20),
@@ -650,6 +656,7 @@ void main() {
     /// buys.
     ProviderContainer buildDependentContainer({
       required Set<ProviderListenable<Object?>> watch,
+      Completer<void>? calendarGate,
     }) {
       final c = ProviderContainer(
         retry: lumenRetry,
@@ -660,7 +667,11 @@ void main() {
             () => _CountingDashboard(dashboardBuilds),
           ),
           cycleCalendarControllerProvider.overrideWith(
-            () => _CountingCalendar(calendarRefreshes, calendarBuilds),
+            () => _CountingCalendar(
+              calendarRefreshes,
+              calendarBuilds,
+              gate: calendarGate,
+            ),
           ),
           dayDetailControllerProvider(
             today,
@@ -739,6 +750,38 @@ void main() {
       await saveOneSymptom(c);
 
       expect(calendarRefreshes.value, 1);
+    });
+
+    test('a cycle calendar that is still LOADING is invalidated — rebuilt, '
+        'not refreshed and not skipped — because its in-flight read predates '
+        'this write', () async {
+      // PR #4 review (cached_query.dart:168 finding): skipping a loading
+      // calendar leaves it to settle on pre-write data, so the day just
+      // written draws no dot until a later refresh or the TTL. With no value
+      // there is no visible month for `refresh()` to snap back FROM, so the
+      // honest restart is a rebuild.
+      final gate = Completer<void>();
+      final c = buildDependentContainer(
+        watch: {cycleCalendarControllerProvider},
+        calendarGate: gate,
+      );
+      await settle();
+      expect(calendarBuilds.value, 1);
+      expect(
+        c.read(cycleCalendarControllerProvider).hasValue,
+        isFalse,
+        reason: 'premise: the calendar has not settled',
+      );
+
+      await saveOneSymptom(c);
+
+      expect(
+        calendarBuilds.value,
+        2,
+        reason: 'the loading calendar must be rebuilt after the write',
+      );
+      expect(calendarRefreshes.value, 0);
+      gate.complete();
     });
 
     test(

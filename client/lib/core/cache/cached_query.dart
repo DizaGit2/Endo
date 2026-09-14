@@ -17,7 +17,11 @@
 //     WITHOUT persisting any pending-write entry (online-only contract:
 //     writes never queue).
 //   • In-flight de-duplication: concurrent cachedReads of the SAME key on the
-//     same store share one request (see _inflightFor).
+//     same store share one request (see _inflightFor) — but only while the
+//     key's CacheStore.versionOf stamp is the one the request started under.
+//     A purge (sign-out) or an invalidate (a committed write) retires the
+//     pending read: later callers do not join it and its response is not
+//     written through (PR #4 review).
 
 import 'package:dio/dio.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
@@ -74,11 +78,32 @@ final class NetworkRequired<T> extends CacheResult<T> {
 /// it on, and keying by cache key alone would let two stores (a test's temp box
 /// and another test's) collide on `GET:/me`. Entries are dropped with the store
 /// they belong to.
-final Expando<Map<String, Future<Object?>>> _inflightReads =
-    Expando<Map<String, Future<Object?>>>('cachedRead in-flight');
+///
+/// **Per-store is not per-session, and that is why every entry carries a
+/// [CacheVersion].** `main.dart` injects ONE store for the life of the process;
+/// sign-out purges its box but does not replace it. So a `GET:/me` still in
+/// flight when account A signs out is still in this map when account B signs
+/// in — and B's read of the same key would join A's future and be handed A's
+/// profile, while A's late response would repopulate the box B's session had
+/// just been given empty. The stamp closes both holes: a pending read is joined
+/// only while `store.versionOf(key)` still equals the stamp it started under
+/// ([cachedRead]), and it writes through only under the same condition
+/// ([_read]). `CacheStore.purge` and `CacheStore.invalidate` are what move the
+/// stamp, so the same mechanism keeps a read issued BEFORE a write committed
+/// from overwriting the invalidation that write performed.
+final Expando<Map<String, _InflightRead>> _inflightReads =
+    Expando<Map<String, _InflightRead>>('cachedRead in-flight');
 
-Map<String, Future<Object?>> _inflightFor(CacheStore store) =>
-    _inflightReads[store] ??= <String, Future<Object?>>{};
+Map<String, _InflightRead> _inflightFor(CacheStore store) =>
+    _inflightReads[store] ??= <String, _InflightRead>{};
+
+/// One pending read: its shared future and the key version it started under.
+class _InflightRead {
+  _InflightRead({required this.version, required this.future});
+
+  final CacheVersion version;
+  final Future<Object?> future;
+}
 
 // ---------------------------------------------------------------------------
 // cachedRead
@@ -89,10 +114,15 @@ Map<String, Future<Object?>> _inflightFor(CacheStore store) =>
 /// Semantics:
 /// 1. If [store.isFresh(key)] is true → return [Fresh] from cache immediately
 ///    (no network call).
-/// 2. If an identical read is already in flight → join it; no second request
-///    is issued and both callers get the same outcome (value OR error).
+/// 2. If an identical read is already in flight — and the key has been
+///    neither invalidated nor purged since that read started — join it; no
+///    second request is issued and both callers get the same outcome (value
+///    OR error). A pending read the store has retired is NOT joined: the
+///    caller issues its own fetch.
 /// 3. Otherwise attempt the network [fetch].
-/// 4. On success → write-through via [store.putJson] and return [Fresh].
+/// 4. On success → write-through via [store.putJson] — unless the key was
+///    invalidated or the store purged while the fetch was in flight, in which
+///    case the response is returned but NOT cached — and return [Fresh].
 /// 5. On a connectivity/transient-server failure ([NetworkFailure] /
 ///    [ServerFailure]) WITH a cached value → [Stale]; WITHOUT one →
 ///    [NetworkRequired].
@@ -118,11 +148,18 @@ Future<CacheResult<T>> cachedRead<T>({
   }
 
   // ── Join an identical read already in flight ────────────────────────────
+  // The stamp is read BEFORE the join check and handed to the new read below,
+  // so that the read's own stamp is the one the key had when it was decided
+  // that no joinable request existed.
   final inflight = _inflightFor(store);
+  final version = store.versionOf(key);
   final joined = inflight[key];
-  if (joined != null) {
-    return await joined as CacheResult<T>;
+  if (joined != null && joined.version == version) {
+    return await joined.future as CacheResult<T>;
   }
+  // `joined != null` here means a RETIRED read: the key was invalidated or the
+  // store purged since it started. It is left to finish on its own (its own
+  // callers still get their outcome) and is replaced in the slot below.
 
   // Registration must happen before the first `await` below, so that a caller
   // running in the same microtask sees it. An async function body runs
@@ -135,21 +172,29 @@ Future<CacheResult<T>> cachedRead<T>({
     toJson: toJson,
     fromJson: fromJson,
     ttl: ttl,
+    version: version,
   );
 
   // `whenComplete`, so a failure clears the slot too — and a BLOCK body, not an
   // arrow: `Map.remove` returns the removed value, and `whenComplete` waits on
   // any Future its callback returns, so an arrow would hand it this very future
-  // and deadlock every read.
+  // and deadlock every read. The identity check matters: a retired read that
+  // completes AFTER its replacement was registered must not evict the
+  // replacement.
+  late final _InflightRead entry;
   final future = read.whenComplete(() {
-    inflight.remove(key);
+    if (identical(inflight[key], entry)) inflight.remove(key);
   });
-  inflight[key] = future;
+  entry = _InflightRead(version: version, future: future);
+  inflight[key] = entry;
 
   return await future;
 }
 
 /// The un-guarded read: everything [cachedRead] does once it owns the request.
+///
+/// [version] is the key's [CacheStore.versionOf] stamp at the moment the read
+/// was issued; the write-through is skipped if it has moved since.
 Future<CacheResult<T>> _read<T>({
   required String key,
   required CacheStore store,
@@ -157,17 +202,25 @@ Future<CacheResult<T>> _read<T>({
   required Map<String, dynamic> Function(T) toJson,
   required T Function(Map<String, dynamic>) fromJson,
   required Duration ttl,
+  required CacheVersion version,
 }) async {
   // ── Attempt network ─────────────────────────────────────────────────────
   try {
     final value = await fetch();
-    // Write-through is best-effort: a cache-write hiccup (e.g. the box was
-    // closed by a concurrent logout-purge, disk full) must NOT mask a
-    // successful network fetch — the live value is still returned as Fresh.
-    try {
-      await store.putJson(key, toJson(value), ttl: ttl);
-    } catch (_) {
-      // Swallow cache-write errors; the fetched value is authoritative.
+    // No write-through for a retired read: the store was purged (this response
+    // belongs to a session that has ended — on a shared device, to a different
+    // person) or the key was invalidated by a write that committed while this
+    // fetch was out (this response predates that write). The value is still
+    // returned to the callers that asked for it; it is simply not cached.
+    if (store.versionOf(key) == version) {
+      // Write-through is best-effort: a cache-write hiccup (e.g. the box was
+      // closed by a concurrent logout-purge, disk full) must NOT mask a
+      // successful network fetch — the live value is still returned as Fresh.
+      try {
+        await store.putJson(key, toJson(value), ttl: ttl);
+      } catch (_) {
+        // Swallow cache-write errors; the fetched value is authoritative.
+      }
     }
     return Fresh(value);
   } on DioException catch (e) {

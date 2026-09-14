@@ -566,9 +566,17 @@ void main() {
       verify(() => cycleRepo.getCalendarMonth(any())).called(3);
     });
 
-    test('the calendar controller is SKIPPED — not refreshed — while it exists '
-        'but has not settled to a value yet, avoiding the documented '
-        'snap-back', () async {
+    test('the calendar controller is INVALIDATED — restarted, not refreshed '
+        'and not skipped — while it exists but has not settled to a value '
+        'yet: its in-flight read predates this write', () async {
+      // PR #4 review (cached_query.dart:168 finding): a calendar read issued
+      // BEFORE the check-in committed lands as pre-write data with nothing to
+      // correct it — the saved day stays absent until a later refresh or the
+      // TTL. Skipping it was justified by `refresh()`'s snap-back to today's
+      // month, but a controller with no value yet has no month on screen to
+      // preserve: rerunning build IS its honest restart (its own dartdoc says
+      // so). So the still-loading calendar is invalidated, and re-issues its
+      // three month reads.
       when(meRepo.getMe).thenAnswer((_) async => Fresh(meResponseFixture()));
       final pending = Completer<CacheResult<CycleCalendarResponse>>();
       when(
@@ -601,7 +609,12 @@ void main() {
       await notifier(container).submit();
       await settle();
 
-      verifyNever(() => cycleRepo.getCalendarMonth(any()));
+      verify(
+        () => cycleRepo.getCalendarMonth(any()),
+        // The rebuilt controller issues its three-window read again; the
+        // pre-write read it replaced is left to complete into a state nobody
+        // reads.
+      ).called(3);
     });
   });
 

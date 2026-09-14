@@ -175,11 +175,25 @@ class FlowCacheStore extends Fake implements CacheStore {
   @override
   Future<void> invalidate(String key) async {
     invalidations.add(key);
+    _keyVersions[key] = (_keyVersions[key] ?? 0) + 1;
     _entries.remove(key);
   }
 
   @override
-  Future<void> purge() async => _entries.clear();
+  Future<void> purge() async {
+    _purges++;
+    _keyVersions.clear();
+    _entries.clear();
+  }
+
+  // The version stamp, with the real store's semantics (`hive_boot.dart`):
+  // moved by invalidate (that key) and purge (every key), by nothing else.
+  int _purges = 0;
+  final Map<String, int> _keyVersions = <String, int>{};
+
+  @override
+  CacheVersion versionOf(String key) =>
+      (purge: _purges, key: _keyVersions[key] ?? 0);
 
   /// Whether [key] currently holds anything at all.
   bool holds(String key) => _entries.containsKey(key);
