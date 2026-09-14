@@ -65,9 +65,12 @@ abstract final class AccountFields {
 /// is the only failure mode this class is designed around. So:
 ///
 /// * **No maximum on the EMAIL**, and none on `locale` / `timezone` /
-///   `policyVersion`: the server bounds the latter three (`:41-43`) but screen 2
-///   sends `null` for all of them, and a bound on an unsent field is a rule with
-///   no input.
+///   `policyVersion`: the server bounds the latter three (`:41-43`). Screen 2
+///   sends `null` for `policyVersion`; `locale` and `timezone` come from the
+///   platform, not from the form (D1 / D-12 — `deviceLocaleProvider`,
+///   `deviceTimezoneProvider`), so there is no user input to validate here —
+///   `usableTimezoneId` shapes the zone before it is sent, and a server
+///   rejection of either is recovered by `AccountController._start`, not shown.
 /// * **No character-class rule.** D-24 is "min 12, any Unicode" — no digit, no
 ///   symbol, no mixed case.
 /// * **No breached-password check and no uniqueness check.** Neither is

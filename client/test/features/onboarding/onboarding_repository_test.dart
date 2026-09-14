@@ -26,6 +26,8 @@ import 'package:lumen/api/model/hormone_prefs_response.dart';
 import 'package:lumen/api/model/notification_prefs_response.dart';
 import 'package:lumen/api/model/onboarding_complete_response.dart';
 import 'package:lumen/api/model/onboarding_cycle_response.dart';
+import 'package:lumen/api/model/onboarding_start_request.dart';
+import 'package:lumen/api/model/onboarding_start_response.dart';
 import 'package:lumen/api/model/onboarding_state_response.dart';
 import 'package:lumen/api/model/save_baseline_request.dart';
 import 'package:lumen/api/model/save_goals_request.dart';
@@ -214,6 +216,59 @@ void main() {
   // -------------------------------------------------------------------------
   // GET /onboarding/state
   // -------------------------------------------------------------------------
+
+  // D1 / D-12 (PR #4 review, walk 2026-08-25, B-50): the zone and locale the
+  // controller hands in must reach the wire unchanged, and an absent one must
+  // stay absent — the server's column defaults are the fallback, not a value
+  // the client should ever spell out itself.
+  group('startOnboarding', () {
+    OnboardingStartRequest capturedStart() => verify(
+          () => api.onboardingStartPost(
+            onboardingStartRequest: captureAny(named: 'onboardingStartRequest'),
+          ),
+        ).captured.single as OnboardingStartRequest;
+
+    setUp(() {
+      registerFallbackValue(
+        OnboardingStartRequest((b) => b..email = 'fallback@example.com'),
+      );
+      when(
+        () => api.onboardingStartPost(
+          onboardingStartRequest: any(named: 'onboardingStartRequest'),
+        ),
+      ).thenAnswer(
+        apiSuccess(OnboardingStartResponse((b) => b..userId = 'user-1')),
+      );
+    });
+
+    test('puts the device timezone and locale on the wire as given', () async {
+      await repo.startOnboarding(
+        email: 'maya@example.com',
+        password: 'a-good-passphrase',
+        displayName: 'Maya',
+        locale: 'en-US',
+        timezone: 'America/Mexico_City',
+      );
+
+      final request = capturedStart();
+      expect(request.timezone, 'America/Mexico_City');
+      expect(request.locale, 'en-US');
+      expect(request.email, 'maya@example.com');
+    });
+
+    test('an absent timezone and locale stay absent — the server defaults, '
+        'the client never spells Madrid out', () async {
+      await repo.startOnboarding(
+        email: 'maya@example.com',
+        password: 'a-good-passphrase',
+        displayName: 'Maya',
+      );
+
+      final request = capturedStart();
+      expect(request.timezone, isNull);
+      expect(request.locale, isNull);
+    });
+  });
 
   group('getState', () {
     test(

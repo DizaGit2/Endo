@@ -31,6 +31,7 @@ import 'package:lumen/api/model/onboarding_start_response.dart';
 import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
 import 'package:lumen/core/network/api_client.dart';
+import 'package:lumen/core/time/device_timezone.dart';
 import 'package:lumen/features/onboarding/presentation/account_screen.dart';
 import 'package:lumen/shared/widgets/lumen_input_field.dart';
 import 'package:mocktail/mocktail.dart';
@@ -130,6 +131,11 @@ Future<_RecordingAuthController> _pump(
       // `cacheStoreProvider` THROWS unless overridden. Screen 2 uses none of
       // that, so an always-missing store is exactly right here.
       cacheStoreProvider.overrideWithValue(emptyCacheStore()),
+      // `register()` awaits the device zone before it POSTs (D1 / D-12), and
+      // the real provider asks a platform channel — which never answers in a
+      // widget test. Pinned to "the device will not say" so the request goes
+      // out with the server defaults, which is all this file is about.
+      deviceTimezoneProvider.overrideWith((_) async => null),
     ],
   );
   return auth;

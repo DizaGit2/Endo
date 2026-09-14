@@ -27,6 +27,7 @@ import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/locale/locale_provider.dart';
+import 'package:lumen/core/time/device_timezone.dart';
 import 'package:lumen/features/onboarding/application/onboarding_status_controller.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -75,7 +76,13 @@ void main() {
   ///
   /// [gateTimeout] shortens the bounded wait so the timeout path is testable
   /// without an 8-second test.
-  ProviderContainer makeContainer(AuthStatus status, {Duration? gateTimeout}) {
+  ProviderContainer makeContainer(
+    AuthStatus status, {
+    Duration? gateTimeout,
+    // Null — "the device will not say" — for every test that is not about
+    // the D1 sync, so none of them has to stub `updateMe`.
+    String? deviceTimezone,
+  }) {
     final container = ProviderContainer(
       retry: lumenRetry,
       overrides: [
@@ -85,6 +92,7 @@ void main() {
         // regional settings. Deliberately NOT es-ES: every locale assertion
         // below has to move it to be worth anything.
         deviceLocaleProvider.overrideWithValue('en-US'),
+        deviceTimezoneProvider.overrideWith((_) async => deviceTimezone),
         if (gateTimeout != null)
           onboardingGateTimeoutProvider.overrideWithValue(gateTimeout),
       ],
@@ -457,6 +465,158 @@ void main() {
 
       expect(container.read(profileLocaleProvider), isNull);
       expect(container.read(localeProvider), 'en_US');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // The gate's /me read also keeps users.timezone in step with the device
+  // (D1 / D-12 — PR #4 review, walk 2026-08-25, B-50)
+  // -------------------------------------------------------------------------
+  //
+  // Every day-keyed read and write on the server is resolved in the zone the
+  // profile stores. An account registered before the client sent its zone
+  // stores the server default, Madrid; a traveller's phone moves; either way
+  // the profile and the device disagree, and "today" is the wrong day for
+  // hours at a time. The once-per-session /me read is the one place that sees
+  // both values, so it PATCHes the device's zone across — and it does so
+  // BEFORE the gate opens, so the calendar reads the screens issue next are
+  // already answered in the corrected zone.
+
+  group('keeps users.timezone in step with the device', () {
+    void stubPatch({Future<void> Function()? answer}) {
+      when(() => repo.updateMe(timezone: any(named: 'timezone'))).thenAnswer(
+        (_) => answer?.call() ?? Future<void>.value(),
+      );
+    }
+
+    test('PATCHes the device zone before the gate opens when it differs from '
+        'the profile\'s', () async {
+      when(repo.getMe).thenAnswer(
+        (_) async => Fresh(_me(onboardingCompleted: true)), // Europe/Madrid
+      );
+      final patchGate = Completer<void>();
+      stubPatch(answer: () => patchGate.future);
+
+      final container = makeContainer(
+        AuthStatus.authenticated,
+        deviceTimezone: 'America/Mexico_City',
+      );
+      await pumpEventQueue();
+
+      // The read has landed and the PATCH is in flight: the gate is still
+      // closed, so nothing downstream can read "today" in the old zone.
+      verify(() => repo.updateMe(timezone: 'America/Mexico_City')).called(1);
+      expect(
+        container.read(onboardingStatusProvider),
+        OnboardingStatus.unknown,
+        reason: 'the gate must wait for the zone to be corrected',
+      );
+
+      patchGate.complete();
+      await pumpEventQueue();
+
+      expect(
+        container.read(onboardingStatusProvider),
+        OnboardingStatus.completed,
+      );
+    });
+
+    test('does not PATCH when the profile already carries the device zone',
+        () async {
+      when(repo.getMe).thenAnswer(
+        (_) async => Fresh(_me(onboardingCompleted: true)), // Europe/Madrid
+      );
+
+      final container = makeContainer(
+        AuthStatus.authenticated,
+        deviceTimezone: 'Europe/Madrid',
+      );
+      await pumpEventQueue();
+
+      verifyNever(() => repo.updateMe(timezone: any(named: 'timezone')));
+      expect(
+        container.read(onboardingStatusProvider),
+        OnboardingStatus.completed,
+      );
+    });
+
+    test('does not PATCH when the device will not say', () async {
+      when(repo.getMe).thenAnswer(
+        (_) async => Fresh(_me(onboardingCompleted: true)),
+      );
+
+      final container = makeContainer(AuthStatus.authenticated);
+      await pumpEventQueue();
+
+      verifyNever(() => repo.updateMe(timezone: any(named: 'timezone')));
+      expect(
+        container.read(onboardingStatusProvider),
+        OnboardingStatus.completed,
+      );
+    });
+
+    test('a PATCH the server refuses or the network drops does not hold the '
+        'gate — the profile keeps its zone and the next cold start tries again',
+        () async {
+      when(repo.getMe).thenAnswer(
+        (_) async => Fresh(_me(onboardingCompleted: true)),
+      );
+      when(() => repo.updateMe(timezone: any(named: 'timezone')))
+          .thenThrow(const NetworkFailure());
+
+      final container = makeContainer(
+        AuthStatus.authenticated,
+        deviceTimezone: 'America/Mexico_City',
+      );
+      await pumpEventQueue();
+
+      expect(
+        container.read(onboardingStatusProvider),
+        OnboardingStatus.completed,
+      );
+    });
+
+    test('a PATCH that never answers is bounded by the gate timeout', () async {
+      when(repo.getMe).thenAnswer(
+        (_) async => Fresh(_me(onboardingCompleted: true)),
+      );
+      stubPatch(answer: () => Completer<void>().future);
+
+      final container = makeContainer(
+        AuthStatus.authenticated,
+        deviceTimezone: 'America/Mexico_City',
+        gateTimeout: const Duration(milliseconds: 50),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      await pumpEventQueue();
+
+      expect(
+        container.read(onboardingStatusProvider),
+        OnboardingStatus.completed,
+        reason: 'the sync is best-effort; the splash must not wait on it',
+      );
+    });
+
+    test('a read that lands after sign-out PATCHes nothing — that zone would '
+        'be written into the NEXT user\'s profile', () async {
+      final gate = Completer<CacheResult<MeResponse>>();
+      when(repo.getMe).thenAnswer((_) => gate.future);
+      stubPatch();
+
+      final container = makeContainer(
+        AuthStatus.authenticated,
+        deviceTimezone: 'America/Mexico_City',
+      );
+      await pumpEventQueue();
+
+      (container.read(authStatusProvider.notifier) as _FakeAuthController)
+          .setStatus(AuthStatus.unauthenticated);
+      await pumpEventQueue();
+
+      gate.complete(Fresh(_me(onboardingCompleted: true)));
+      await pumpEventQueue();
+
+      verifyNever(() => repo.updateMe(timezone: any(named: 'timezone')));
     });
   });
 }

@@ -50,6 +50,11 @@ dependencies:
   # one_of_serializer for the dart-dio serializer plumbing.
   one_of: ^1.5.0
   one_of_serializer: ^1.5.0
+  # The device's IANA zone id (D-12: `users.timezone` is captured at
+  # /onboarding/start and re-synced on app start — D1, PR #4 review). Dart has
+  # no way to ask for it: `DateTime.now().timeZoneName` is an abbreviation
+  # ("CST"), not an id the server can resolve.
+  flutter_timezone: ^5.1.0
 
 dev_dependencies:
   flutter_test:

@@ -6,6 +6,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/error/failure.dart';
 import 'package:lumen/core/locale/locale_provider.dart';
+import 'package:lumen/core/time/device_timezone.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 
 // ---------------------------------------------------------------------------
@@ -85,6 +86,11 @@ OnboardingStatus onboardingStatusFrom(MeResponse? me) {
 /// - that read also publishes the profile's locale into `profileLocaleProvider`
 ///   (P4b-T6), which is what makes the app locale-aware from the first frame
 ///   rather than from whenever the user first opens Settings;
+/// - and it keeps `users.timezone` in step with the device (D1 / D-12, PR #4
+///   review): if the profile's zone differs from the device's, the device's is
+///   `PATCH`ed across BEFORE the gate opens, so the calendar reads the screens
+///   issue next are already answered in the corrected zone — see
+///   [_syncTimezone];
 /// - an in-flight read that lands after the session changed is discarded
 ///   (see [_generation]), so a logout can never be undone by a late response.
 ///
@@ -169,11 +175,53 @@ class OnboardingStatusController extends Notifier<OnboardingStatus> {
     // Deliberately AFTER the staleness guard, for the same reason `state` is:
     // adopting here from a previous session's response would re-populate the
     // locale sink that signing out just cleared, and on a shared device that is
-    // the previous user's locale.
+    // the previous user's locale — and the zone sync below would write THIS
+    // device's zone into the next user's profile.
     if (profile != null) {
       ref.read(profileLocaleProvider.notifier).adopt(profile.locale);
+      await _syncTimezone(profile);
+      // The sync awaited the network; the session may have moved on meanwhile.
+      if (!ref.mounted || generation != _generation) return;
     }
     state = resolved;
+  }
+
+  /// Brings `users.timezone` in step with the device (D1 / D-12 — PR #4
+  /// review, PO ruling 2026-09-14: re-sync on app start, no UI).
+  ///
+  /// Why here: every day-keyed row on the server is resolved in the zone the
+  /// profile stores, and this once-per-session `/me` read is the one place
+  /// that sees the profile's zone and the device's side by side. An account
+  /// registered before the client sent its zone stores the server default
+  /// (Madrid); a traveller's phone has moved; either way "today" is the wrong
+  /// day for hours at a time until the two agree. Screen 31 draws the zone
+  /// read-only (the mockup has no row for it), so this is the only write path.
+  ///
+  /// Awaited before the gate opens, so `GET /cycle/calendar` — the read every
+  /// cold start makes for the server's "today" — is already answered in the
+  /// corrected zone. Best-effort in every other respect: an unknown device
+  /// zone, a zone that already matches, a refused or dropped `PATCH`, or one
+  /// that outlasts [onboardingGateTimeoutProvider] all leave the profile as it
+  /// was and open the gate; the next cold start tries again.
+  Future<void> _syncTimezone(MeResponse profile) async {
+    final String? device;
+    try {
+      device = await ref.read(deviceTimezoneProvider.future);
+    } catch (_) {
+      return;
+    }
+    if (device == null || device == profile.timezone) return;
+
+    try {
+      await ref
+          .read(meRepositoryProvider)
+          .updateMe(timezone: device)
+          .timeout(ref.read(onboardingGateTimeoutProvider));
+    } catch (_) {
+      // Offline, refused, timed out, or the container went away mid-write:
+      // the profile keeps its zone. Nothing to surface — the user has no
+      // control this maps to, and the gate must not be held on it.
+    }
   }
 
   /// Opens the gate without another `/me` round-trip.

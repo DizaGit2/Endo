@@ -74,11 +74,22 @@ class MeRepository {
   /// Calls [PATCH /me] online-only. On success, invalidates the cached 'GET:/me'
   /// entry so the next call to [getMe] will re-fetch.
   /// Throws a typed [Failure] on network error (no write is cached).
-  Future<void> updateMe({String? displayName}) {
+  ///
+  /// Every field is optional and **an absent field means "leave unchanged",
+  /// never "reset"** (`ARCHITECTURE.md` §PATCH /me): a caller passing only
+  /// [timezone] does not touch the display name, and vice versa. [timezone] is
+  /// an IANA zone id (D-12) — the app-start re-sync in
+  /// `OnboardingStatusController` is its caller (D1 / B-50, PR #4 review);
+  /// screen 31 has no editable row for it.
+  Future<void> updateMe({String? displayName, String? timezone}) {
     return cachedWrite(
       store: _store,
       write: () async {
-        final request = UpdateMeRequest((b) => b..displayName = displayName);
+        final request = UpdateMeRequest(
+          (b) => b
+            ..displayName = displayName
+            ..timezone = timezone,
+        );
         await _api.mePatch(updateMeRequest: request);
       },
       invalidateKeys: [_key],

@@ -20,6 +20,7 @@ import 'package:lumen/core/auth/auth_controller.dart';
 import 'package:lumen/core/auth/token_store.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
 import 'package:lumen/core/network/api_client.dart';
+import 'package:lumen/core/time/device_timezone.dart';
 import 'package:mocktail/mocktail.dart';
 
 // ---------------------------------------------------------------------------
@@ -98,9 +99,18 @@ MockTokenStore emptyTokenStore() {
 
 /// Overrides for the seams every screen test shares.
 ///
-/// Nothing is overridden unless it is asked for, except [authStatusProvider],
-/// which is always pinned: the real one reaches for `FlutterSecureStorage` and
-/// a live OIDC client on its first build.
+/// Nothing is overridden unless it is asked for, except two seams that are
+/// always pinned:
+///  * [authStatusProvider] — the real one reaches for `FlutterSecureStorage`
+///    and a live OIDC client on its first build;
+///  * [deviceTimezoneProvider] — the real one asks a platform channel, and a
+///    channel with no handler NEVER answers inside a widget test (it does not
+///    fail, it hangs — and under `testWidgets`'s fake clock no timeout fires
+///    either). The onboarding gate awaits it before opening (D1 / D-12), so an
+///    unpinned test that reaches the gate would hang forever. [deviceTimezone]
+///    defaults to `null` — "the device will not say" — which is also the value
+///    that keeps every test that is not about the zone sync from having to
+///    stub `PATCH /me`.
 ///
 /// ```dart
 /// await pumpApp(
@@ -117,9 +127,11 @@ List<Override> lumenOverrides({
   LumenApiApi? api,
   CacheStore? cacheStore,
   TokenStore? tokenStore,
+  String? deviceTimezone,
 }) {
   return <Override>[
     authStatusProvider.overrideWith(() => FakeAuthController(auth)),
+    deviceTimezoneProvider.overrideWith((_) async => deviceTimezone),
     if (api != null) lumenApiProvider.overrideWithValue(api),
     if (cacheStore != null) cacheStoreProvider.overrideWithValue(cacheStore),
     if (tokenStore != null) tokenStoreProvider.overrideWithValue(tokenStore),
