@@ -57,6 +57,7 @@ When the phase is done, the session fills the phase's **STATUS block** (with *pa
 
 ### Step 6 — Review (§4 light / §5 deep)
 Do the review checklist. **Don't trust the pasted output — re-run the verify commands yourself.**
+To delegate the verification to an agent, paste the filled prompt from [`REVIEW-KICKOFF.md`](REVIEW-KICKOFF.md) into a fresh session; it re-runs everything, posts one COMMENT review on the PR, and stops. The rulings and the `DONE` flip stay yours.
 
 ### Step 7 — Approve & merge (or hand back)
 - If it passes: §8.
@@ -191,6 +192,8 @@ Get-Content TestResults/residue-sweep.log -Tail 10     # the same lines, after t
 
 # review a phase diff
 git diff main...phase/NN-<slug> --stat
+# agent-run review (verification + COMMENT review on the PR, never approve/merge)
+#   paste docs/superpowers/REVIEW-KICKOFF.md §2 into a fresh session
 
 # deep review (safety-critical phases)
 # /code-review high      (P1, P2, P6)
