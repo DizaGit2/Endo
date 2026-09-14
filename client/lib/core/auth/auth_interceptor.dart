@@ -34,10 +34,20 @@ const _kRetried = 'auth_interceptor_retried';
 /// all receive a 401 (reactive) share a single in-flight refresh [Future].
 /// Exactly one call to the underlying [refresh] function is made.
 ///
-/// ### onAuthLost
-/// When refresh fails (or no refresh token is stored), tokens are cleared via
-/// [TokenStore.clear] and [onAuthLost] is called so the app can navigate to
+/// ### onAuthLost — only for an AUTHORITATIVE loss (D2, B-49)
+/// When no refresh token is stored, or the authorization server itself rejects
+/// the refresh token ([OidcSessionRejected] from [refresh]), tokens are cleared
+/// via [TokenStore.clear] and [onAuthLost] is called so the app can navigate to
 /// the login screen.
+///
+/// Any OTHER refresh failure — no network, discovery unreachable, the token
+/// endpoint down or answering 5xx, a malformed response — is transient: the
+/// tokens are KEPT, the one request that needed the refresh is rejected as a
+/// [DioExceptionType.connectionError] carrying a [NetworkFailure] (so
+/// `error_mapper.dart` renders the offline state and `cachedRead` serves stale
+/// data), and the next request simply refreshes again. Before this distinction
+/// a bare `catch (_)` here signed the user out and purged the on-disk cache on
+/// the first network-bound request after ~15 minutes offline (walk 2026-08-25).
 class AuthInterceptor extends Interceptor {
   AuthInterceptor({
     required TokenStore tokenStore,
@@ -101,6 +111,8 @@ class AuthInterceptor extends Interceptor {
           type: DioExceptionType.unknown,
         ),
       );
+    } on _RefreshUnavailableException {
+      handler.reject(_refreshUnavailable(options));
     } catch (e, st) {
       handler.reject(
         DioException(
@@ -154,6 +166,8 @@ class AuthInterceptor extends Interceptor {
           type: DioExceptionType.unknown,
         ),
       );
+    } on _RefreshUnavailableException {
+      handler.reject(_refreshUnavailable(options));
     } on DioException catch (e) {
       // Refresh succeeded but the RETRIED request failed for a non-auth reason
       // (timeout, 5xx, repeated 401 caught by the retry guard). Surface the real
@@ -202,18 +216,46 @@ class AuthInterceptor extends Interceptor {
         accessTokenExpiry: tokens.accessTokenExpiry,
       );
       return tokens;
-    } catch (_) {
+    } on OidcSessionRejected {
+      // The server's own verdict: the refresh token is dead. Nothing but a
+      // new interactive login recovers from this, so tear the session down.
       await _store.clear();
       _onAuthLost();
       throw const _AuthLostException();
+    } catch (_) {
+      // Everything else is a refresh that could not RUN, not one that was
+      // refused — the tokens stay, and `whenComplete` in [_doRefresh] has
+      // already made the next request try again.
+      throw const _RefreshUnavailableException();
     }
   }
+
+  /// The rejection handed to a request whose refresh could not run.
+  ///
+  /// `type: connectionError`, not `unknown`: `mapDioException` switches on the
+  /// type and maps `unknown` to `UnknownFailure` without unwrapping `error`, so
+  /// the NetworkFailure has to travel under the type the mapper reads. That is
+  /// what lets `cachedRead` answer `Stale` from the box and the screens render
+  /// their designed "No network connection" state instead of a generic error.
+  DioException _refreshUnavailable(RequestOptions options) => DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+        error: const NetworkFailure(),
+        message: 'The session could not be refreshed right now; the stored '
+            'tokens were kept.',
+      );
 }
 
 // ---------------------------------------------------------------------------
-// Internal sentinel exception (never escapes this library)
+// Internal sentinel exceptions (never escape this library)
 // ---------------------------------------------------------------------------
 
+/// The session is over: tokens cleared, [AuthInterceptor.onAuthLost] fired.
 class _AuthLostException implements Exception {
   const _AuthLostException();
+}
+
+/// The refresh could not run; the session is untouched.
+class _RefreshUnavailableException implements Exception {
+  const _RefreshUnavailableException();
 }

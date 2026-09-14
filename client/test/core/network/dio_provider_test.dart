@@ -490,15 +490,21 @@ void main() {
   //
   // dioProvider wires AuthInterceptor's onAuthLost callback to
   // `authStatusProvider.notifier.logout()` (fire-and-forget). This proves the
-  // end-to-end wiring: a 401 whose refresh fails must clear tokens and drive
-  // authStatusProvider to unauthenticated — not just that AuthInterceptor or
-  // AuthController individually behave (already covered by
-  // auth_interceptor_test.dart / auth_controller_test.dart).
+  // end-to-end wiring: a 401 whose refresh is REJECTED BY THE SERVER must
+  // clear tokens and drive authStatusProvider to unauthenticated — not just
+  // that AuthInterceptor or AuthController individually behave (already
+  // covered by auth_interceptor_test.dart / auth_controller_test.dart).
+  //
+  // D2 (PR #4 review, B-49): the rejection has to be the server's own
+  // (`OidcSessionRejected`). A refresh that merely could not run — the
+  // "token server unreachable" this test used to throw — must leave the
+  // session and the cache alone, which the second test pins through the same
+  // real wiring.
 
   group('dioProvider — onAuthLost wiring', () {
     test(
-      '401 with a failing refresh clears tokens and drives authStatusProvider '
-      'to unauthenticated',
+      'a transient refresh failure leaves authStatusProvider authenticated '
+      'and never purges the cache — D2',
       () async {
         final oidc = MockIOidcClient();
         final store = MockTokenStore();
@@ -514,6 +520,61 @@ void main() {
         when(() => cache.purge()).thenAnswer((_) async => 0);
         when(() => oidc.refresh(any()))
             .thenThrow(Exception('token server unreachable'));
+
+        final container = ProviderContainer(
+          retry: lumenRetry,
+          overrides: [
+            tokenStoreProvider.overrideWithValue(store),
+            oidcClientProvider.overrideWithValue(oidc),
+            cacheStoreProvider.overrideWithValue(cache),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        await container.read(authStatusProvider.notifier).initialized;
+        expect(container.read(authStatusProvider), AuthStatus.authenticated);
+
+        final dio = container.read(dioProvider);
+        dio.httpClientAdapter = _Always401Adapter();
+
+        await expectLater(
+          () => dio.get<void>('/api/data'),
+          throwsA(
+            isA<DioException>().having(
+              (e) => e.type,
+              'type',
+              DioExceptionType.connectionError,
+            ),
+          ),
+        );
+        // Give a fire-and-forget logout every chance to land before asserting
+        // it never did.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        expect(container.read(authStatusProvider), AuthStatus.authenticated);
+        verifyNever(() => store.clear());
+        verifyNever(() => cache.purge());
+      },
+    );
+
+    test(
+      '401 with a refresh the server REJECTS clears tokens and drives '
+      'authStatusProvider to unauthenticated',
+      () async {
+        final oidc = MockIOidcClient();
+        final store = MockTokenStore();
+        final cache = MockCacheStore();
+
+        when(() => store.hasValidSession()).thenAnswer((_) async => true);
+        when(() => store.readAccessTokenExpiry())
+            .thenAnswer((_) async => DateTime.utc(2099, 1, 1));
+        when(() => store.readAccessToken()).thenAnswer((_) async => 'old-at');
+        when(() => store.readRefreshToken()).thenAnswer((_) async => 'rt');
+        when(() => store.readIdToken()).thenAnswer((_) async => null);
+        when(() => store.clear()).thenAnswer((_) async {});
+        when(() => cache.purge()).thenAnswer((_) async => 0);
+        when(() => oidc.refresh(any()))
+            .thenThrow(const OidcSessionRejected('invalid_grant'));
 
         final container = ProviderContainer(
           retry: lumenRetry,

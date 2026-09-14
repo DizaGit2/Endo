@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -106,6 +106,63 @@ class OidcConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Refresh-failure classification (D2 — walk 2026-08-25, B-49)
+// ---------------------------------------------------------------------------
+
+/// The authorization server has authoritatively rejected the refresh token.
+///
+/// Thrown by [IOidcClient.refresh] — and ONLY for this — so that the caller can
+/// tell "the session is over" apart from "the refresh could not run". Before
+/// this distinction existed, `AuthInterceptor` treated every exception from
+/// the refresh seam as the end of the session: going offline ~15 minutes after
+/// the last token issue signed the user out and purged the on-disk cache, with
+/// no user action, on a refresh that would have succeeded online.
+class OidcSessionRejected implements Exception {
+  const OidcSessionRejected(this.error);
+
+  /// The OAuth 2.0 error code the server answered with (RFC 6749 §5.2), e.g.
+  /// `invalid_grant`.
+  final String error;
+
+  @override
+  String toString() => 'OidcSessionRejected($error)';
+}
+
+/// The OAuth 2.0 token-endpoint errors that mean the refresh token itself is
+/// dead (RFC 6749 §5.2): the grant is expired, revoked or issued to another
+/// client, or this client may not use it. Nothing but a new interactive login
+/// can recover from these.
+///
+/// Deliberately NOT here: `invalid_request`, `invalid_scope` and
+/// `unsupported_grant_type` say OUR request was malformed, and
+/// `server_error` / `temporarily_unavailable` say the server is having a bad
+/// moment. Clearing the user's tokens fixes none of them and would erase the
+/// cache for nothing, so they stay transient — the next request tries again.
+const Set<String> kAuthoritativeRefreshErrors = <String>{
+  FlutterAppAuthOAuthError.invalidGrant,
+  FlutterAppAuthOAuthError.invalidClient,
+  FlutterAppAuthOAuthError.unauthorizedClient,
+};
+
+/// Whether [error], as thrown by `FlutterAppAuth.token`, is the server's own
+/// verdict on the refresh token rather than a failure to reach a verdict.
+///
+/// AppAuth surfaces the server's OAuth error code in
+/// `platformErrorDetails.error` on both platforms (Android from
+/// `AuthorizationException.error`, iOS from `OIDOAuthErrorFieldError`), and
+/// leaves it null when no server answered — `discovery_failed` with a
+/// `ConnectException` is what the walk logged offline. Everything that is not
+/// a platform exception carrying one of [kAuthoritativeRefreshErrors] is
+/// treated as transient: the fail-safe direction, because a wrongly-kept
+/// session costs one more failed refresh, while a wrongly-ended one costs the
+/// user their session and their cache.
+bool isAuthoritativeRefreshRejection(Object error) {
+  if (error is! FlutterAppAuthPlatformException) return false;
+  final code = error.platformErrorDetails.error?.trim().toLowerCase();
+  return code != null && kAuthoritativeRefreshErrors.contains(code);
+}
+
+// ---------------------------------------------------------------------------
 // Interface
 // ---------------------------------------------------------------------------
 
@@ -123,6 +180,16 @@ abstract interface class IOidcClient {
   Future<OidcTokens> login();
 
   /// Exchanges [refreshToken] for a fresh set of tokens.
+  ///
+  /// **What it throws decides whether the session ends** (D2, B-49):
+  /// - [OidcSessionRejected] — the authorization server itself refused the
+  ///   refresh token (`invalid_grant` and its kin). The session is over;
+  ///   `AuthInterceptor` clears the stored tokens and signals `onAuthLost`.
+  /// - anything else — the refresh could not be carried out: no network, the
+  ///   discovery document or token endpoint unreachable, a timeout, a 5xx, a
+  ///   malformed response. The session is NOT over; the interceptor keeps the
+  ///   tokens, fails the one request as a connection error, and refreshes
+  ///   again on the next.
   Future<OidcTokens> refresh(String refreshToken);
 
   /// Sends an RP-initiated logout request using [idToken] as the hint.
@@ -139,11 +206,16 @@ abstract interface class IOidcClient {
 /// Wraps [FlutterAppAuth] to implement [IOidcClient].
 ///
 /// Platform-channel code cannot be unit-tested; end-to-end coverage is
-/// exercised in the live integration test at T10.
+/// exercised in the live integration test at T10. The one exception is the
+/// refresh-failure classification in [refresh], which decides whether the
+/// user keeps their session: `oidc_client_test.dart` pins it through an
+/// injected [appAuth].
 class AppAuthOidcClient implements IOidcClient {
-  AppAuthOidcClient({OidcConfig? config})
-      : _config = config ?? const OidcConfig(),
-        _appAuth = const FlutterAppAuth();
+  AppAuthOidcClient({
+    OidcConfig? config,
+    @visibleForTesting FlutterAppAuth? appAuth,
+  })  : _config = config ?? const OidcConfig(),
+        _appAuth = appAuth ?? const FlutterAppAuth();
 
   final OidcConfig _config;
   final FlutterAppAuth _appAuth;
@@ -171,17 +243,29 @@ class AppAuthOidcClient implements IOidcClient {
 
   @override
   Future<OidcTokens> refresh(String refreshToken) async {
-    final response = await _appAuth.token(
-      TokenRequest(
-        _config.clientId,
-        _config.redirectUrl,
-        issuer: _config.issuer,
-        scopes: _config.scopes,
-        refreshToken: refreshToken,
-        grantType: GrantType.refreshToken,
-        allowInsecureConnections: _config.allowInsecureConnections,
-      ),
-    );
+    final TokenResponse response;
+    try {
+      response = await _appAuth.token(
+        TokenRequest(
+          _config.clientId,
+          _config.redirectUrl,
+          issuer: _config.issuer,
+          scopes: _config.scopes,
+          refreshToken: refreshToken,
+          grantType: GrantType.refreshToken,
+          allowInsecureConnections: _config.allowInsecureConnections,
+        ),
+      );
+    } on FlutterAppAuthPlatformException catch (e) {
+      // The server's verdict on the token, or a failure to reach one — see
+      // [isAuthoritativeRefreshRejection]. Only the former is re-thrown as
+      // [OidcSessionRejected]; the latter propagates as-is and the interceptor
+      // keeps the session.
+      if (isAuthoritativeRefreshRejection(e)) {
+        throw OidcSessionRejected(e.platformErrorDetails.error!.trim().toLowerCase());
+      }
+      rethrow;
+    }
     return _tokensFromResponse(response);
   }
 
