@@ -149,6 +149,8 @@ the entire argument for this walk existing.
 
 ### Known defect D2 — **the app signs you out if it goes offline more than ~15 minutes after its last login/refresh.**
 
+> **Fixed 2026-09-14 (PR #4 review hand-back, r23):** `auth_interceptor.dart` now keeps the tokens on any refresh failure that is not the authorization server's own rejection of the refresh token, and fails the one request as a connection error instead. The scenario stays in this script as **P4c-T0's on-device regression guard**; the paragraph below is the pre-fix behaviour a walker on an older build would still see.
+
 **Found by the 2026-08-25 walk (§3.2 D2), reproduced twice, open until fixed.** The realm's access token lives
 900 s; a token refresh that fails on *transport* (airplane mode, a dead Wi-Fi) is treated as a revoked session,
 the token store and the on-disk cache are purged, and you are on the welcome screen. It fires on the app's own
@@ -410,7 +412,7 @@ http://localhost:8080/realms/lumen   # issuer
 /var/run/postgresql:5432 - accepting connections
 ```
 
-**Account created: `p4bwalk08251630@example.com`** (display name Valentina, password `WalkP4b-2026!`,
+**Account created: `p4bwalk08251630@example.com`** (display name Valentina, password `<redacted at the PR #4 review — a dev-realm credential does not belong in the tree>`,
 userId `557030dd-a3a7-42ff-a014-cface4149d3b`). **Do not reuse it** (Trap A) — nor
 `p4bwalk08251612@example.com` (Carolina) from the 16:12 run. That earlier run (steps 1–4 only) is
 **superseded by this log**; the one thing it found that this log does not repeat — the stale `api`
