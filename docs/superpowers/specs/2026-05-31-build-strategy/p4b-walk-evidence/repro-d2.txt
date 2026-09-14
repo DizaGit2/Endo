@@ -1,0 +1,18 @@
+﻿D2 deterministic reproduction — token issued ~16:51:25 local, accessTokenLifespan 900 s => expiry ~17:06:25
+start 17:06:45
+60_d2_before 110188 B @ 17:06:45.697
+top before:  topResumedActivity=ActivityRecord{e42911f u0 com.lumen.lumen/.MainActivity t52}
+airplane_mode_on=1
+Active default network: none
+61_d2_cycle_tab 96570 B @ 17:06:51.009
+tapped prev-month at 17:06:51.009
+62_d2_after_july_2s 96570 B @ 17:06:53.532
+62_d2_after_july_5s 96570 B @ 17:06:57.003
+62_d2_after_july_10s 96203 B @ 17:07:02.436
+top after:  topResumedActivity=ActivityRecord{e42911f u0 com.lumen.lumen/.MainActivity t52}
+--- logcat since 17:06 (flutter/AppAuth, no stack frames) ---
+08-25 17:06:47.649 E/AppAuth (31833): Network error when retrieving discovery document
+08-25 17:06:47.649 E/AppAuth (31833): java.net.ConnectException: Failed to connect to /10.0.2.2:8080
+airplane_mode_on=0
+63_d2_network_back 95348 B @ 17:07:07.885
+end 17:07:07

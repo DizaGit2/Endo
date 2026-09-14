@@ -457,18 +457,73 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // 5. Refresh failure → tokens cleared, onAuthLost called
+  // 5. Refresh failure — WHICH failure decides whether the session ends
   // -------------------------------------------------------------------------
+  //
+  // D2 (PR #4 review, walk 2026-08-25, B-49): the refresh seam used to treat
+  // every exception as the end of the session — `store.clear()`, `onAuthLost`
+  // (→ logout → cache purge) — so going offline ~15 min after the last token
+  // issue signed the user out and erased the on-disk cache, with no user
+  // action, on a refresh that would have succeeded online. Only an
+  // AUTHORITATIVE rejection by the authorization server (`OidcSessionRejected`,
+  // thrown by `AppAuthOidcClient.refresh` for `invalid_grant` and its kin) may
+  // end the session. Anything else — no network, discovery unreachable, the
+  // token endpoint down or answering 5xx, a malformed response — keeps the
+  // tokens and rejects the ONE request as a connection error, so the screens
+  // render their offline state and the next request simply refreshes again.
 
   group('onError: refresh failure handling', () {
     test(
-      'refresh throws → clear() called, onAuthLost invoked, DioException thrown',
+      'a TRANSIENT refresh failure keeps the tokens, does NOT invoke '
+      'onAuthLost, and rejects the request as a connection error',
       () async {
         var authLostCalled = false;
 
         final env = buildDio(
           responses: [unauthorized()],
           refreshFn: (_) async => throw Exception('Token server down'),
+          onAuthLost: () {
+            authLostCalled = true;
+          },
+        );
+
+        when(() => env.store.readAccessTokenExpiry())
+            .thenAnswer((_) async => DateTime.utc(2099));
+        when(() => env.store.readAccessToken()).thenAnswer((_) async => 'old-at');
+        when(() => env.store.readRefreshToken()).thenAnswer((_) async => 'rt');
+        when(() => env.store.clear()).thenAnswer((_) async {});
+
+        await expectLater(
+          () => env.dio.get('/api/data'),
+          throwsA(
+            isA<DioException>()
+                // `type`, not only `error`: error_mapper.dart switches on the
+                // type and maps `unknown` to UnknownFailure without looking at
+                // `error`, so a NetworkFailure under the wrong type would
+                // render as the generic error instead of the offline state.
+                .having((e) => e.type, 'type', DioExceptionType.connectionError)
+                .having((e) => e.error, 'error', isA<NetworkFailure>()),
+          ),
+        );
+
+        verifyNever(() => env.store.clear());
+        expect(
+          authLostCalled,
+          isFalse,
+          reason: 'a refresh that could not run is not a refresh that failed',
+        );
+      },
+    );
+
+    test(
+      'an AUTHORITATIVE rejection (OidcSessionRejected) → clear() called, '
+      'onAuthLost invoked, AuthFailure thrown',
+      () async {
+        var authLostCalled = false;
+
+        final env = buildDio(
+          responses: [unauthorized()],
+          refreshFn: (_) async => throw const OidcSessionRejected('invalid_grant'),
           onAuthLost: () {
             authLostCalled = true;
           },
@@ -493,6 +548,94 @@ void main() {
 
         verify(() => env.store.clear()).called(1);
         expect(authLostCalled, isTrue);
+      },
+    );
+
+    test(
+      'a transient failure in the PROACTIVE window also keeps the tokens and '
+      'rejects as a connection error — this is the path the walk hit',
+      () async {
+        // The access token is 20 s from expiry, so onRequest refreshes before
+        // the request goes out — the app's own background refetch, no tap.
+        var authLostCalled = false;
+        final now = DateTime.utc(2026, 8, 25, 22, 47, 20);
+        final nearExpiry = now.add(const Duration(seconds: 20));
+
+        final env = buildDio(
+          responses: [ok()],
+          refreshFn: (_) async => throw Exception('discovery unreachable'),
+          onAuthLost: () {
+            authLostCalled = true;
+          },
+          clock: () => now,
+        );
+
+        when(() => env.store.readAccessTokenExpiry())
+            .thenAnswer((_) async => nearExpiry);
+        when(() => env.store.readRefreshToken()).thenAnswer((_) async => 'rt');
+        when(() => env.store.readAccessToken()).thenAnswer((_) async => 'old-at');
+        when(() => env.store.clear()).thenAnswer((_) async {});
+
+        await expectLater(
+          () => env.dio.get('/cycle/calendar'),
+          throwsA(
+            isA<DioException>()
+                .having((e) => e.type, 'type', DioExceptionType.connectionError)
+                .having((e) => e.error, 'error', isA<NetworkFailure>()),
+          ),
+        );
+
+        verifyNever(() => env.store.clear());
+        expect(authLostCalled, isFalse);
+        expect(
+          env.capture.captured,
+          isEmpty,
+          reason: 'the request never went out — it was rejected in onRequest',
+        );
+      },
+    );
+
+    test(
+      'after a transient failure the NEXT request refreshes again and '
+      'succeeds — the failure is not sticky',
+      () async {
+        var attempts = 0;
+        final env = buildDio(
+          responses: [unauthorized(), unauthorized(), ok('{"data":"ok"}')],
+          refreshFn: (_) async {
+            attempts++;
+            if (attempts == 1) throw Exception('Token server down');
+            return freshTokens(accessToken: 'second-try-at');
+          },
+          onAuthLost: () {},
+        );
+
+        when(() => env.store.readAccessTokenExpiry())
+            .thenAnswer((_) async => DateTime.utc(2099));
+        when(() => env.store.readAccessToken()).thenAnswer((_) async => 'old-at');
+        when(() => env.store.readRefreshToken()).thenAnswer((_) async => 'rt');
+        when(
+          () => env.store.saveTokens(
+            accessToken: any(named: 'accessToken'),
+            refreshToken: any(named: 'refreshToken'),
+            idToken: any(named: 'idToken'),
+            accessTokenExpiry: any(named: 'accessTokenExpiry'),
+          ),
+        ).thenAnswer((_) async {});
+
+        await expectLater(
+          () => env.dio.get('/api/data'),
+          throwsA(
+            isA<DioException>()
+                .having((e) => e.type, 'type', DioExceptionType.connectionError),
+          ),
+        );
+
+        final response = await env.dio.get('/api/data');
+
+        expect(response.statusCode, 200);
+        expect(attempts, 2, reason: 'the second request must refresh again');
+        verifyNever(() => env.store.clear());
       },
     );
 

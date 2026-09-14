@@ -14,6 +14,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:mocktail/mocktail.dart';
 
 // ---------------------------------------------------------------------------
@@ -341,6 +342,83 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // CacheStore — versionOf (PR #4 review: in-flight reads across purge and
+  // invalidate)
+  // -------------------------------------------------------------------------
+  //
+  // `cachedRead` stamps every in-flight read with the version of its key at
+  // the moment it starts, and refuses both to JOIN and to WRITE THROUGH a read
+  // whose stamp no longer matches. That only works if the two operations that
+  // retire cached state — `invalidate(key)` and `purge()` — move the stamp.
+
+  group('CacheStore.versionOf', () {
+    test('invalidate(key) changes that key\'s version and no other\'s',
+        () async {
+      final env = await buildEnv(
+        dir: tempDir,
+        storage: mockStorage,
+        clock: () => baseTime,
+      );
+      final beforeA = env.store.versionOf('a');
+      final beforeB = env.store.versionOf('b');
+
+      await env.store.invalidate('a');
+
+      expect(env.store.versionOf('a'), isNot(equals(beforeA)));
+      expect(env.store.versionOf('b'), equals(beforeB));
+    });
+
+    test('invalidating a key that was never written still moves its version',
+        () async {
+      // A pending read for a key with no entry yet is exactly the case that
+      // matters: the entry is absent BECAUSE the read has not landed.
+      final env = await buildEnv(
+        dir: tempDir,
+        storage: mockStorage,
+        clock: () => baseTime,
+      );
+      final before = env.store.versionOf('never-written');
+
+      await env.store.invalidate('never-written');
+
+      expect(env.store.versionOf('never-written'), isNot(equals(before)));
+    });
+
+    test('purge() changes every key\'s version, written or not', () async {
+      final env = await buildEnv(
+        dir: tempDir,
+        storage: mockStorage,
+        clock: () => baseTime,
+      );
+      await env.store.putJson('written', {'a': 1}, ttl: const Duration(hours: 1));
+      final beforeWritten = env.store.versionOf('written');
+      final beforeUnwritten = env.store.versionOf('unwritten');
+
+      await env.store.purge();
+
+      expect(env.store.versionOf('written'), isNot(equals(beforeWritten)));
+      expect(env.store.versionOf('unwritten'), isNot(equals(beforeUnwritten)));
+    });
+
+    test('the version is stable across reads and writes of the key', () async {
+      // putJson is the write-through itself; if IT moved the version, every
+      // successful read would retire its own siblings.
+      final env = await buildEnv(
+        dir: tempDir,
+        storage: mockStorage,
+        clock: () => baseTime,
+      );
+      final before = env.store.versionOf('k');
+
+      await env.store.putJson('k', {'a': 1}, ttl: const Duration(hours: 1));
+      env.store.getJson('k');
+      env.store.isFresh('k');
+
+      expect(env.store.versionOf('k'), equals(before));
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Encryption-at-rest exit criterion
   // -------------------------------------------------------------------------
 
@@ -436,7 +514,7 @@ void main() {
 
   group('cacheStoreProvider — DI seam', () {
     test('reading without a root override throws UnimplementedError', () {
-      final container = ProviderContainer();
+      final container = ProviderContainer(retry: lumenRetry);
       addTearDown(container.dispose);
 
       // Riverpod re-throws a provider's create-time error wrapped in an
@@ -476,6 +554,7 @@ void main() {
       );
 
       final container = ProviderContainer(
+        retry: lumenRetry,
         overrides: [cacheStoreProvider.overrideWithValue(env.store)],
       );
       addTearDown(container.dispose);

@@ -22,6 +22,7 @@ import 'package:lumen/api/model/update_me_request.dart';
 import 'package:lumen/core/cache/cached_query.dart';
 import 'package:lumen/core/cache/hive_boot.dart';
 import 'package:lumen/core/error/failure.dart';
+import 'package:lumen/core/error/retry_policy.dart';
 import 'package:lumen/core/network/api_client.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -269,6 +270,48 @@ void main() {
       // Verify cache was invalidated
       expect(store.getJson('GET:/me'), isNull);
     });
+
+    // D1 / D-12 (PR #4 review, B-50): the app-start re-sync PATCHes the
+    // device's zone through this method. `PATCH /me` treats an absent member
+    // as "leave unchanged", so what is NOT on the wire matters as much as
+    // what is.
+    UpdateMeRequest capturedPatch() => verify(
+          () => mockApi.mePatch(
+            updateMeRequest: captureAny(named: 'updateMeRequest'),
+          ),
+        ).captured.single as UpdateMeRequest;
+
+    test('a timezone-only update puts the zone on the wire and leaves '
+        'displayName absent', () async {
+      when(() => mockApi.mePatch(updateMeRequest: any(named: 'updateMeRequest')))
+          .thenAnswer((_) async => Response(
+                requestOptions: RequestOptions(path: '/me'),
+                statusCode: 204,
+              ));
+
+      final repo = MeRepository(api: mockApi, store: store);
+      await repo.updateMe(timezone: 'America/Mexico_City');
+
+      final request = capturedPatch();
+      expect(request.timezone, 'America/Mexico_City');
+      expect(request.displayName, isNull);
+    });
+
+    test('a displayName-only update leaves the timezone absent — never resets '
+        'it', () async {
+      when(() => mockApi.mePatch(updateMeRequest: any(named: 'updateMeRequest')))
+          .thenAnswer((_) async => Response(
+                requestOptions: RequestOptions(path: '/me'),
+                statusCode: 204,
+              ));
+
+      final repo = MeRepository(api: mockApi, store: store);
+      await repo.updateMe(displayName: 'María');
+
+      final request = capturedPatch();
+      expect(request.displayName, 'María');
+      expect(request.timezone, isNull);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -278,6 +321,7 @@ void main() {
   group('meRepositoryProvider', () {
     test('resolves to a MeRepository instance', () {
       final container = ProviderContainer(
+        retry: lumenRetry,
         overrides: [
           lumenApiProvider.overrideWithValue(mockApi),
           cacheStoreProvider.overrideWithValue(store),

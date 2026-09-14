@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lumen/core/router/routes.dart';
 import 'package:lumen/core/theme/lumen_tokens.dart';
-import 'package:lumen/shared/widgets/lumen_section_label.dart';
+import 'package:lumen/shared/widgets/lumen_step_chrome.dart';
+import 'package:lumen/shared/widgets/lumen_step_dots.dart';
 
 /// Screen 1 — Welcome (onboarding step 1 of 7).
 ///
@@ -35,11 +36,17 @@ class WelcomeScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // Section tag — sentence-case source; widget uppercases.
-                        const LumenSectionLabel(
-                          'Lumen · 1 of 7',
-                          fontSize: 11,
-                          letterSpacing: 1.5,
+                        // Section tag — the mockup's own string, drawn
+                        // uppercased by the widget. [LumenStepChrome] rather
+                        // than a bare label so the step position is ANNOUNCED
+                        // ("Step 1 of 7") instead of reaching a screen reader
+                        // as the shouted, dot-punctuated eyebrow. Pixels are
+                        // unchanged: the chrome draws the same
+                        // [LumenSectionLabel] with the same two arguments.
+                        const LumenStepChrome(
+                          step: 1,
+                          totalSteps: 7,
+                          lead: 'Lumen',
                         ),
 
                         const SizedBox(height: 24),
@@ -138,19 +145,7 @@ class WelcomeScreen extends StatelessWidget {
                         const SizedBox(height: 18),
 
                         // Step-indicator dots (7 total, first is active)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            for (var i = 0; i < 7; i++) ...[
-                              if (i > 0) const SizedBox(width: 6),
-                              _StepDot(
-                                active: i == 0,
-                                color: c.accent,
-                                border: c.border,
-                              ),
-                            ],
-                          ],
-                        ),
+                        const LumenStepDots(count: 7, activeIndex: 0),
                       ],
                     ),
                   ),
@@ -208,33 +203,4 @@ class _MoonPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_MoonPainter old) => old.color != color;
-}
-
-/// A single step-indicator dot.
-///
-/// Active dot: accent colour, wider (18×6) pill shape.
-/// Inactive dot: border colour, circle (6×6).
-class _StepDot extends StatelessWidget {
-  const _StepDot({
-    required this.active,
-    required this.color,
-    required this.border,
-  });
-
-  final bool active;
-  final Color color;
-  final Color border;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      width: active ? 18 : 6,
-      height: 6,
-      decoration: BoxDecoration(
-        color: active ? color : border,
-        borderRadius: BorderRadius.circular(active ? 3 : 50),
-      ),
-    );
-  }
 }

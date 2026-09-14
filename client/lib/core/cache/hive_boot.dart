@@ -6,7 +6,9 @@
 //   • Encrypted box "box_cache" using a 32-byte AES key from
 //     FlutterSecureStorage.
 //   • CacheStore wraps the box: put/get with TTL metadata, isFresh via
-//     injected clock, invalidate, purge (called on logout).
+//     injected clock, invalidate, purge (called on logout), and a per-key
+//     version stamp (versionOf) that invalidate/purge move so cached_query
+//     can retire reads still in flight when the key's state changes hands.
 //   • Keys are caller-chosen strings (convention: "METHOD:path:querystring").
 //   • The box is opened once at app startup via initHive(); the returned
 //     CacheStore is exposed via cacheStoreProvider.
@@ -31,6 +33,14 @@ const _kStorageKey = 'hive_cache_key';
 /// A simple clock abstraction.  In production: `() => DateTime.now()`.
 /// In tests: inject a fixed or mutable clock for deterministic assertions.
 typedef Clock = DateTime Function();
+
+/// The version stamp of one cache key — see [CacheStore.versionOf].
+///
+/// Two counters rather than one, so that [CacheStore.purge] can retire EVERY
+/// key without knowing which keys exist: `purge` moves the first component,
+/// `invalidate(key)` moves the second for that key only. A record, so two
+/// stamps compare by value.
+typedef CacheVersion = ({int purge, int key});
 
 // ---------------------------------------------------------------------------
 // initHive
@@ -64,6 +74,7 @@ Future<CacheStore> initHive({
         ),
       );
 
+  // lumen:allow-device-clock cache TTL, not a cycle date (D-12); overridable seam
   final effectiveClock = clock ?? DateTime.now;
 
   // ── AES key bootstrap ──────────────────────────────────────────────────
@@ -115,6 +126,33 @@ class CacheStore {
 
   final Box<Map<dynamic, dynamic>> _box;
   final Clock _clock;
+
+  /// How many times [purge] has run — the first half of every [CacheVersion].
+  int _purges = 0;
+
+  /// How many times each key has been invalidated since the last [purge] —
+  /// the second half of its [CacheVersion]. Absent means zero.
+  final Map<String, int> _keyVersions = <String, int>{};
+
+  // ── Version ──────────────────────────────────────────────────────────────
+
+  /// The current version stamp of [key].
+  ///
+  /// It moves exactly when the entry's OWNERSHIP of the key ends: on
+  /// [invalidate] of that key and on [purge] of the whole box. It does NOT
+  /// move on [putJson], [getJson] or [isFresh].
+  ///
+  /// This is what lets `cachedRead` tell a pending read that still belongs to
+  /// the current state of the key from one that no longer does. A read stamps
+  /// itself with this value when it starts; if the stamp has moved by the time
+  /// its response arrives, the response is neither written through nor handed
+  /// to callers that arrived after the move. Without it, a `GET:/me` still in
+  /// flight when the user signs out would be joined by the NEXT account's
+  /// read and would repopulate the box that sign-out had just cleared; and a
+  /// read issued before a write committed would overwrite the invalidation the
+  /// write performed.
+  CacheVersion versionOf(String key) =>
+      (purge: _purges, key: _keyVersions[key] ?? 0);
 
   // ── Write ────────────────────────────────────────────────────────────────
 
@@ -171,13 +209,29 @@ class CacheStore {
 
   // ── Invalidate ───────────────────────────────────────────────────────────
 
-  /// Removes the entry for [key] (no-op if absent).
-  Future<void> invalidate(String key) => _box.delete(key);
+  /// Removes the entry for [key] and retires any read of it still in flight
+  /// (see [versionOf]). Deleting an absent key is a no-op for the box but
+  /// still moves the version: the entry may be absent precisely BECAUSE the
+  /// read that would write it has not landed yet.
+  Future<void> invalidate(String key) {
+    // Synchronously, before the first await: a read completing in the same
+    // event-loop turn must already see the moved stamp.
+    _keyVersions[key] = (_keyVersions[key] ?? 0) + 1;
+    return _box.delete(key);
+  }
 
   // ── Purge ────────────────────────────────────────────────────────────────
 
-  /// Clears all entries from the box.  Called on logout.
-  Future<void> purge() => _box.clear();
+  /// Clears all entries from the box and retires every read still in flight
+  /// (see [versionOf]). Called on logout.
+  Future<void> purge() {
+    // Synchronously, for the same reason as [invalidate]. Per-key counters
+    // restart at zero: the purge counter alone already distinguishes every
+    // stamp issued before this call from every stamp issued after it.
+    _purges++;
+    _keyVersions.clear();
+    return _box.clear();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -188,10 +242,12 @@ class CacheStore {
 ///
 /// This provider has no real default: the [CacheStore] can only be produced
 /// asynchronously (via [initHive]), so app startup MUST override it at the
-/// root [ProviderScope] once [initHive] resolves — see `main.dart`:
+/// root [ProviderScope] once [initHive] resolves — see `main.dart`, which
+/// builds that scope through `LumenRootScope` (`app.dart`) so the root
+/// container also carries the app-wide retry policy:
 /// ```dart
 /// final store = await initHive();
-/// runApp(ProviderScope(
+/// runApp(LumenRootScope(
 ///   overrides: [cacheStoreProvider.overrideWithValue(store)],
 ///   child: const LumenApp(),
 /// ));

@@ -2,14 +2,35 @@
 ///
 /// **API payloads are always locale-neutral** (ISO 8601 dates, period decimal).
 /// This file is for DISPLAY formatting only — never use these in serialisation.
+/// The other side of that boundary is `lumen_wire.dart` (`LumenWire`), which is
+/// locale-neutral by construction: nothing in it takes a locale.
+///
+/// The locale itself comes from `localeProvider` (`core/locale/`), never from a
+/// literal — `test/core/locale/formatting_guard_test.dart` fails the build on
+/// both mistakes.
 ///
 /// ## Locale data initialisation
-/// Call `initializeDateFormatting(locale)` from
-/// `package:intl/date_symbol_data_local.dart` **before** using [LumenFormats.date]
-/// or [LumenFormats.time] with a non-default locale. In tests, do this in
-/// `setUpAll`. In app bootstrap, call it once per supported locale during startup.
+/// Handled here: every **date/time** entry point ([date], [monthYear], [time],
+/// [hasLocaleData]) calls [LumenFormats.ensureLocaleData] first, which is
+/// idempotent and does its work synchronously. Callers do **not** need a
+/// `setUpAll` or a bootstrap step — before P4b-T6 they did, and forgetting it
+/// threw `LocaleDataException` from deep inside `intl` at the first date a
+/// screen rendered.
+///
+/// The number formatters ([decimal], [mass], [length], [percent]) do not call
+/// it and do not need to: `intl`'s `numberFormatSymbols` is a plain const map
+/// that is always populated, whereas its date symbols start as an
+/// `UninitializedLocaleData` that throws on lookup. Calling it there would pull
+/// the whole date-symbol table into a process that only ever formats a number.
+///
+/// `initializeDateFormatting` ignores its `locale` argument (see
+/// `date_symbol_data_local.dart`: *"Both the [locale] and [ignored] parameter
+/// are ignored, as the data for all locales is directly available"*), so one
+/// call covers every locale and there is no per-locale bootstrap to keep in
+/// sync with `localeProvider`.
 library;
 
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
 // ---------------------------------------------------------------------------
@@ -36,7 +57,10 @@ enum UnitSystem {
 
 /// Static locale-driven formatters for dates, times, numbers, and measurements.
 ///
-/// All methods are pure functions of their arguments; there is no mutable state.
+/// Every method's result is a pure function of its arguments. The one piece of
+/// state is [LumenFormats._localeDataLoaded], a latch over `intl`'s one-time
+/// data load — it changes what the first call *does*, never what any call
+/// *returns*.
 ///
 /// ### First-day-of-week mapping (D-05)
 /// The [firstDayOfWeek] mapping is explicit and documented rather than relying
@@ -46,6 +70,42 @@ enum UnitSystem {
 /// This matches D-05 and can be extended by editing [_sundayFirstLocales].
 abstract final class LumenFormats {
   // -------------------------------------------------------------------------
+  // Locale data
+  // -------------------------------------------------------------------------
+
+  /// Whether `intl` carries date **and** number data for [locale].
+  ///
+  /// This is what the locale resolver leans on to guarantee that whatever
+  /// `localeProvider` returns can actually be formatted with: `DateFormat`
+  /// throws `ArgumentError('Invalid locale …')` for a tag it has no data for,
+  /// and that would surface as a crash on a screen rather than as a fallback.
+  ///
+  /// Note the asymmetry that catches people out: `intl` has `de` but **no**
+  /// `de_DE` entry, so a caller must be willing to shorten a tag rather than
+  /// treat a `false` here as "this language is unsupported".
+  static bool hasLocaleData(String locale) {
+    ensureLocaleData();
+    return DateFormat.localeExists(locale) && NumberFormat.localeExists(locale);
+  }
+
+  /// Loads `intl`'s locale data once, synchronously.
+  ///
+  /// `initializeDateFormatting` returns a `Future` but performs its work before
+  /// returning it, so awaiting is unnecessary — and being able to skip the
+  /// await is what lets a widget format a date during `build`.
+  static void ensureLocaleData() {
+    if (_localeDataLoaded) return;
+    initializeDateFormatting();
+    // Latched AFTER the call, not before: setting it first would mean that a
+    // throw inside `initializeDateFormatting` disables initialisation
+    // permanently, and every later call returns early into a formatter that
+    // then throws `LocaleDataException` for the rest of the process.
+    _localeDataLoaded = true;
+  }
+
+  static bool _localeDataLoaded = false;
+
+  // -------------------------------------------------------------------------
   // Date
   // -------------------------------------------------------------------------
 
@@ -54,10 +114,92 @@ abstract final class LumenFormats {
   /// Uses [DateFormat.yMd] so locale conventions drive day/month ordering:
   /// - `es_ES` → `"7/3/2026"` (day/month/year)
   /// - `en_US` → `"3/7/2026"` (month/day/year)
+  static String date(DateTime d, String locale) {
+    ensureLocaleData();
+    return DateFormat.yMd(locale).format(d);
+  }
+
+  /// Returns a locale-aware **month-precision** string for [d] — the display
+  /// side of `diagnosedOn`, which is a `yyyy-MM` string on the wire and has no
+  /// day to render (§C.0.2).
   ///
-  /// **Prerequisite:** call `initializeDateFormatting(locale)` before use.
-  static String date(DateTime d, String locale) =>
-      DateFormat.yMd(locale).format(d);
+  /// Numeric on purpose ([DateFormat.yM], `"8/2026"`): a month NAME would put
+  /// a translated word into a UI whose strings stay English in P4b (R-04).
+  static String monthYear(DateTime d, String locale) {
+    ensureLocaleData();
+    return DateFormat.yM(locale).format(d);
+  }
+
+  /// Returns `"April 2026"` — an English month name plus the year — for [d].
+  ///
+  /// **No [locale] parameter, on purpose.** Screen 10 (the cycle calendar) is
+  /// the one screen whose title needs a month NAME rather than [monthYear]'s
+  /// numeric form — a numeric `"4/2026"` is right for `diagnosedOn`, which this
+  /// formatter is not for. Naming the month is exactly the move [monthYear]'s
+  /// own dartdoc rules out for a translated word (R-04: every string in P4b
+  /// stays English), so this formatter cannot honestly take a locale — there is
+  /// nothing for one to select between. That is the same split T6 already made
+  /// for [orderedWeekdays]: the **locale** decides the week's *order* (D-05),
+  /// the **app** owns the *words*. A screen wanting locale-ordered digits still
+  /// has [monthYear]; this is for the one screen that needs the name instead.
+  static String monthName(DateTime d) =>
+      '${_englishMonths[d.month - 1]} ${d.year}';
+
+  /// English month names, indexed by `DateTime.month - 1`. Not translated, and
+  /// not meant to be — see [monthName].
+  static const List<String> _englishMonths = <String>[
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  /// Returns `"Tuesday"` — the English weekday name for [d].
+  ///
+  /// **No [locale] parameter, on purpose — exactly [monthName]'s reasoning.**
+  /// Screen 11 (the day detail) is the one screen whose header needs a
+  /// weekday NAME rather than a numeric or locale-ordered form, and R-04
+  /// keeps every P4b string English — there is nothing for a locale to
+  /// select between, so this formatter cannot honestly take one. This is
+  /// the same split [orderedWeekdays] already makes for the WEEK's order:
+  /// the locale decides which day starts the week (D-05), the app owns the
+  /// day's name.
+  ///
+  /// [DateTime.weekday] is `1` (Monday) through `7` (Sunday); indexed
+  /// directly rather than reaching for `intl`'s `DateFormat.EEEE`, which
+  /// would pull in a translated name this app does not want.
+  static String weekdayName(DateTime d) => _englishWeekdays[d.weekday - 1];
+
+  /// English weekday names, indexed by `DateTime.weekday - 1` (Monday
+  /// first). Not translated, and not meant to be — see [weekdayName].
+  static const List<String> _englishWeekdays = <String>[
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
+  /// Returns `"April 7"` — an English month name plus the day, no year — for
+  /// [d].
+  ///
+  /// **No [locale] parameter** — same reasoning as [monthName]. Screen 11's
+  /// header needs a month-and-day form with no year: not [date]
+  /// (`DateFormat.yMd`, which is locale-ordered, numeric, AND carries a
+  /// year screen 11 has no room for) and not [monthName] (which carries the
+  /// year, not the day) — a third shape neither existing formatter makes.
+  static String monthDay(DateTime d) =>
+      '${_englishMonths[d.month - 1]} ${d.day}';
 
   // -------------------------------------------------------------------------
   // Time
@@ -68,10 +210,10 @@ abstract final class LumenFormats {
   /// Uses [DateFormat.jm] which respects each locale's clock convention:
   /// - `es_ES` → 24-hour `"16:30"` (no AM/PM marker)
   /// - `en_US` → 12-hour `"4:30 PM"`
-  ///
-  /// **Prerequisite:** call `initializeDateFormatting(locale)` before use.
-  static String time(DateTime d, String locale) =>
-      DateFormat.jm(locale).format(d);
+  static String time(DateTime d, String locale) {
+    ensureLocaleData();
+    return DateFormat.jm(locale).format(d);
+  }
 
   // -------------------------------------------------------------------------
   // Decimal
@@ -82,12 +224,49 @@ abstract final class LumenFormats {
   ///
   /// - `es_ES` → comma separator: `"1,5"`
   /// - `en_US` → period separator: `"1.5"`
-  static String decimal(
-    num value,
-    String locale, {
-    int decimalDigits = 1,
-  }) =>
+  static String decimal(num value, String locale, {int decimalDigits = 1}) =>
       _numberFmt(value, locale, decimalDigits);
+
+  // -------------------------------------------------------------------------
+  // Reading a typed number back (P4b-T10)
+  // -------------------------------------------------------------------------
+
+  /// The character [locale] separates a number's fraction with — `","` under
+  /// `es_ES`, `"."` under `en_US`.
+  ///
+  /// Taken from the same `intl` symbols [decimal] formats with, so a field that
+  /// only accepts this character can never refuse what the app itself printed
+  /// into it.
+  ///
+  /// It is here rather than in a screen because `NumberFormat` may be named in
+  /// this file alone (`test/core/locale/formatting_guard_test.dart`), and
+  /// because a screen that hard-coded `'.'` would silently reject the comma a
+  /// Spanish keyboard puts under the user's thumb.
+  static String decimalSeparator(String locale) =>
+      NumberFormat.decimalPattern(locale).symbols.DECIMAL_SEP;
+
+  /// Reads [text] as a number written in [locale]'s own convention, or `null`
+  /// when it is not one.
+  ///
+  /// The inverse of [decimal], and the reason it takes a locale at all: `"60,4"`
+  /// is sixty-point-four in `es_ES` and `double.tryParse` answers `null` for it,
+  /// while a client that stripped commas first would read it as six hundred and
+  /// four in `en_US`.
+  ///
+  /// **Null, never zero, for unreadable input.** A field that cannot be read is
+  /// an unanswered field: screen 4 sends nothing for it, and the endpoint's
+  /// MERGE leaves whatever is stored alone. A coerced `0` would be a datum the
+  /// user never gave.
+  ///
+  /// This is a DISPLAY-side entry point (it reads what a person typed); the
+  /// value it returns still goes through `LumenWire` before it is serialised.
+  static double? parseDecimal(String text, String locale) {
+    try {
+      return NumberFormat.decimalPattern(locale).parse(text).toDouble();
+    } on FormatException {
+      return null;
+    }
+  }
 
   // -------------------------------------------------------------------------
   // First day of week
@@ -125,6 +304,36 @@ abstract final class LumenFormats {
   static const List<String> _sundayFirstLocales = [
     'en_us', // explicit en_US — Sunday-first per D-05
   ];
+
+  /// The seven [DateTime] weekday constants in the order [locale] displays a
+  /// week, starting at [firstDayOfWeek].
+  ///
+  /// - `es_ES` → `[1, 2, 3, 4, 5, 6, 7]` (Monday … Sunday)
+  /// - `en_US` → `[7, 1, 2, 3, 4, 5, 6]` (Sunday … Saturday)
+  ///
+  /// Weekday **labels** are deliberately not returned. P4b keeps every UI string
+  /// English (ruling R-04), so a screen owns its own seven labels and indexes
+  /// them by this order — the grid rotates without a single string being
+  /// translated. The mockups' fixed `S M T W T F S` header is an English
+  /// artifact, not the spec (D-05).
+  static List<int> orderedWeekdays(String locale) {
+    final first = firstDayOfWeek(locale);
+    return List<int>.generate(7, (i) => ((first - 1 + i) % 7) + 1);
+  }
+
+  /// How many empty cells precede the 1st of [monthStart]'s month in a
+  /// [locale]-ordered month grid. Always `0..6`.
+  ///
+  /// April 2026 begins on a Wednesday, so it is **2** under `es_ES`
+  /// (Monday-first) and **3** under `en_US` (Sunday-first). Getting this
+  /// constant wrong shifts every date in the grid by a column, which is why it
+  /// lives here once rather than in each of screens 3, 10 and 11.
+  ///
+  /// Only [DateTime.weekday] is read, so passing any day of the month gives the
+  /// answer for the month it belongs to **only if** it is the 1st — pass the
+  /// 1st.
+  static int leadingBlankDays(DateTime monthStart, String locale) =>
+      (monthStart.weekday - firstDayOfWeek(locale) + 7) % 7;
 
   // -------------------------------------------------------------------------
   // Measurement formatters — metric only (D-06)

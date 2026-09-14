@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumen/api/model/me_response.dart';
 import 'package:lumen/core/cache/cached_query.dart';
+import 'package:lumen/core/locale/locale_provider.dart';
 import 'package:lumen/features/settings/data/me_repository.dart';
 
 // ---------------------------------------------------------------------------
@@ -25,7 +26,54 @@ class ProfileController
   MeRepository get _repo => ref.read(meRepositoryProvider);
 
   @override
-  Future<CacheResult<MeResponse>> build() => _repo.getMe();
+  Future<CacheResult<MeResponse>> build() async {
+    final result = await _repo.getMe();
+    _adoptLocale(result);
+    return result;
+  }
+
+  /// Pushes the profile's locale into [profileLocaleProvider], which is what
+  /// makes `localeProvider` switch from the device locale to the user's own.
+  ///
+  /// It is a push rather than a `ref.watch` on the other side because this
+  /// controller is `autoDispose` and holds PII: a locale provider that watched
+  /// it would keep the profile alive app-wide and fire a `/me` request from
+  /// every screen that renders a date.
+  ///
+  /// Deliberately after the `await`, never during the synchronous part of
+  /// [build] — modifying another provider while this one is initialising is a
+  /// Riverpod error. A [NetworkRequired] result carries no profile and so
+  /// leaves the previous answer standing.
+  ///
+  /// The `ref.mounted` check is the session guard this side of the app has.
+  /// It is NOT the generation check `OnboardingStatusController` carries: this
+  /// provider is `autoDispose` and dies with the screen, so a response landing
+  /// after sign-out finds a disposed ref rather than a live one belonging to
+  /// somebody else. Without the check, that case raises
+  /// `UnmountedRefException` from `ref.read`.
+  ///
+  /// **Scope, precisely: the check covers THIS method and nothing beyond it.**
+  /// On the [build] path it is the whole story — the continuation runs on a
+  /// disposed element, nothing listens, and the adopt is simply skipped. On the
+  /// [saveDisplayName] path it is not: the very next statement is
+  /// `state = refreshed`, and the `Notifier` state setter raises the same
+  /// `UnmountedRefException` — which, unlike the one inside the disposed
+  /// build, is NOT swallowed. It propagates to the awaiting caller and is
+  /// absorbed by the blanket `catch (_)` in `profile_screen.dart`, where the
+  /// user sees the generic "could not save your changes" snackbar for a save
+  /// that in fact succeeded. That is pre-existing behaviour of the save path,
+  /// not something this check introduces or fixes; it is written down here so
+  /// nobody reads "the guard handles disposal" and believes the save path is
+  /// covered too.
+  void _adoptLocale(CacheResult<MeResponse> result) {
+    final me = switch (result) {
+      Fresh(:final value) => value,
+      Stale(:final value) => value,
+      NetworkRequired() => null,
+    };
+    if (me == null || !ref.mounted) return;
+    ref.read(profileLocaleProvider.notifier).adopt(me.locale);
+  }
 
   // ── saveDisplayName ────────────────────────────────────────────────────────
 
@@ -49,6 +97,7 @@ class ProfileController
     // Adopt the re-fetch only if it produced usable profile data.
     final value = refreshed.value;
     if (value is Fresh<MeResponse> || value is Stale<MeResponse>) {
+      _adoptLocale(value!);
       state = refreshed;
       return;
     }

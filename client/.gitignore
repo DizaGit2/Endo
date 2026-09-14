@@ -44,3 +44,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local pub cache, if a flutter command was run without PUB_CACHE=C:\pub_cache
+/pub_cache/
+
+# Alchemist writes golden-mismatch images here on failure
+failures/

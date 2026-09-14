@@ -110,6 +110,67 @@ void main() {
       expect(f.message, 'An account with that email already exists.');
     });
 
+    test(
+        '409 onboarding_incomplete → ConflictFailure lifts `code` and '
+        '`missingSteps` off the problem-details extensions', () {
+      // The exact body POST /onboarding/complete answers with when a mandatory
+      // step is unanswered (survey/backend-endpoints.md, GET/POST onboarding).
+      final f = mapDioException(
+        _dioError(
+          type: DioExceptionType.badResponse,
+          statusCode: 409,
+          data: {
+            'type': 'https://tools.ietf.org/html/rfc9110#section-15.5.10',
+            'title': 'The request conflicts with the current onboarding state.',
+            'status': 409,
+            'detail':
+                'Onboarding cannot be completed until every mandatory step is answered.',
+            'code': 'onboarding_incomplete',
+            'missingSteps': ['cycle'],
+          },
+        ),
+      ) as ConflictFailure;
+
+      expect(f.code, 'onboarding_incomplete');
+      expect(f.missingSteps, ['cycle']);
+      expect(
+        f.message,
+        'Onboarding cannot be completed until every mandatory step is answered.',
+      );
+    });
+
+    test('409 without extensions → null code and empty missingSteps', () {
+      final f = mapDioException(
+        _dioError(
+          type: DioExceptionType.badResponse,
+          statusCode: 409,
+          data: {'detail': 'An account with that email already exists.'},
+        ),
+      ) as ConflictFailure;
+
+      expect(f.code, isNull);
+      expect(f.missingSteps, isEmpty);
+    });
+
+    test('409 with a malformed missingSteps extension degrades to empty', () {
+      // A wire shape the client must not crash on: the list is not a list of
+      // strings. Screen 7 gets "no steps named", not a TypeError.
+      final f = mapDioException(
+        _dioError(
+          type: DioExceptionType.badResponse,
+          statusCode: 409,
+          data: {
+            'detail': 'Conflict.',
+            'code': 42, // not a string
+            'missingSteps': {'cycle': true}, // not a list
+          },
+        ),
+      ) as ConflictFailure;
+
+      expect(f.code, isNull);
+      expect(f.missingSteps, isEmpty);
+    });
+
     // -----------------------------------------------------------------------
     // Rate limit (429)
     // -----------------------------------------------------------------------
@@ -176,15 +237,15 @@ void main() {
       expect(f.message, 'Name is required');
     });
 
-    test('422 with problem+json errors map → ValidationFailure carries fields',
+    test('400 with problem+json errors map → ValidationFailure carries fields',
         () {
       final f = mapDioException(
         _dioError(
           type: DioExceptionType.badResponse,
-          statusCode: 422,
+          statusCode: 400,
           data: {
-            'title': 'Unprocessable entity',
-            'detail': 'Input is invalid',
+            'title': 'One or more validation errors occurred.',
+            'detail': 'The request contained invalid data.',
             'errors': {
               'email': ['must be a valid email'],
               'name': ['must not be blank', 'too short'],
@@ -197,15 +258,74 @@ void main() {
       expect(f.fields['name'], ['must not be blank', 'too short']);
     });
 
-    test('422 with no fields map → ValidationFailure with empty fields', () {
+    test('400 with no fields map → ValidationFailure with empty fields', () {
       final f = mapDioException(
         _dioError(
           type: DioExceptionType.badResponse,
-          statusCode: 422,
+          statusCode: 400,
           data: {'title': 'Bad input'},
         ),
       ) as ValidationFailure;
       expect(f.fields, isEmpty);
+    });
+
+    test(
+        'the P4a 400 envelope keeps indexed error keys verbatim, so a batch row '
+        'can bind its own message', () {
+      // The exact body from survey/backend-endpoints.md §5.
+      final f = mapDioException(
+        _dioError(
+          type: DioExceptionType.badResponse,
+          statusCode: 400,
+          data: {
+            'type': 'https://tools.ietf.org/html/rfc9110#section-15.5.1',
+            'title': 'One or more validation errors occurred.',
+            'status': 400,
+            'detail': 'The request contained invalid data.',
+            'errors': {
+              'occurredOn': ['date must not be in the future'],
+              'entries[3].intensity': ['value must be between 0 and 10'],
+              'request': ['at least one of pain, mood or notes is required'],
+            },
+          },
+        ),
+      ) as ValidationFailure;
+
+      expect(
+        f.messageFor(ValidationFailure.path('entries', 3, 'intensity')),
+        'value must be between 0 and 10',
+      );
+      expect(
+        f.messageFor(ValidationFailure.path('entries', 4, 'intensity')),
+        isNull,
+        reason: 'the index must survive the mapper, not be collapsed away',
+      );
+      expect(f.requestMessages, ['at least one of pain, mood or notes is required']);
+    });
+
+    // -----------------------------------------------------------------------
+    // 422 is NOT part of the shipped contract
+    // -----------------------------------------------------------------------
+
+    test('422 → UnknownFailure (P4a ships exactly one 400 validation envelope)',
+        () {
+      // Nothing in backend/src or backend/contract/openapi.json emits 422; the
+      // branch that mapped it to ValidationFailure was dead code claiming a
+      // status the server never sends.
+      final f = mapDioException(
+        _dioError(
+          type: DioExceptionType.badResponse,
+          statusCode: 422,
+          data: {
+            'title': 'Unprocessable entity',
+            'errors': {
+              'email': ['must be a valid email'],
+            },
+          },
+        ),
+      );
+      expect(f, isNot(isA<ValidationFailure>()));
+      expect(f, isA<UnknownFailure>());
     });
 
     // -----------------------------------------------------------------------
