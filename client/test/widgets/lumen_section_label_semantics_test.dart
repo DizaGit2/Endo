@@ -1,15 +1,19 @@
-// Accessibility tests for LumenSectionLabel (P4b-T5b).
+// Accessibility tests for LumenSectionLabel (P4b-T5b; B-12 fixed at the PR #4
+// review hand-back).
 //
-// The widget uppercases its text with CSS-equivalent letter-spacing, and both
-// of those are accessibility-relevant: what a screen reader announces is the
-// UPPERCASED string, not the sentence-case one the caller wrote. That is worth
-// pinning rather than assuming, because it is the argument for uppercasing in
-// CSS (`text-transform`, which leaves the accessible text alone) rather than in
-// Dart (`toUpperCase()`, which does not).
+// The widget uppercases its text with CSS-equivalent letter-spacing, and that
+// is a presentation choice — what a screen reader announces must stay the
+// sentence-case string the caller wrote. An all-caps run is spelled out letter
+// by letter by many screen readers ("D, A, T, A"), which is the argument for
+// uppercasing in CSS (`text-transform`, which leaves the accessible text alone)
+// rather than in Dart (`toUpperCase()`, which does not). `LumenFieldLabel`
+// already draws and announces different strings for exactly this reason; this
+// widget now does the same.
 //
-// It is also the widget most likely to be mistaken for a heading. It is not one
-// today — see the last test, which records that rather than asserting it is
-// fine.
+// It is also the widget a heading-navigation gesture should land on: a section
+// label is what a section IS called, so it carries the header flag. Until B-12
+// the last test here recorded the flag's absence "rather than endorsing it";
+// it now asserts its presence.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,15 +40,26 @@ Future<void> _pumpLabel(WidgetTester tester, {String text = 'App lock'}) =>
     );
 
 void main() {
-  testWidgetsWithSemantics('announces the uppercased text it renders', (
-    tester,
-  ) async {
+  testWidgetsWithSemantics('announces the sentence-case text, not the '
+      'uppercased rendering', (tester) async {
     await _pumpLabel(tester);
 
-    // The rendered string IS the announced string — there is no separate
-    // semanticsLabel keeping the sentence-case original.
-    expect(find.bySemanticsLabel('APP LOCK'), findsOneWidget);
-    expect(find.bySemanticsLabel('App lock'), findsNothing);
+    expect(find.bySemanticsLabel('App lock'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('APP LOCK'),
+      findsNothing,
+      reason:
+          'the uppercased string is for the eyes only — announced, it is '
+          'spelled out letter by letter (B-12)',
+    );
+  });
+
+  testWidgets('still DRAWS the uppercased text — the fix is to the announced '
+      'string, not the painted one', (tester) async {
+    await _pumpLabel(tester);
+
+    expect(find.text('APP LOCK'), findsOneWidget);
+    expect(find.text('App lock'), findsNothing);
   });
 
   testWidgetsWithSemantics('is not announced as a button', (tester) async {
@@ -56,15 +71,8 @@ void main() {
     expectNotAButton(tester, find.byType(LumenSectionLabel));
   });
 
-  testWidgetsWithSemantics('carries no header flag — recorded, not endorsed', (
-    tester,
-  ) async {
-    // A section label is what a heading-navigation gesture SHOULD land on, and
-    // this one is not flagged as a header, so that gesture skips it. Changing
-    // that is a behaviour change to a promoted widget and belongs to whoever
-    // owns the settings screens' structure, not to the registry task — but it
-    // is pinned here so the change is deliberate and this test goes red on the
-    // day someone makes it.
+  testWidgetsWithSemantics('carries the header flag, so heading navigation '
+      'lands on it', (tester) async {
     await _pumpLabel(tester);
 
     expect(
@@ -72,10 +80,26 @@ void main() {
           .getSemantics(find.byType(LumenSectionLabel))
           .flagsCollection
           .isHeader,
-      isFalse,
+      isTrue,
       reason:
-          'If you have just made LumenSectionLabel a header, that is an '
-          'improvement — delete this test and say so.',
+          'a section label is what a section is called; a heading-navigation '
+          'gesture that skips it has nothing else to land on',
+    );
+  });
+
+  testWidgetsWithSemantics('exposes exactly ONE node — the drawn Text does not '
+      'leak a second, uppercased announcement under the header',
+      (tester) async {
+    await _pumpLabel(tester);
+
+    final node = tester.getSemantics(find.byType(LumenSectionLabel));
+    expect(node.label, 'App lock');
+    expect(
+      find.descendant(
+        of: find.byType(LumenSectionLabel),
+        matching: find.bySemanticsLabel('APP LOCK'),
+      ),
+      findsNothing,
     );
   });
 

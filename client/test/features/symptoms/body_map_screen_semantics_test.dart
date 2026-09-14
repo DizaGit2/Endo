@@ -193,6 +193,15 @@ TextButton _done(WidgetTester tester) => tester.widget<TextButton>(
   find.widgetWithText(TextButton, kBodyMapDoneLabel),
 );
 
+/// The figure's summary node is the "Body map" node that is NOT a heading.
+///
+/// Since B-12 (PR #4 review hand-back) `LumenSectionLabel` announces its text
+/// in sentence case as a header, so the section label drawn above the figure
+/// — `kBodyMapSectionLabel`, also "Body map" — is a second node with the same
+/// label. The summary node carries the counter as its VALUE and no header
+/// flag; that is what tells the two apart.
+bool _notAHeading(SemanticsNode node) => !node.flagsCollection.isHeader;
+
 void main() {
   // -------------------------------------------------------------------------
   // The opening state
@@ -749,7 +758,12 @@ void main() {
       // can find them.
       expect(kBodyMapFigureLabel, 'Body map');
       expect(
-        find.semantics.byLabel('Body map').evaluate().single.value,
+        find.semantics
+            .byLabel('Body map')
+            .evaluate()
+            .where(_notAHeading)
+            .single
+            .value,
         '0 points placed',
       );
     });
@@ -758,8 +772,11 @@ void main() {
         'VALUE is the counter, and it is not a live region', (tester) async {
       await _pumpScreen(tester);
 
-      SemanticsNode summary() =>
-          find.semantics.byLabel(kBodyMapFigureLabel).evaluate().single;
+      SemanticsNode summary() => find.semantics
+          .byLabel(kBodyMapFigureLabel)
+          .evaluate()
+          .where(_notAHeading)
+          .single;
 
       expect(summary().value, '0 points placed');
       expect(
@@ -786,6 +803,7 @@ void main() {
       final SemanticsNode summary = find.semantics
           .byLabel(kBodyMapFigureLabel)
           .evaluate()
+          .where(_notAHeading)
           .single;
 
       expect(summary.childrenCount, 0);
